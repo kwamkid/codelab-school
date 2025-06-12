@@ -1,0 +1,397 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { Holiday, Branch } from '@/types/models';
+import { addHoliday, updateHoliday } from '@/lib/services/holidays';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { toast } from 'sonner';
+import { Loader2, CalendarDays, AlertCircle } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+
+interface HolidayDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  holiday?: Holiday | null;
+  branches: Branch[];
+  onSaved: () => void;
+}
+
+export default function HolidayDialog({
+  open,
+  onOpenChange,
+  holiday,
+  branches,
+  onSaved
+}: HolidayDialogProps) {
+  const [loading, setLoading] = useState(false);
+  const [isDateRange, setIsDateRange] = useState(false);
+  const [formData, setFormData] = useState({
+    name: '',
+    date: '',
+    endDate: '', // สำหรับกรณีเลือกช่วงวันที่
+    type: 'national' as Holiday['type'],
+    isSchoolClosed: true,
+    branches: [] as string[],
+    description: '',
+    isRecurring: false,
+  });
+
+  useEffect(() => {
+    if (holiday) {
+      setFormData({
+        name: holiday.name,
+        date: new Date(holiday.date).toISOString().split('T')[0],
+        endDate: '',
+        type: holiday.type,
+        isSchoolClosed: holiday.isSchoolClosed,
+        branches: holiday.branches || [],
+        description: holiday.description || '',
+        isRecurring: holiday.isRecurring || false,
+      });
+      setIsDateRange(false);
+    } else {
+      // Reset form for new holiday
+      setFormData({
+        name: '',
+        date: '',
+        endDate: '',
+        type: 'national',
+        isSchoolClosed: true,
+        branches: [],
+        description: '',
+        isRecurring: false,
+      });
+      setIsDateRange(false);
+    }
+  }, [holiday]);
+
+  const handleBranchToggle = (branchId: string) => {
+    setFormData(prev => ({
+      ...prev,
+      branches: prev.branches.includes(branchId)
+        ? prev.branches.filter(id => id !== branchId)
+        : [...prev.branches, branchId]
+    }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!formData.name.trim() || !formData.date) {
+      toast.error('กรุณากรอกข้อมูลที่จำเป็น');
+      return;
+    }
+
+    if (isDateRange && formData.endDate && new Date(formData.endDate) < new Date(formData.date)) {
+      toast.error('วันสิ้นสุดต้องไม่น้อยกว่าวันเริ่มต้น');
+      return;
+    }
+
+    if (formData.type !== 'national' && formData.branches.length === 0) {
+      toast.error('กรุณาเลือกสาขาที่หยุด');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      // กรณีแก้ไข (ไม่สร้างหลายวัน)
+      if (holiday) {
+        const holidayData = {
+          ...formData,
+          date: new Date(formData.date),
+          branches: formData.type === 'national' ? [] : formData.branches,
+        };
+        
+        await updateHoliday(holiday.id, holidayData);
+        toast.success('อัปเดตข้อมูลวันหยุดเรียบร้อยแล้ว');
+      } else {
+        // กรณีเพิ่มใหม่
+        if (isDateRange && formData.endDate) {
+          // สร้างวันหยุดหลายวัน
+          const startDate = new Date(formData.date);
+          const endDate = new Date(formData.endDate);
+          const dates: Date[] = [];
+          
+          // สร้าง array ของวันที่ทั้งหมดในช่วง
+          const currentDate = new Date(startDate);
+          while (currentDate <= endDate) {
+            dates.push(new Date(currentDate));
+            currentDate.setDate(currentDate.getDate() + 1);
+          }
+          
+          // สร้างวันหยุดสำหรับแต่ละวัน
+          const promises = dates.map(date => {
+            const holidayData = {
+              ...formData,
+              date,
+              branches: formData.type === 'national' ? [] : formData.branches,
+            };
+            return addHoliday(holidayData);
+          });
+          
+          await Promise.all(promises);
+          toast.success(`เพิ่มวันหยุด ${dates.length} วันเรียบร้อยแล้ว`);
+        } else {
+          // สร้างวันหยุดวันเดียว
+          const holidayData = {
+            ...formData,
+            date: new Date(formData.date),
+            branches: formData.type === 'national' ? [] : formData.branches,
+          };
+          
+          await addHoliday(holidayData);
+          toast.success('เพิ่มวันหยุดเรียบร้อยแล้ว');
+        }
+      }
+
+      onSaved();
+    } catch (error) {
+      console.error('Error saving holiday:', error);
+      toast.error(holiday ? 'ไม่สามารถอัปเดตข้อมูลได้' : 'ไม่สามารถเพิ่มวันหยุดได้');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // คำนวณจำนวนวันที่จะสร้าง
+  const calculateDays = () => {
+    if (!isDateRange || !formData.date || !formData.endDate) return 0;
+    
+    const start = new Date(formData.date);
+    const end = new Date(formData.endDate);
+    const diffTime = Math.abs(end.getTime() - start.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    
+    return diffDays;
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[600px]">
+        <form onSubmit={handleSubmit}>
+          <DialogHeader>
+            <DialogTitle>
+              {holiday ? 'แก้ไขข้อมูลวันหยุด' : 'เพิ่มวันหยุดใหม่'}
+            </DialogTitle>
+            <DialogDescription>
+              กำหนดวันหยุดสำหรับโรงเรียน
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="name">ชื่อวันหยุด *</Label>
+              <Input
+                id="name"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                placeholder="เช่น วันขึ้นปีใหม่, วันสงกรานต์"
+                disabled={loading}
+                required
+              />
+            </div>
+
+            {/* Toggle สำหรับเลือกวันเดียวหรือช่วงวัน (เฉพาะตอนเพิ่มใหม่) */}
+            {!holiday && (
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="isDateRange"
+                  checked={isDateRange}
+                  onCheckedChange={(checked) => {
+                    setIsDateRange(checked as boolean);
+                    if (!checked) {
+                      setFormData(prev => ({ ...prev, endDate: '' }));
+                    }
+                  }}
+                  disabled={loading}
+                />
+                <Label htmlFor="isDateRange" className="font-normal cursor-pointer">
+                  <CalendarDays className="inline w-4 h-4 mr-1" />
+                  เลือกช่วงวันที่ (สำหรับวันหยุดหลายวันติดกัน)
+                </Label>
+              </div>
+            )}
+
+            <div className={`grid ${isDateRange ? 'grid-cols-2' : 'grid-cols-1'} gap-4`}>
+              <div className="grid gap-2">
+                <Label htmlFor="date">
+                  {isDateRange ? 'จากวันที่ *' : 'วันที่ *'}
+                </Label>
+                <Input
+                  id="date"
+                  type="date"
+                  value={formData.date}
+                  onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                  disabled={loading}
+                  required
+                />
+              </div>
+
+              {isDateRange && (
+                <div className="grid gap-2">
+                  <Label htmlFor="endDate">ถึงวันที่ *</Label>
+                  <Input
+                    id="endDate"
+                    type="date"
+                    value={formData.endDate}
+                    onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
+                    min={formData.date}
+                    disabled={loading}
+                    required={isDateRange}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* แสดงจำนวนวันที่จะสร้าง */}
+            {isDateRange && formData.date && formData.endDate && (
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  จะสร้างวันหยุด {calculateDays()} วัน 
+                  (วันที่ {new Date(formData.date).toLocaleDateString('th-TH')} ถึง {new Date(formData.endDate).toLocaleDateString('th-TH')})
+                </AlertDescription>
+              </Alert>
+            )}
+
+            <div className="grid gap-2">
+              <Label htmlFor="type">ประเภท *</Label>
+              <Select
+                value={formData.type}
+                onValueChange={(value) => setFormData({ 
+                  ...formData, 
+                  type: value as Holiday['type'],
+                  branches: value === 'national' ? [] : formData.branches
+                })}
+                disabled={loading}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="national">วันหยุดนักขัตฤกษ์ (ทุกสาขา)</SelectItem>
+                  <SelectItem value="branch">วันหยุดประจำสาขา</SelectItem>
+                  <SelectItem value="special">วันหยุดพิเศษ</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {formData.type !== 'national' && (
+              <div className="grid gap-2">
+                <Label>สาขาที่หยุด *</Label>
+                <div className="space-y-2 max-h-40 overflow-y-auto border rounded-md p-3">
+                  {branches.map((branch) => (
+                    <div key={branch.id} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={`branch-${branch.id}`}
+                        checked={formData.branches.includes(branch.id)}
+                        onCheckedChange={() => handleBranchToggle(branch.id)}
+                        disabled={loading}
+                      />
+                      <Label
+                        htmlFor={`branch-${branch.id}`}
+                        className="text-sm font-normal cursor-pointer"
+                      >
+                        {branch.name}
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="grid gap-2">
+              <Label htmlFor="description">รายละเอียด</Label>
+              <Textarea
+                id="description"
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                placeholder="รายละเอียดเพิ่มเติม (ถ้ามี)"
+                rows={3}
+                disabled={loading}
+              />
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="isSchoolClosed"
+                  checked={formData.isSchoolClosed}
+                  onCheckedChange={(checked) => 
+                    setFormData({ ...formData, isSchoolClosed: checked as boolean })
+                  }
+                  disabled={loading}
+                />
+                <Label htmlFor="isSchoolClosed" className="font-normal cursor-pointer">
+                  ปิดโรงเรียน (ไม่มีการเรียนการสอน)
+                </Label>
+              </div>
+
+              {/* วันหยุดประจำทุกปี - ไม่แสดงถ้าเลือกช่วงวันที่ */}
+              {!isDateRange && (
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="isRecurring"
+                    checked={formData.isRecurring}
+                    onCheckedChange={(checked) => 
+                      setFormData({ ...formData, isRecurring: checked as boolean })
+                    }
+                    disabled={loading}
+                  />
+                  <Label htmlFor="isRecurring" className="font-normal cursor-pointer">
+                    วันหยุดประจำทุกปี (ระบบจะสร้างวันหยุดนี้ในปีถัดไปอัตโนมัติ)
+                  </Label>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={loading}
+            >
+              ยกเลิก
+            </Button>
+            <Button
+              type="submit"
+              className="bg-red-500 hover:bg-red-600"
+              disabled={loading}
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  กำลังบันทึก...
+                </>
+              ) : (
+                holiday ? 'บันทึกการแก้ไข' : 'เพิ่มวันหยุด'
+              )}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}

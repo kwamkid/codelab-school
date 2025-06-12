@@ -12,7 +12,8 @@ import {
   serverTimestamp
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
-import { Class, ClassSchedule } from '@/types/models';
+import { Class, ClassSchedule, RoomAvailabilityResult } from '@/types/models';
+import { getHolidaysForBranch } from './holidays';
 
 const COLLECTION_NAME = 'classes';
 
@@ -130,21 +131,26 @@ export async function createClass(classData: Omit<Class, 'id' | 'createdAt'>): P
 export async function updateClass(id: string, classData: Partial<Class>): Promise<void> {
   try {
     const docRef = doc(db, COLLECTION_NAME, id);
-    const updateData: Record<string, unknown> = { ...classData };
     
     // Remove fields that shouldn't be updated
-    delete updateData.id;
-    delete updateData.createdAt;
+    const dataToUpdate = { ...classData };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    delete (dataToUpdate as any).id;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    delete (dataToUpdate as any).createdAt;
     
     // Convert dates to Firestore timestamps
-    if (classData.startDate && classData.startDate instanceof Date) {
-      updateData.startDate = Timestamp.fromDate(classData.startDate);
+    if (dataToUpdate.startDate instanceof Date) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (dataToUpdate as any).startDate = Timestamp.fromDate(dataToUpdate.startDate);
     }
-    if (classData.endDate && classData.endDate instanceof Date) {
-      updateData.endDate = Timestamp.fromDate(classData.endDate);
+    if (dataToUpdate.endDate instanceof Date) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (dataToUpdate as any).endDate = Timestamp.fromDate(dataToUpdate.endDate);
     }
     
-    await updateDoc(docRef, updateData);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await updateDoc(docRef, dataToUpdate as any);
   } catch (error) {
     console.error('Error updating class:', error);
     throw error;
@@ -158,10 +164,11 @@ async function generateClassSchedules(
 ): Promise<void> {
   try {
     const schedulesRef = collection(db, COLLECTION_NAME, classId, 'schedules');
-    const schedules = generateScheduleDates(
+    const schedules = await generateScheduleDates(
       classData.startDate,
       classData.daysOfWeek,
-      classData.totalSessions
+      classData.totalSessions,
+      classData.branchId
     );
     
     // Create schedule documents
@@ -184,20 +191,35 @@ async function generateClassSchedules(
   }
 }
 
-// Generate schedule dates helper
-function generateScheduleDates(
+// Generate schedule dates helper with holiday checking
+async function generateScheduleDates(
   startDate: Date,
   daysOfWeek: number[],
-  totalSessions: number
-): Date[] {
+  totalSessions: number,
+  branchId: string
+): Promise<Date[]> {
   const schedules: Date[] = [];
-  const currentDate = new Date(startDate.getTime()); // Create a proper copy
+  const currentDate = new Date(startDate.getTime());
+  
+  // Calculate end date for holiday lookup (estimate max 6 months)
+  const maxEndDate = new Date(startDate);
+  maxEndDate.setMonth(maxEndDate.getMonth() + 6);
+  
+  // Get all holidays for the branch in the date range
+  const holidays = await getHolidaysForBranch(branchId, startDate, maxEndDate);
+  
+  // Create a Set of holiday dates for faster lookup
+  const holidayDates = new Set(
+    holidays
+      .filter(h => h.isSchoolClosed)
+      .map(h => h.date.toDateString())
+  );
   
   while (schedules.length < totalSessions) {
     const dayOfWeek = currentDate.getDay();
     
-    if (daysOfWeek.includes(dayOfWeek)) {
-      // TODO: Check holidays when holiday system is implemented
+    // Check if it's a scheduled day and not a holiday
+    if (daysOfWeek.includes(dayOfWeek) && !holidayDates.has(currentDate.toDateString())) {
       schedules.push(new Date(currentDate));
     }
     
@@ -233,18 +255,22 @@ export async function updateClassSchedule(
 ): Promise<void> {
   try {
     const docRef = doc(db, COLLECTION_NAME, classId, 'schedules', scheduleId);
-    const updateData: Record<string, unknown> = { ...scheduleData };
     
     // Remove fields that shouldn't be updated
-    delete updateData.id;
-    delete updateData.classId;
+    const dataToUpdate = { ...scheduleData };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    delete (dataToUpdate as any).id;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    delete (dataToUpdate as any).classId;
     
     // Convert date to Firestore timestamp
-    if (scheduleData.sessionDate && scheduleData.sessionDate instanceof Date) {
-      updateData.sessionDate = Timestamp.fromDate(scheduleData.sessionDate);
+    if (dataToUpdate.sessionDate instanceof Date) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (dataToUpdate as any).sessionDate = Timestamp.fromDate(dataToUpdate.sessionDate);
     }
     
-    await updateDoc(docRef, updateData);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await updateDoc(docRef, dataToUpdate as any);
   } catch (error) {
     console.error('Error updating schedule:', error);
     throw error;
@@ -281,7 +307,7 @@ export async function getUpcomingClasses(limit: number = 10): Promise<Class[]> {
   }
 }
 
-// Check if room is available
+// Check if room is available (Enhanced version)
 export async function checkRoomAvailability(
   branchId: string,
   roomId: string,
@@ -291,7 +317,7 @@ export async function checkRoomAvailability(
   startDate: Date,
   endDate: Date,
   excludeClassId?: string
-): Promise<boolean> {
+): Promise<RoomAvailabilityResult> {
   try {
     // Get all classes in the same branch and room
     const q = query(
@@ -311,6 +337,8 @@ export async function checkRoomAvailability(
       } as Class))
       .filter(cls => cls.id !== excludeClassId);
     
+    const conflicts: RoomAvailabilityResult['conflicts'] = [];
+    
     // Check for time conflicts
     for (const cls of classes) {
       // Check if date ranges overlap
@@ -320,15 +348,25 @@ export async function checkRoomAvailability(
         if (daysOverlap) {
           // Check if time slots overlap
           if (startTime < cls.endTime && endTime > cls.startTime) {
-            return false; // Conflict found
+            conflicts.push({
+              classId: cls.id,
+              className: cls.name,
+              classCode: cls.code,
+              startTime: cls.startTime,
+              endTime: cls.endTime,
+              daysOfWeek: cls.daysOfWeek
+            });
           }
         }
       }
     }
     
-    return true; // No conflicts
+    return {
+      available: conflicts.length === 0,
+      conflicts: conflicts.length > 0 ? conflicts : undefined
+    };
   } catch (error) {
     console.error('Error checking room availability:', error);
-    return false;
+    return { available: false };
   }
 }

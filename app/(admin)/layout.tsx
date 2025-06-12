@@ -27,6 +27,7 @@ const navigation = [
   { name: 'คลาสเรียน', href: '/classes', icon: Calendar },
   { name: 'วิชา', href: '/subjects', icon: GraduationCap },
   { name: 'ครูผู้สอน', href: '/teachers', icon: UserCheck },
+  { name: 'วันหยุด', href: '/holidays', icon: Calendar },
   { name: 'รายงาน', href: '/reports', icon: FileText },
   { name: 'ตั้งค่า', href: '/settings', icon: Settings },
 ];

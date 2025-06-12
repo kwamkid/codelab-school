@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Class, Branch, Subject, Teacher, Room } from '@/types/models';
+import { Class, Branch, Subject, Teacher, Room, RoomAvailabilityResult } from '@/types/models';
 import { createClass, updateClass, checkRoomAvailability } from '@/lib/services/classes';
+import { getHolidaysForBranch } from '@/lib/services/holidays';
 import { getActiveBranches } from '@/lib/services/branches';
 import { getActiveSubjects } from '@/lib/services/subjects';
 import { getTeachersByBranch } from '@/lib/services/teachers';
@@ -112,10 +113,10 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
 
   useEffect(() => {
     // Calculate end date based on start date, days of week, and total sessions
-    if (formData.startDate && formData.daysOfWeek.length > 0 && formData.totalSessions > 0) {
+    if (formData.startDate && formData.daysOfWeek.length > 0 && formData.totalSessions > 0 && formData.branchId) {
       calculateEndDate();
     }
-  }, [formData.startDate, formData.daysOfWeek, formData.totalSessions]);
+  }, [formData.startDate, formData.daysOfWeek, formData.totalSessions, formData.branchId]);
 
   const loadInitialData = async () => {
     try {
@@ -152,24 +153,63 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
     }
   };
 
-  const calculateEndDate = () => {
-    const startDate = new Date(formData.startDate);
-    let sessionCount = 0;
-    const currentDate = new Date(startDate.getTime()); // Create a proper copy
-    
-    while (sessionCount < formData.totalSessions) {
-      if (formData.daysOfWeek.includes(currentDate.getDay())) {
-        sessionCount++;
+  const calculateEndDate = async () => {
+    try {
+      const startDate = new Date(formData.startDate);
+      let sessionCount = 0;
+      const currentDate = new Date(startDate.getTime());
+      
+      // Get holidays for the branch
+      const maxEndDate = new Date(startDate);
+      maxEndDate.setMonth(maxEndDate.getMonth() + 6);
+      
+      const holidays = await getHolidaysForBranch(formData.branchId, startDate, maxEndDate);
+      
+      // Create a Set of holiday dates for faster lookup
+      const holidayDates = new Set(
+        holidays
+          .filter(h => h.isSchoolClosed)
+          .map(h => new Date(h.date).toDateString())
+      );
+      
+      while (sessionCount < formData.totalSessions) {
+        const dayOfWeek = currentDate.getDay();
+        
+        // Check if it's a scheduled day and not a holiday
+        if (formData.daysOfWeek.includes(dayOfWeek) && !holidayDates.has(currentDate.toDateString())) {
+          sessionCount++;
+        }
+        
+        if (sessionCount < formData.totalSessions) {
+          currentDate.setDate(currentDate.getDate() + 1);
+        }
       }
-      if (sessionCount < formData.totalSessions) {
-        currentDate.setDate(currentDate.getDate() + 1);
+      
+      setFormData(prev => ({
+        ...prev,
+        endDate: currentDate.toISOString().split('T')[0]
+      }));
+    } catch (error) {
+      console.error('Error calculating end date:', error);
+      // Fallback to simple calculation without holidays
+      const startDate = new Date(formData.startDate);
+      let sessionCount = 0;
+      const currentDate = new Date(startDate.getTime());
+      
+      while (sessionCount < formData.totalSessions) {
+        if (formData.daysOfWeek.includes(currentDate.getDay())) {
+          sessionCount++;
+        }
+        if (sessionCount < formData.totalSessions) {
+          currentDate.setDate(currentDate.getDate() + 1);
+        }
       }
+      
+      setFormData(prev => ({
+        ...prev,
+        endDate: currentDate.toISOString().split('T')[0]
+      }));
     }
-    
-    setFormData(prev => ({
-      ...prev,
-      endDate: currentDate.toISOString().split('T')[0]
-    }));
   };
 
   const handleDayToggle = (day: number) => {
@@ -187,9 +227,14 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
       return;
     }
 
+    if (formData.daysOfWeek.length === 0) {
+      toast.error('กรุณาเลือกวันที่เรียนก่อนตรวจสอบ');
+      return;
+    }
+
     setCheckingAvailability(true);
     try {
-      const isAvailable = await checkRoomAvailability(
+      const result = await checkRoomAvailability(
         formData.branchId,
         formData.roomId,
         formData.daysOfWeek,
@@ -200,10 +245,19 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
         isEdit ? classData?.id : undefined
       );
 
-      if (isAvailable) {
-        toast.success('ห้องเรียนว่างในช่วงเวลานี้');
+      if (result.available) {
+        toast.success('✅ ห้องเรียนว่างในช่วงเวลานี้');
       } else {
-        toast.error('ห้องเรียนไม่ว่างในช่วงเวลานี้');
+        const conflictInfo = result.conflicts?.[0];
+        if (conflictInfo) {
+          toast.error(
+            `❌ ห้องไม่ว่าง: มีคลาส "${conflictInfo.className}" (${conflictInfo.classCode}) ` +
+            `เรียนในเวลา ${conflictInfo.startTime}-${conflictInfo.endTime} น.`,
+            { duration: 5000 }
+          );
+        } else {
+          toast.error('❌ ห้องเรียนไม่ว่างในช่วงเวลานี้');
+        }
       }
     } catch (error) {
       console.error('Error checking availability:', error);
@@ -233,9 +287,41 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
       return;
     }
 
+    if (!formData.endDate) {
+      toast.error('กรุณารอให้ระบบคำนวณวันจบก่อน');
+      return;
+    }
+
     setLoading(true);
 
     try {
+      // ตรวจสอบห้องว่างก่อนบันทึก
+      const result = await checkRoomAvailability(
+        formData.branchId,
+        formData.roomId,
+        formData.daysOfWeek,
+        formData.startTime,
+        formData.endTime,
+        new Date(formData.startDate),
+        new Date(formData.endDate),
+        isEdit ? classData?.id : undefined
+      );
+
+      if (!result.available) {
+        const conflictInfo = result.conflicts?.[0];
+        if (conflictInfo) {
+          toast.error(
+            `ไม่สามารถบันทึกได้: ห้องถูกใช้โดยคลาส "${conflictInfo.className}" ` +
+            `(${conflictInfo.classCode}) ในเวลา ${conflictInfo.startTime}-${conflictInfo.endTime} น.`,
+            { duration: 5000 }
+          );
+        } else {
+          toast.error('ห้องเรียนไม่ว่างในช่วงเวลานี้ กรุณาเลือกห้องอื่นหรือเปลี่ยนเวลา');
+        }
+        setLoading(false);
+        return;
+      }
+
       const classPayload = {
         ...formData,
         startDate: new Date(formData.startDate),
@@ -540,6 +626,9 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
                   readOnly
                   className="bg-gray-50"
                 />
+                <p className="text-xs text-gray-500">
+                  * ระบบจะหลบวันหยุดให้อัตโนมัติ
+                </p>
               </div>
             </div>
 
@@ -548,7 +637,7 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
                 type="button"
                 variant="outline"
                 onClick={checkAvailability}
-                disabled={checkingAvailability || !formData.branchId || !formData.roomId || !formData.startDate}
+                disabled={checkingAvailability || !formData.branchId || !formData.roomId || !formData.startDate || formData.daysOfWeek.length === 0}
                 className="w-full md:w-auto"
               >
                 {checkingAvailability ? (
@@ -564,6 +653,23 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
                 )}
               </Button>
             </div>
+
+            {!formData.branchId || !formData.roomId || !formData.startDate || formData.daysOfWeek.length === 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5" />
+                  <div className="text-sm text-amber-800">
+                    <p className="font-medium">กรุณากรอกข้อมูลให้ครบก่อนตรวจสอบห้องว่าง:</p>
+                    <ul className="list-disc list-inside mt-1">
+                      {!formData.branchId && <li>เลือกสาขา</li>}
+                      {!formData.roomId && <li>เลือกห้องเรียน</li>}
+                      {formData.daysOfWeek.length === 0 && <li>เลือกวันที่เรียน</li>}
+                      {!formData.startDate && <li>เลือกวันเริ่มเรียน</li>}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 

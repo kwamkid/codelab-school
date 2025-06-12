@@ -228,3 +228,29 @@ export interface Promotion {
   usedCount: number;
   isActive: boolean;
 }
+
+// Holiday Types
+export interface Holiday {
+  id: string;
+  name: string;
+  date: Date;
+  type: 'national' | 'branch' | 'special';
+  isSchoolClosed: boolean;
+  branches?: string[]; // Empty for national holidays, branch IDs for branch-specific
+  description?: string;
+  isRecurring?: boolean;
+  recurringFromId?: string; // Reference to original recurring holiday
+}
+
+// Room Availability Check Result
+export interface RoomAvailabilityResult {
+  available: boolean;
+  conflicts?: {
+    classId: string;
+    className: string;
+    classCode: string;
+    startTime: string;
+    endTime: string;
+    daysOfWeek: number[];
+  }[];
+}
