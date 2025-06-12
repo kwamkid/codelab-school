@@ -4,8 +4,7 @@ import {
   getDocs, 
   getDoc, 
   addDoc, 
-  updateDoc, 
-  deleteDoc,
+  updateDoc,
   query,
   where,
   orderBy,
@@ -39,18 +38,18 @@ export async function getBranches(): Promise<Branch[]> {
 // Get active branches only
 export async function getActiveBranches(): Promise<Branch[]> {
   try {
-    const q = query(
-      collection(db, COLLECTION_NAME),
-      where('isActive', '==', true),
-      orderBy('code', 'asc')
-    );
-    const querySnapshot = await getDocs(q);
+    const querySnapshot = await getDocs(collection(db, COLLECTION_NAME));
     
-    return querySnapshot.docs.map(doc => ({
+    const branches = querySnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
       createdAt: doc.data().createdAt?.toDate() || new Date(),
     } as Branch));
+    
+    // Filter active branches in memory
+    return branches
+      .filter(branch => branch.isActive)
+      .sort((a, b) => a.code.localeCompare(b.code));
   } catch (error) {
     console.error('Error getting active branches:', error);
     throw error;
@@ -95,7 +94,11 @@ export async function createBranch(branchData: Omit<Branch, 'id' | 'createdAt'>)
 export async function updateBranch(id: string, branchData: Partial<Branch>): Promise<void> {
   try {
     const docRef = doc(db, COLLECTION_NAME, id);
-    const { id: _, createdAt, ...updateData } = branchData;
+    // Remove id and createdAt from update data
+    const updateData = { ...branchData };
+    delete updateData.id;
+    delete updateData.createdAt;
+    
     await updateDoc(docRef, updateData);
   } catch (error) {
     console.error('Error updating branch:', error);
