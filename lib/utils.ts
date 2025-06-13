@@ -15,7 +15,7 @@ export function formatCurrency(amount: number): string {
   }).format(amount);
 }
 
-// Format date to Thai locale
+// Format date to Thai locale - เพิ่ม export
 export function formatDate(date: Date | string, format: 'short' | 'long' = 'short'): string {
   const d = typeof date === 'string' ? new Date(date) : date;
   

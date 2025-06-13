@@ -83,20 +83,41 @@ export async function getParentByLineId(lineUserId: string): Promise<Parent | nu
 }
 
 // Create new parent
+// Create new parent
 export async function createParent(parentData: Omit<Parent, 'id' | 'createdAt' | 'lastLoginAt'>): Promise<string> {
   try {
-    // Prepare data for Firestore
-    const dataToSave = {
+    // Create a properly typed data object for Firestore
+    const dataToSave: {
+      displayName: string;
+      phone: string;
+      createdAt: Timestamp;
+      lastLoginAt: Timestamp;
+      emergencyPhone?: string;
+      email?: string;
+      lineUserId?: string;
+      pictureUrl?: string;
+      preferredBranchId?: string;
+      address?: {
+        houseNumber: string;
+        street?: string;
+        subDistrict: string;
+        district: string;
+        province: string;
+        postalCode: string;
+      };
+    } = {
       displayName: parentData.displayName,
       phone: parentData.phone,
       createdAt: Timestamp.now(),
       lastLoginAt: Timestamp.now(),
-      ...(parentData.emergencyPhone && { emergencyPhone: parentData.emergencyPhone }),
-      ...(parentData.email && { email: parentData.email }),
-      ...(parentData.lineUserId && { lineUserId: parentData.lineUserId }),
-      ...(parentData.pictureUrl && { pictureUrl: parentData.pictureUrl }),
-      ...(parentData.preferredBranchId && { preferredBranchId: parentData.preferredBranchId }),
     };
+
+    // Add optional fields if they exist
+    if (parentData.emergencyPhone) dataToSave.emergencyPhone = parentData.emergencyPhone;
+    if (parentData.email) dataToSave.email = parentData.email;
+    if (parentData.lineUserId) dataToSave.lineUserId = parentData.lineUserId;
+    if (parentData.pictureUrl) dataToSave.pictureUrl = parentData.pictureUrl;
+    if (parentData.preferredBranchId) dataToSave.preferredBranchId = parentData.preferredBranchId;
 
     // Add address if provided
     if (parentData.address) {
@@ -119,26 +140,48 @@ export async function createParent(parentData: Omit<Parent, 'id' | 'createdAt' |
 }
 
 // Update parent
+// Update parent
 export async function updateParent(id: string, parentData: Partial<Parent>): Promise<void> {
   try {
     const docRef = doc(db, COLLECTION_NAME, id);
-    const updateData: any = { ...parentData };
     
-    // Remove fields that shouldn't be updated
-    delete updateData.id;
-    delete updateData.createdAt;
-    delete updateData.lastLoginAt;
+    // Create a properly typed update object
+    const updateData: {
+      displayName?: string;
+      phone?: string;
+      emergencyPhone?: string;
+      email?: string;
+      lineUserId?: string;
+      pictureUrl?: string;
+      preferredBranchId?: string;
+      address?: {
+        houseNumber: string;
+        street?: string;
+        subDistrict: string;
+        district: string;
+        province: string;
+        postalCode: string;
+      };
+    } = {};
+    
+    // Copy only the fields that should be updated
+    if (parentData.displayName !== undefined) updateData.displayName = parentData.displayName;
+    if (parentData.phone !== undefined) updateData.phone = parentData.phone;
+    if (parentData.emergencyPhone !== undefined) updateData.emergencyPhone = parentData.emergencyPhone;
+    if (parentData.email !== undefined) updateData.email = parentData.email;
+    if (parentData.lineUserId !== undefined) updateData.lineUserId = parentData.lineUserId;
+    if (parentData.pictureUrl !== undefined) updateData.pictureUrl = parentData.pictureUrl;
+    if (parentData.preferredBranchId !== undefined) updateData.preferredBranchId = parentData.preferredBranchId;
     
     // Handle address update
-    if (updateData.address) {
-      // Ensure all required address fields are present
+    if (parentData.address !== undefined) {
       updateData.address = {
-        houseNumber: updateData.address.houseNumber,
-        ...(updateData.address.street && { street: updateData.address.street }),
-        subDistrict: updateData.address.subDistrict,
-        district: updateData.address.district,
-        province: updateData.address.province,
-        postalCode: updateData.address.postalCode,
+        houseNumber: parentData.address.houseNumber,
+        ...(parentData.address.street && { street: parentData.address.street }),
+        subDistrict: parentData.address.subDistrict,
+        district: parentData.address.district,
+        province: parentData.address.province,
+        postalCode: parentData.address.postalCode,
       };
     }
     

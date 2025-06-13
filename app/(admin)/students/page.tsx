@@ -13,12 +13,13 @@ import {
   School,
   Phone,
   AlertCircle,
-  Edit
+  Edit,
+  Users
 } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { Badge } from "@/components/ui/badge";
-import { formatDate, calculateAge } from '@/lib/utils';
+import { calculateAge } from '@/lib/utils';
 import {
   Select,
   SelectContent,
@@ -26,6 +27,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 type StudentWithParent = Student & { parentName: string; parentPhone: string };
 
@@ -35,6 +44,7 @@ export default function StudentsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterGender, setFilterGender] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('active');
+  const [filterAllergy, setFilterAllergy] = useState<string>('all');
 
   useEffect(() => {
     loadStudents();
@@ -72,7 +82,13 @@ export default function StudentsPage() {
       (filterStatus === 'active' && student.isActive) ||
       (filterStatus === 'inactive' && !student.isActive);
 
-    return matchesSearch && matchesGender && matchesStatus;
+    // Allergy filter
+    const matchesAllergy = 
+      filterAllergy === 'all' ||
+      (filterAllergy === 'yes' && student.allergies) ||
+      (filterAllergy === 'no' && !student.allergies);
+
+    return matchesSearch && matchesGender && matchesStatus && matchesAllergy;
   });
 
   // Calculate statistics
@@ -206,135 +222,177 @@ export default function StudentsPage() {
             <SelectItem value="all">ทั้งหมด</SelectItem>
           </SelectContent>
         </Select>
+
+        <Select value={filterAllergy} onValueChange={setFilterAllergy}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">ทุกคน</SelectItem>
+            <SelectItem value="yes">มีประวัติแพ้</SelectItem>
+            <SelectItem value="no">ไม่มีประวัติแพ้</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
-      {/* Students List */}
-      <div className="space-y-2">
-        <h3 className="text-lg font-medium mb-3">รายชื่อนักเรียน ({filteredStudents.length} คน)</h3>
-        
-        {filteredStudents.length === 0 ? (
-          <Card>
-            <CardContent className="text-center py-12">
-              <User className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+      {/* Students Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle>รายชื่อนักเรียน ({filteredStudents.length} คน)</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {filteredStudents.length === 0 ? (
+            <div className="text-center py-12">
+              <Users className="h-12 w-12 text-gray-300 mx-auto mb-4" />
               <h3 className="text-lg font-medium text-gray-900 mb-2">
                 ไม่พบข้อมูลนักเรียน
               </h3>
               <p className="text-gray-600">
-                {searchTerm ? 'ลองค้นหาด้วยคำค้นอื่น' : 'ยังไม่มีนักเรียนในระบบ'}
+                {searchTerm || filterGender !== 'all' || filterStatus !== 'active' || filterAllergy !== 'all' 
+                  ? 'ลองปรับเงื่อนไขการค้นหา' 
+                  : 'ยังไม่มีนักเรียนในระบบ'}
               </p>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-2">
-            {filteredStudents.map((student) => (
-              <Card key={student.id} className={!student.isActive ? 'opacity-60' : ''}>
-                <CardContent className="p-4">
-                  <div className="flex items-start gap-4">
-                    {/* Profile Picture */}
-                    <div className="flex-shrink-0">
-                      {student.profileImage ? (
-                        <img
-                          src={student.profileImage}
-                          alt={student.name}
-                          className="w-12 h-12 rounded-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center">
-                          <User className="h-6 w-6 text-gray-500" />
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Student Info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-2 mb-2">
-                        <div>
-                          <Link 
-                            href={`/parents/${student.parentId}`}
-                            className="font-medium text-gray-900 hover:text-red-600"
-                          >
-                            {student.nickname || student.name}
-                          </Link>
-                          {student.nickname && (
-                            <span className="text-sm text-gray-500 ml-2">({student.name})</span>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>ชื่อ-นามสกุล</TableHead>
+                    <TableHead>ชื่อเล่น</TableHead>
+                    <TableHead>อายุ</TableHead>
+                    <TableHead>เพศ</TableHead>
+                    <TableHead>โรงเรียน</TableHead>
+                    <TableHead>ผู้ปกครอง</TableHead>
+                    <TableHead>เบอร์ติดต่อ</TableHead>
+                    <TableHead className="text-center">ประวัติแพ้</TableHead>
+                    <TableHead className="text-center">สถานะ</TableHead>
+                    <TableHead className="text-right">จัดการ</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredStudents.map((student) => (
+                    <TableRow key={student.id} className={!student.isActive ? 'opacity-60' : ''}>
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          {student.profileImage ? (
+                            <img
+                              src={student.profileImage}
+                              alt={student.name}
+                              className="w-10 h-10 rounded-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center">
+                              <User className="h-5 w-5 text-gray-500" />
+                            </div>
                           )}
+                          <span className="font-medium">{student.name}</span>
                         </div>
-                        <Link href={`/parents/${student.parentId}/students/${student.id}/edit`}>
-                          <Button size="sm" variant="ghost" className="h-8 px-2">
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                        </Link>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-y-1 gap-x-4 text-sm">
-                        {/* Column 1 */}
-                        <div className="flex items-center gap-1 text-gray-600">
-                          <Cake className="h-3 w-3" />
-                          <span>{formatDate(student.birthdate)}</span>
-                          <Badge variant="outline" className="text-xs ml-1">
-                            {calculateAge(student.birthdate)} ปี
-                          </Badge>
+                      </TableCell>
+                      <TableCell>{student.nickname || '-'}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Cake className="h-3 w-3 text-gray-400" />
+                          {calculateAge(student.birthdate)} ปี
                         </div>
-
-                        {/* Column 2 */}
-                        <div className="flex items-center gap-1 text-gray-600">
-                          <User className="h-3 w-3" />
-                          <span>ผู้ปกครอง: {student.parentName}</span>
-                        </div>
-
-                        {/* Column 3 */}
-                        {student.schoolName && (
-                          <div className="flex items-center gap-1 text-gray-600">
-                            <School className="h-3 w-3" />
-                            <span>{student.schoolName}</span>
-                            {student.gradeLevel && (
-                              <span className="text-gray-500">({student.gradeLevel})</span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Tags Row */}
-                      <div className="flex flex-wrap items-center gap-2 mt-2">
+                      </TableCell>
+                      <TableCell>
                         <Badge 
                           variant={student.gender === 'M' ? 'secondary' : 'default'}
                           className="text-xs"
                         >
                           {student.gender === 'M' ? 'ชาย' : 'หญิง'}
                         </Badge>
-                        
+                      </TableCell>
+                      <TableCell>
+                        {student.schoolName ? (
+                          <div className="flex items-center gap-1">
+                            <School className="h-3 w-3 text-gray-400" />
+                            <span className="text-sm">{student.schoolName}</span>
+                            {student.gradeLevel && (
+                              <span className="text-xs text-gray-500">({student.gradeLevel})</span>
+                            )}
+                          </div>
+                        ) : (
+                          '-'
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Link 
+                          href={`/parents/${student.parentId}`}
+                          className="text-blue-600 hover:underline"
+                        >
+                          {student.parentName}
+                        </Link>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1 text-sm">
+                          <Phone className="h-3 w-3 text-gray-400" />
+                          {student.parentPhone}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {student.allergies ? (
+                          <div className="flex items-center justify-center">
+                            <AlertCircle className="h-4 w-4 text-red-500" />
+                          </div>
+                        ) : (
+                          '-'
+                        )}
+                      </TableCell>
+                      <TableCell className="text-center">
                         {student.isActive ? (
                           <Badge className="bg-green-100 text-green-700 text-xs">ใช้งาน</Badge>
                         ) : (
                           <Badge variant="destructive" className="text-xs">ไม่ใช้งาน</Badge>
                         )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Link href={`/parents/${student.parentId}/students/${student.id}/edit`}>
+                          <Button size="sm" variant="ghost">
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                        </Link>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-                        {student.allergies && (
-                          <div className="flex items-center gap-1">
-                            <AlertCircle className="h-3 w-3 text-red-500" />
-                            <span className="text-xs text-red-600">แพ้: {student.allergies}</span>
-                          </div>
-                        )}
-
-                        {student.specialNeeds && (
-                          <Badge variant="outline" className="text-xs">
-                            ความต้องการพิเศษ
-                          </Badge>
-                        )}
-
-                        <div className="flex items-center gap-1 text-xs text-gray-500 ml-auto">
-                          <Phone className="h-3 w-3" />
-                          {student.parentPhone}
-                        </div>
-                      </div>
+      {/* Allergies Details Modal/Section - Optional */}
+      {filteredStudents.some(s => s.allergies) && (
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle className="text-red-600 flex items-center gap-2">
+              <AlertCircle className="h-5 w-5" />
+              รายละเอียดการแพ้อาหาร/ยา
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {filteredStudents
+                .filter(s => s.allergies)
+                .map(student => (
+                  <div key={student.id} className="flex items-start gap-4 p-3 bg-red-50 rounded-lg">
+                    <div className="flex-1">
+                      <p className="font-medium">{student.nickname || student.name}</p>
+                      <p className="text-sm text-red-600">แพ้: {student.allergies}</p>
                     </div>
+                    {student.specialNeeds && (
+                      <Badge variant="outline" className="text-xs">
+                        มีความต้องการพิเศษ
+                      </Badge>
+                    )}
                   </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )}
-      </div>
+                ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

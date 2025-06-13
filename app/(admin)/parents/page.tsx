@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Parent } from '@/types/models';
+import { Parent, Branch } from '@/types/models';
 import { getParents, getStudentsByParent } from '@/lib/services/parents';
+import { getActiveBranches } from '@/lib/services/branches';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,16 +27,27 @@ interface ParentWithCount extends Parent {
 
 export default function ParentsPage() {
   const [parents, setParents] = useState<ParentWithCount[]>([]);
+  const [branchMap, setBranchMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
-    loadParents();
+    loadData();
   }, []);
 
-  const loadParents = async () => {
+  const loadData = async () => {
     try {
-      const parentsData = await getParents();
+      const [parentsData, branchesData] = await Promise.all([
+        getParents(),
+        getActiveBranches()
+      ]);
+      
+      // สร้าง branch map สำหรับ lookup ชื่อสาขา
+      const branchMapping: Record<string, string> = {};
+      branchesData.forEach(branch => {
+        branchMapping[branch.id] = branch.name;
+      });
+      setBranchMap(branchMapping);
       
       // Load student count for each parent
       const parentsWithCount = await Promise.all(
@@ -50,7 +62,7 @@ export default function ParentsPage() {
       
       setParents(parentsWithCount);
     } catch (error) {
-      console.error('Error loading parents:', error);
+      console.error('Error loading data:', error);
       toast.error('ไม่สามารถโหลดข้อมูลได้');
     } finally {
       setLoading(false);
@@ -245,7 +257,7 @@ export default function ParentsPage() {
                       <TableCell>
                         {parent.preferredBranchId ? (
                           <Badge variant="outline">
-                            {parent.preferredBranchId}
+                            {branchMap[parent.preferredBranchId] || parent.preferredBranchId}
                           </Badge>
                         ) : (
                           <span className="text-gray-400">-</span>
