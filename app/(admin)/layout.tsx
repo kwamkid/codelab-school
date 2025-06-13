@@ -26,6 +26,7 @@ const navigation = [
   { name: 'ผู้ปกครอง', href: '/parents', icon: Users },
   { name: 'นักเรียน', href: '/students', icon: GraduationCap },
   { name: 'คลาสเรียน', href: '/classes', icon: Calendar },
+  { name: 'ลงทะเบียน', href: '/enrollments', icon: UserCheck },
   { name: 'วิชา', href: '/subjects', icon: GraduationCap },
   { name: 'ครูผู้สอน', href: '/teachers', icon: UserCheck },
   { name: 'วันหยุด', href: '/holidays', icon: Calendar },
