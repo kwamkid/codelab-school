@@ -339,3 +339,188 @@ export async function rescheduleClassesForDeletedHoliday(
     throw error;
   }
 }
+
+// Reschedule ทุกคลาสที่ขาดหายไป
+export async function rescheduleAllMissingClasses(): Promise<{ addedCount: number; details: string[] }> {
+  try {
+    let totalAdded = 0;
+    const details: string[] = [];
+    
+    // ดึงคลาสทั้งหมดที่ active
+    const classes = await getClasses();
+    const activeClasses = classes.filter(c => 
+      ['published', 'started'].includes(c.status)
+    );
+    
+    for (const cls of activeClasses) {
+      const schedules = await getClassSchedules(cls.id);
+      const scheduledDates = new Set(
+        schedules.map(s => new Date(s.sessionDate).toDateString())
+      );
+      
+      // วนหาวันที่ควรมีคลาสแต่ไม่มี
+      const currentDate = new Date(cls.startDate);
+      const endDate = new Date(cls.endDate);
+      
+      while (currentDate <= endDate) {
+        const dayOfWeek = currentDate.getDay();
+        
+        // ถ้าเป็นวันที่ควรมีคลาส
+        if (cls.daysOfWeek.includes(dayOfWeek)) {
+          // ตรวจสอบว่าไม่มี schedule ในวันนี้
+          if (!scheduledDates.has(currentDate.toDateString())) {
+            // ตรวจสอบว่าไม่ใช่วันหยุดปัจจุบัน
+            const isHoliday = await checkIfHoliday(currentDate, cls.branchId);
+            
+            if (!isHoliday) {
+              // หา session number ที่ถูกต้อง
+              const sessionsBefore = schedules.filter(s => 
+                new Date(s.sessionDate) < currentDate
+              ).length;
+              const sessionNumber = sessionsBefore + 1;
+              
+              // สร้าง schedule ใหม่
+              const { addDoc } = await import('firebase/firestore');
+              const schedulesRef = collection(db, 'classes', cls.id, 'schedules');
+              
+              await addDoc(schedulesRef, {
+                classId: cls.id,
+                sessionDate: Timestamp.fromDate(new Date(currentDate)),
+                sessionNumber: sessionNumber,
+                status: 'scheduled',
+                note: 'เพิ่มจากการจัดตารางใหม่ทั้งหมด'
+              });
+              
+              totalAdded++;
+              details.push(`${cls.name} - ${formatDate(currentDate, 'long')}`);
+            }
+          }
+        }
+        
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+    }
+    
+    return { addedCount: totalAdded, details };
+  } catch (error) {
+    console.error('Error rescheduling all missing classes:', error);
+    throw error;
+  }
+}
+
+// Reschedule ทุกคลาสให้ตรงกับจำนวนครั้งที่กำหนด
+export async function rescheduleAllClasses(): Promise<{ 
+  processedCount: number; 
+  details: { className: string; action: string }[] 
+}> {
+  try {
+    let processedCount = 0;
+    const details: { className: string; action: string }[] = [];
+    
+    // ดึงคลาสทั้งหมดที่ active
+    const classes = await getClasses();
+    const activeClasses = classes.filter(c => 
+      ['published', 'started'].includes(c.status)
+    );
+    
+    console.log(`Found ${activeClasses.length} active classes to reschedule`);
+    
+    for (const cls of activeClasses) {
+      console.log(`Processing class: ${cls.name}`);
+      
+      // ลบ schedules เดิมทั้งหมด
+      const schedulesRef = collection(db, 'classes', cls.id, 'schedules');
+      const existingSchedules = await getDocs(schedulesRef);
+      
+      // ลบทั้งหมด
+      const { deleteDoc } = await import('firebase/firestore');
+      for (const doc of existingSchedules.docs) {
+        await deleteDoc(doc.ref);
+      }
+      
+      console.log(`Deleted ${existingSchedules.size} existing schedules`);
+      
+      // สร้าง schedules ใหม่
+      const newSchedules = await generateScheduleDates(
+        cls.startDate,
+        cls.daysOfWeek,
+        cls.totalSessions,
+        cls.branchId
+      );
+      
+      console.log(`Generated ${newSchedules.length} new schedules`);
+      
+      // สร้าง schedule documents
+      const { addDoc } = await import('firebase/firestore');
+      for (let i = 0; i < newSchedules.length; i++) {
+        await addDoc(schedulesRef, {
+          classId: cls.id,
+          sessionDate: Timestamp.fromDate(newSchedules[i]),
+          sessionNumber: i + 1,
+          status: 'scheduled',
+          note: 'สร้างจากการ reschedule ทั้งหมด'
+        });
+      }
+      
+      // อัพเดต endDate ให้ตรงกับวันสุดท้าย
+      if (newSchedules.length > 0) {
+        const newEndDate = newSchedules[newSchedules.length - 1];
+        await updateClass(cls.id, { endDate: newEndDate });
+      }
+      
+      processedCount++;
+      details.push({
+        className: cls.name,
+        action: `จัดตารางใหม่ ${newSchedules.length} ครั้ง (ตามที่กำหนด: ${cls.totalSessions} ครั้ง)`
+      });
+    }
+    
+    return { processedCount, details };
+  } catch (error) {
+    console.error('Error rescheduling all classes:', error);
+    throw error;
+  }
+}
+
+// Generate schedule dates helper (คัดลอกจาก classes.ts)
+async function generateScheduleDates(
+  startDate: Date,
+  daysOfWeek: number[],
+  totalSessions: number,
+  branchId: string
+): Promise<Date[]> {
+  const schedules: Date[] = [];
+  const currentDate = new Date(startDate.getTime());
+  
+  // Get all holidays for the branch
+  const maxEndDate = new Date(startDate);
+  maxEndDate.setFullYear(maxEndDate.getFullYear() + 1); // ดูล่วงหน้า 1 ปี
+  
+  const { getHolidaysForBranch } = await import('./holidays');
+  const holidays = await getHolidaysForBranch(branchId, startDate, maxEndDate);
+  
+  // Create a Set of holiday dates for faster lookup
+  const holidayDates = new Set(
+    holidays.map(h => h.date.toDateString())
+  );
+  
+  while (schedules.length < totalSessions) {
+    const dayOfWeek = currentDate.getDay();
+    
+    // Check if it's a scheduled day and not a holiday
+    if (daysOfWeek.includes(dayOfWeek) && !holidayDates.has(currentDate.toDateString())) {
+      schedules.push(new Date(currentDate));
+    }
+    
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+}
+// Helper function สำหรับ format date
+function formatDate(date: Date, format: 'short' | 'long' = 'short'): string {
+  return new Intl.DateTimeFormat('th-TH', {
+    day: 'numeric',
+    month: format === 'long' ? 'long' : 'short',
+    year: 'numeric',
+    weekday: format === 'long' ? 'long' : undefined
+  }).format(date);
+}

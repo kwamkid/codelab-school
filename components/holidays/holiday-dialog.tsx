@@ -170,7 +170,7 @@ export default function HolidayDialog({
               date,
               branches: formData.type === 'national' ? [] : formData.branches,
             };
-            promises.push(addHoliday(holidayData, user?.uid));
+            promises.push(addHoliday(holidayData));
           }
           
           if (promises.length > 0) {
@@ -208,16 +208,8 @@ export default function HolidayDialog({
             branches: formData.type === 'national' ? [] : formData.branches,
           };
           
-          const result = await addHoliday(holidayData, user?.uid);
-          
-          if (result.rescheduledCount > 0) {
-            toast.success(
-              `เพิ่มวันหยุดเรียบร้อยแล้ว และได้เลื่อนตารางเรียน ${result.rescheduledCount} คลาส`,
-              { duration: 5000 }
-            );
-          } else {
-            toast.success('เพิ่มวันหยุดเรียบร้อยแล้ว');
-          }
+          const result = await addHoliday(holidayData);
+          toast.success('เพิ่มวันหยุดเรียบร้อยแล้ว');
         }
       }
 

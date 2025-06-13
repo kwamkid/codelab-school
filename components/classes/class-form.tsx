@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Class, Branch, Subject, Teacher, Room, RoomAvailabilityResult } from '@/types/models';
+import { Class, Branch, Subject, Teacher, Room } from '@/types/models';
 import { createClass, updateClass, checkRoomAvailability } from '@/lib/services/classes';
 import { getHolidaysForBranch } from '@/lib/services/holidays';
 import { getActiveBranches } from '@/lib/services/branches';
@@ -23,9 +23,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from 'sonner';
-import { Loader2, Save, X, Calendar, AlertCircle, Plus } from 'lucide-react';
+import { Loader2, Save, X, Calendar, AlertCircle, Plus, Info } from 'lucide-react';
 import Link from 'next/link';
 import { generateClassCode, getDayName } from '@/lib/utils';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 interface ClassFormProps {
   classData?: Class;
@@ -50,6 +51,7 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [checkingAvailability, setCheckingAvailability] = useState(false);
+  const [autoStatus, setAutoStatus] = useState<'draft' | 'published' | 'started' | null>(null);
   
   const [formData, setFormData] = useState({
     name: classData?.name || '',
@@ -118,6 +120,30 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
     }
   }, [formData.startDate, formData.daysOfWeek, formData.totalSessions, formData.branchId]);
 
+  // เพิ่ม useEffect สำหรับตรวจสอบวันเริ่มต้นและกำหนดสถานะอัตโนมัติ
+  useEffect(() => {
+    if (formData.startDate) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const startDate = new Date(formData.startDate);
+      startDate.setHours(0, 0, 0, 0);
+      
+      // ถ้าเป็นการสร้างใหม่ หรือ แก้ไขแต่สถานะยังไม่ใช่ started
+      if (!isEdit || (isEdit && formData.status !== 'started' && formData.status !== 'completed' && formData.status !== 'cancelled')) {
+        if (startDate <= today) {
+          setAutoStatus('started');
+          setFormData(prev => ({ ...prev, status: 'started' }));
+        } else {
+          setAutoStatus(null);
+          // ถ้าวันเริ่มต้นเป็นอนาคต และสถานะเป็น started ให้เปลี่ยนกลับ
+          if (formData.status === 'started') {
+            setFormData(prev => ({ ...prev, status: 'published' }));
+          }
+        }
+      }
+    }
+  }, [formData.startDate, isEdit, formData.status]);
+
   const loadInitialData = async () => {
     try {
       const [branchesData, subjectsData] = await Promise.all([
@@ -167,9 +193,7 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
       
       // Create a Set of holiday dates for faster lookup
       const holidayDates = new Set(
-        holidays
-          .filter(h => h.isSchoolClosed)
-          .map(h => new Date(h.date).toDateString())
+        holidays.map(h => new Date(h.date).toDateString())
       );
       
       while (sessionCount < formData.totalSessions) {
@@ -632,6 +656,16 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
               </div>
             </div>
 
+            {/* แสดง Alert เมื่อวันเริ่มต้นเป็นวันที่ผ่านมาแล้ว */}
+            {autoStatus === 'started' && (
+              <Alert>
+                <Info className="h-4 w-4" />
+                <AlertDescription>
+                  เนื่องจากวันเริ่มต้นเป็นวันที่ผ่านมาแล้ว สถานะคลาสจะถูกกำหนดเป็น <strong>&quot;กำลังเรียน&quot;</strong> อัตโนมัติ
+                </AlertDescription>
+              </Alert>
+            )}
+
             <div className="flex justify-end">
               <Button
                 type="button"
@@ -654,7 +688,7 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
               </Button>
             </div>
 
-            {!formData.branchId || !formData.roomId || !formData.startDate || formData.daysOfWeek.length === 0 && (
+            {(!formData.branchId || !formData.roomId || !formData.startDate || formData.daysOfWeek.length === 0) && (
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
                 <div className="flex items-start gap-2">
                   <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5" />
@@ -783,22 +817,36 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
               <Select
                 value={formData.status}
                 onValueChange={(value) => setFormData({ ...formData, status: value as Class['status'] })}
+                disabled={autoStatus === 'started'}
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="draft">ร่าง</SelectItem>
-                  <SelectItem value="published">เปิดรับสมัคร</SelectItem>
-                  {isEdit && (
+                  {autoStatus !== 'started' && (
+                    <>
+                      <SelectItem value="draft">ร่าง</SelectItem>
+                      <SelectItem value="published">เปิดรับสมัคร</SelectItem>
+                    </>
+                  )}
+                  {(isEdit || autoStatus === 'started') && (
                     <>
                       <SelectItem value="started">กำลังเรียน</SelectItem>
-                      <SelectItem value="completed">จบแล้ว</SelectItem>
-                      <SelectItem value="cancelled">ยกเลิก</SelectItem>
+                      {isEdit && (
+                        <>
+                          <SelectItem value="completed">จบแล้ว</SelectItem>
+                          <SelectItem value="cancelled">ยกเลิก</SelectItem>
+                        </>
+                      )}
                     </>
                   )}
                 </SelectContent>
               </Select>
+              {autoStatus === 'started' && (
+                <p className="text-xs text-gray-500 mt-1">
+                  สถานะถูกกำหนดอัตโนมัติเนื่องจากวันเริ่มต้นเป็นวันที่ผ่านมาแล้ว
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>

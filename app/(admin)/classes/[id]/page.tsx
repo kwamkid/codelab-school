@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Class, Branch, Subject, Teacher, Room, ClassSchedule } from '@/types/models';
-import { getClass, getClassSchedules, updateClass } from '@/lib/services/classes';
+import { getClass, getClassSchedules, updateClass, deleteClass, fixEnrolledCount } from '@/lib/services/classes';
 import { getBranch } from '@/lib/services/branches';
 import { getSubject } from '@/lib/services/subjects';
 import { getTeacher } from '@/lib/services/teachers';
@@ -119,20 +119,33 @@ export default function ClassDetailPage() {
   const handleDelete = async () => {
     if (!classData) return;
     
-    // Check if class has enrolled students
-    if (classData.enrolledCount > 0) {
-      toast.error('ไม่สามารถลบคลาสที่มีนักเรียนลงทะเบียนแล้ว');
-      return;
+    setDeleting(true);
+    try {
+      await deleteClass(classId);
+      toast.success('ลบคลาสเรียบร้อยแล้ว');
+      router.push('/classes');
+    } catch (error: any) {
+      console.error('Error deleting class:', error);
+      if (error.message === 'Cannot delete class with enrolled students') {
+        toast.error('ไม่สามารถลบคลาสที่มีนักเรียนลงทะเบียนแล้ว');
+      } else {
+        toast.error('ไม่สามารถลบคลาสได้');
+      }
+    } finally {
+      setDeleting(false);
     }
+  };
+
+  const handleCancel = async () => {
+    if (!classData) return;
     
     setDeleting(true);
     try {
-      // Update status to cancelled instead of hard delete
       await updateClass(classId, { status: 'cancelled' });
       toast.success('ยกเลิกคลาสเรียบร้อยแล้ว');
       router.push('/classes');
     } catch (error) {
-      console.error('Error deleting class:', error);
+      console.error('Error cancelling class:', error);
       toast.error('ไม่สามารถยกเลิกคลาสได้');
     } finally {
       setDeleting(false);
@@ -162,7 +175,8 @@ export default function ClassDetailPage() {
   }
 
   const isEditable = classData.status === 'draft' || classData.status === 'published';
-  const isDeletable = classData.status === 'draft' && classData.enrolledCount === 0;
+  // Allow deletion for cancelled classes and classes with 0 or negative enrolled count
+  const isDeletable = classData.enrolledCount <= 0 || classData.status === 'cancelled';
 
   return (
     <div>
@@ -211,7 +225,7 @@ export default function ClassDetailPage() {
             </AlertDialog>
           )}
           
-          {!isDeletable && classData.status !== 'cancelled' && (
+          {!isDeletable && classData.status !== 'cancelled' && classData.enrolledCount > 0 && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="outline" className="text-red-600">
@@ -233,7 +247,7 @@ export default function ClassDetailPage() {
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>ไม่ยกเลิก</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleDelete} className="bg-red-500 hover:bg-red-600">
+                  <AlertDialogAction onClick={handleCancel} className="bg-red-500 hover:bg-red-600">
                     ยืนยันยกเลิกคลาส
                   </AlertDialogAction>
                 </AlertDialogFooter>
@@ -299,7 +313,29 @@ export default function ClassDetailPage() {
                     {classData.enrolledCount >= classData.maxStudents && (
                       <span className="text-red-600 text-sm ml-2">(เต็ม)</span>
                     )}
+                    {classData.enrolledCount < 0 && (
+                      <span className="text-red-600 text-sm ml-2">(ข้อมูลผิดพลาด)</span>
+                    )}
                   </p>
+                  {/* ปุ่มแก้ไขจำนวนนักเรียนสำหรับกรณีข้อมูลผิดพลาด */}
+                  {classData.enrolledCount < 0 && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mt-2"
+                      onClick={async () => {
+                        try {
+                          await fixEnrolledCount(classId, 0);
+                          toast.success('แก้ไขจำนวนนักเรียนเรียบร้อยแล้ว');
+                          loadClassDetails();
+                        } catch (error) {
+                          toast.error('ไม่สามารถแก้ไขจำนวนนักเรียนได้');
+                        }
+                      }}
+                    >
+                      รีเซ็ตจำนวนนักเรียนเป็น 0
+                    </Button>
+                  )}
                 </div>
               </div>
               

@@ -9,7 +9,8 @@ import {
   where,
   orderBy,
   Timestamp,
-  serverTimestamp
+  serverTimestamp,
+  writeBatch
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { Class, ClassSchedule, RoomAvailabilityResult } from '@/types/models';
@@ -35,6 +36,19 @@ export async function getClasses(): Promise<Class[]> {
     } as Class));
   } catch (error) {
     console.error('Error getting classes:', error);
+    throw error;
+  }
+}
+
+// Fix enrolled count (for data correction)
+export async function fixEnrolledCount(classId: string, correctCount: number): Promise<void> {
+  try {
+    const docRef = doc(db, COLLECTION_NAME, classId);
+    await updateDoc(docRef, {
+      enrolledCount: Math.max(0, correctCount) // Ensure it's never negative
+    });
+  } catch (error) {
+    console.error('Error fixing enrolled count:', error);
     throw error;
   }
 }
@@ -110,8 +124,21 @@ export async function getClass(id: string): Promise<Class | null> {
 // Create new class
 export async function createClass(classData: Omit<Class, 'id' | 'createdAt'>): Promise<string> {
   try {
+    // ตรวจสอบว่าวันเริ่มต้นผ่านมาแล้วหรือยัง
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const startDate = new Date(classData.startDate);
+    startDate.setHours(0, 0, 0, 0);
+    
+    // ถ้าวันเริ่มต้นผ่านมาแล้ว ให้เปลี่ยนสถานะเป็น started
+    let status = classData.status;
+    if (startDate <= today && (status === 'draft' || status === 'published')) {
+      status = 'started';
+    }
+    
     const docRef = await addDoc(collection(db, COLLECTION_NAME), {
       ...classData,
+      status,
       startDate: Timestamp.fromDate(classData.startDate),
       endDate: Timestamp.fromDate(classData.endDate),
       createdAt: serverTimestamp(),
@@ -153,6 +180,43 @@ export async function updateClass(id: string, classData: Partial<Class>): Promis
     await updateDoc(docRef, dataToUpdate as any);
   } catch (error) {
     console.error('Error updating class:', error);
+    throw error;
+  }
+}
+
+// Delete class (hard delete - only for classes with no students)
+export async function deleteClass(id: string): Promise<void> {
+  try {
+    // Check if class has enrolled students
+    const classData = await getClass(id);
+    if (!classData) {
+      throw new Error('Class not found');
+    }
+    
+    // Allow deletion if enrolledCount is 0 or negative (to fix data issues)
+    // Only prevent deletion if there are actual enrolled students (> 0)
+    if (classData.enrolledCount > 0) {
+      throw new Error('Cannot delete class with enrolled students');
+    }
+    
+    // Use batch to delete class and all its schedules
+    const batch = writeBatch(db);
+    
+    // Delete all schedules
+    const schedulesRef = collection(db, COLLECTION_NAME, id, 'schedules');
+    const schedulesSnapshot = await getDocs(schedulesRef);
+    schedulesSnapshot.docs.forEach(doc => {
+      batch.delete(doc.ref);
+    });
+    
+    // Delete the class document
+    const classRef = doc(db, COLLECTION_NAME, id);
+    batch.delete(classRef);
+    
+    // Commit the batch
+    await batch.commit();
+  } catch (error) {
+    console.error('Error deleting class:', error);
     throw error;
   }
 }

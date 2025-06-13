@@ -2,7 +2,6 @@ import {
   collection, 
   doc, 
   getDocs, 
-  getDoc,
   addDoc, 
   updateDoc,
   deleteDoc,
@@ -92,29 +91,17 @@ export async function getHolidaysInRange(
   }
 }
 
-// Add new holiday
+// Add new holiday (ไม่มี auto reschedule)
 export async function addHoliday(
-  holidayData: Omit<Holiday, 'id'>,
-  userId?: string
-): Promise<{ id: string; rescheduledCount: number }> {
+  holidayData: Omit<Holiday, 'id'>
+): Promise<{ id: string }> {
   try {
     const docRef = await addDoc(collection(db, COLLECTION_NAME), {
       ...holidayData,
       date: Timestamp.fromDate(holidayData.date),
     });
     
-    // ตรวจสอบและ reschedule คลาสที่ได้รับผลกระทบ
-    let rescheduledCount = 0;
-    if (userId) {
-      const { rescheduleClassesForHoliday } = await import('./reschedule');
-      const holiday: Holiday = {
-        id: docRef.id,
-        ...holidayData
-      };
-      rescheduledCount = await rescheduleClassesForHoliday(holiday, userId);
-    }
-    
-    return { id: docRef.id, rescheduledCount };
+    return { id: docRef.id };
   } catch (error) {
     console.error('Error adding holiday:', error);
     throw error;
@@ -145,33 +132,10 @@ export async function updateHoliday(
 }
 
 // Delete holiday
-export async function deleteHoliday(id: string): Promise<{ deletedCount: number; affectedClasses: { className: string; sessionDate: Date }[] }> {
+export async function deleteHoliday(id: string): Promise<void> {
   try {
-    // ดึงข้อมูล holiday ก่อนลบ
     const docRef = doc(db, COLLECTION_NAME, id);
-    const docSnap = await getDoc(docRef);
-    
-    if (!docSnap.exists()) {
-      throw new Error('Holiday not found');
-    }
-    
-    const holiday = {
-      id: docSnap.id,
-      ...docSnap.data(),
-      date: docSnap.data().date?.toDate() || new Date(),
-    } as Holiday;
-    
-    // ตรวจสอบคลาสที่ได้รับผลกระทบ
-    const { getClassesOnHoliday } = await import('./reschedule');
-    const affectedClasses = await getClassesOnHoliday(holiday);
-    
-    // ลบวันหยุด
     await deleteDoc(docRef);
-    
-    return { 
-      deletedCount: 1, 
-      affectedClasses 
-    };
   } catch (error) {
     console.error('Error deleting holiday:', error);
     throw error;
@@ -297,35 +261,5 @@ export async function getHolidaysForCalendar(
   } catch (error) {
     console.error('Error getting holidays for calendar:', error);
     return [];
-  }
-}
-
-// Reschedule classes for a specific holiday
-export async function rescheduleClassesForDeletedHoliday(
-  holidayId: string
-): Promise<{ rescheduledCount: number; error?: string }> {
-  try {
-    // Get holiday data
-    const docRef = doc(db, COLLECTION_NAME, holidayId);
-    const docSnap = await getDoc(docRef);
-    
-    if (!docSnap.exists()) {
-      return { rescheduledCount: 0, error: 'Holiday not found' };
-    }
-    
-    const holiday = {
-      id: docSnap.id,
-      ...docSnap.data(),
-      date: docSnap.data().date?.toDate() || new Date(),
-    } as Holiday;
-    
-    // Import reschedule service
-    const { rescheduleClassesForDeletedHoliday: doReschedule } = await import('./reschedule');
-    const rescheduledCount = await doReschedule(holiday);
-    
-    return { rescheduledCount };
-  } catch (error) {
-    console.error('Error rescheduling classes:', error);
-    return { rescheduledCount: 0, error: 'Failed to reschedule classes' };
   }
 }

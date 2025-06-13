@@ -48,11 +48,8 @@ export default function HolidaysPage() {
   const [selectedHoliday, setSelectedHoliday] = useState<Holiday | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [holidayToDelete, setHolidayToDelete] = useState<Holiday | null>(null);
-  const [affectedClasses, setAffectedClasses] = useState<{ className: string; sessionDate: Date }[]>([]);
-  const [checkingAffected, setCheckingAffected] = useState(false);
-  const [rescheduleDialogOpen, setRescheduleDialogOpen] = useState(false);
-  const [holidayToReschedule, setHolidayToReschedule] = useState<Holiday | null>(null);
-  const [rescheduling, setRescheduling] = useState(false);
+  const [rescheduleAllDialogOpen, setRescheduleAllDialogOpen] = useState(false);
+  const [rescheduleAllLoading, setRescheduleAllLoading] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -86,19 +83,6 @@ export default function HolidaysPage() {
 
   const handleDeleteHoliday = async (holiday: Holiday) => {
     setHolidayToDelete(holiday);
-    setCheckingAffected(true);
-    
-    try {
-      const { getClassesOnHoliday } = await import('@/lib/services/reschedule');
-      const affected = await getClassesOnHoliday(holiday);
-      setAffectedClasses(affected);
-    } catch (error) {
-      console.error('Error checking affected classes:', error);
-      setAffectedClasses([]);
-    } finally {
-      setCheckingAffected(false);
-    }
-    
     setDeleteDialogOpen(true);
   };
 
@@ -106,20 +90,11 @@ export default function HolidaysPage() {
     if (!holidayToDelete) return;
     
     try {
-      const result = await deleteHoliday(holidayToDelete.id);
-      
-      if (result.affectedClasses.length > 0) {
-        toast.success(
-          `ลบวันหยุดเรียบร้อยแล้ว (มี ${result.affectedClasses.length} คลาสที่ควรจะเรียนในวันนี้)`,
-          { duration: 5000 }
-        );
-      } else {
-        toast.success('ลบวันหยุดเรียบร้อยแล้ว');
-      }
+      await deleteHoliday(holidayToDelete.id);
+      toast.success('ลบวันหยุดเรียบร้อยแล้ว');
       
       setDeleteDialogOpen(false);
       setHolidayToDelete(null);
-      setAffectedClasses([]);
       loadData();
     } catch (error) {
       console.error('Error deleting holiday:', error);
@@ -127,35 +102,31 @@ export default function HolidaysPage() {
     }
   };
 
-  const handleRescheduleClasses = async (holiday: Holiday) => {
-    setHolidayToReschedule(holiday);
-    setRescheduleDialogOpen(true);
+  const handleRescheduleAllClasses = () => {
+    setRescheduleAllDialogOpen(true);
   };
 
-  const confirmRescheduleClasses = async () => {
-    if (!holidayToReschedule) return;
-    
-    setRescheduling(true);
+  const confirmRescheduleAllClasses = async () => {
+    setRescheduleAllLoading(true);
     try {
-      const { rescheduleClassesForDeletedHoliday } = await import('@/lib/services/holidays');
-      const result = await rescheduleClassesForDeletedHoliday(holidayToReschedule.id);
+      const { rescheduleAllClasses } = await import('@/lib/services/reschedule');
+      const result = await rescheduleAllClasses();
       
-      if (result.rescheduledCount > 0) {
+      if (result.processedCount > 0) {
         toast.success(
-          `จัดตารางเรียนใหม่เรียบร้อยแล้ว เพิ่ม ${result.rescheduledCount} คลาสในวันที่ ${formatDate(holidayToReschedule.date, 'long')}`,
+          `จัดตารางเรียนใหม่เรียบร้อยแล้ว ประมวลผล ${result.processedCount} คลาส`,
           { duration: 5000 }
         );
       } else {
-        toast.info('ไม่มีคลาสที่ต้องจัดตารางใหม่');
+        toast.info('ไม่พบคลาสที่ต้องจัดตารางใหม่');
       }
       
-      setRescheduleDialogOpen(false);
-      setHolidayToReschedule(null);
+      setRescheduleAllDialogOpen(false);
     } catch (error) {
-      console.error('Error rescheduling classes:', error);
+      console.error('Error rescheduling all classes:', error);
       toast.error('ไม่สามารถจัดตารางเรียนใหม่ได้');
     } finally {
-      setRescheduling(false);
+      setRescheduleAllLoading(false);
     }
   };
 
@@ -214,6 +185,14 @@ export default function HolidaysPage() {
           <p className="text-gray-600 mt-2">กำหนดวันหยุดประจำปีและวันหยุดพิเศษของแต่ละสาขา</p>
         </div>
         <div className="flex gap-2">
+          <Button 
+            variant="outline"
+            onClick={handleRescheduleAllClasses}
+            className="border-blue-200 text-blue-600 hover:bg-blue-50"
+          >
+            <RefreshCw className="h-4 w-4 mr-2" />
+            จัดตารางใหม่ทั้งหมด
+          </Button>
           {filteredHolidays.length > 0 && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
@@ -240,8 +219,7 @@ export default function HolidaysPage() {
                       </p>
                       <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mt-4">
                         <p className="text-sm text-amber-800">
-                          <strong>คำเตือน:</strong> การลบวันหยุดที่มีคลาสเรียนถูกเลื่อนไว้ 
-                          อาจทำให้ต้องจัดตารางเรียนใหม่
+                          <strong>คำเตือน:</strong> หลังจากลบแล้ว ให้ใช้ปุ่ม "จัดตารางใหม่ทั้งหมด" เพื่อปรับตารางเรียน
                         </p>
                       </div>
                     </div>
@@ -421,14 +399,6 @@ export default function HolidaysPage() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => handleRescheduleClasses(holiday)}
-                                  title="จัดตารางเรียนใหม่"
-                                >
-                                  <RefreshCw className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
                                   onClick={() => handleDeleteHoliday(holiday)}
                                 >
                                   <Trash2 className="h-4 w-4" />
@@ -456,7 +426,7 @@ export default function HolidaysPage() {
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent className="max-w-2xl">
+        <AlertDialogContent>
           <AlertDialogHeader>
             <div className="flex items-center gap-3">
               <div className="p-3 bg-red-100 rounded-full">
@@ -467,103 +437,75 @@ export default function HolidaysPage() {
               </AlertDialogTitle>
             </div>
             <AlertDialogDescription className="mt-4">
-              <div className="space-y-3">
-                <p>
-                  คุณกำลังจะลบวันหยุด <strong>&quot;{holidayToDelete?.name}&quot;</strong>
-                  <br />
-                  วันที่ {holidayToDelete && formatDate(holidayToDelete.date, 'long')}
+              <p>
+                คุณแน่ใจหรือไม่ที่จะลบวันหยุด <strong>&quot;{holidayToDelete?.name}&quot;</strong>?
+                <br />
+                วันที่ {holidayToDelete && formatDate(holidayToDelete.date, 'long')}
+              </p>
+              <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                <p className="text-sm text-amber-800">
+                  <strong>หมายเหตุ:</strong> หลังจากลบวันหยุดแล้ว คุณสามารถใช้ปุ่ม &quot;จัดตารางใหม่ทั้งหมด&quot; 
+                  เพื่อปรับตารางเรียนให้ถูกต้อง
                 </p>
-                
-                {checkingAffected ? (
-                  <div className="bg-gray-50 rounded-lg p-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-4 h-4 border-2 border-red-500 border-t-transparent rounded-full animate-spin"></div>
-                      <p className="text-sm text-gray-600">กำลังตรวจสอบคลาสที่ได้รับผลกระทบ...</p>
-                    </div>
-                  </div>
-                ) : affectedClasses.length > 0 ? (
-                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                    <div className="flex items-start gap-2">
-                      <Calendar className="h-5 w-5 text-amber-600 mt-0.5" />
-                      <div className="flex-1">
-                        <p className="font-medium text-amber-800">
-                          พบคลาสที่ควรจะเรียนในวันนี้ {affectedClasses.length} คลาส:
-                        </p>
-                        <ul className="mt-2 space-y-1 text-sm text-amber-700">
-                          {affectedClasses.slice(0, 5).map((cls, index) => (
-                            <li key={index}>
-                              • {cls.className}
-                            </li>
-                          ))}
-                          {affectedClasses.length > 5 && (
-                            <li className="text-amber-600">
-                              และอีก {affectedClasses.length - 5} คลาส...
-                            </li>
-                          )}
-                        </ul>
-                        <p className="mt-3 text-sm text-amber-800">
-                          <strong>หมายเหตุ:</strong> หลังจากลบวันหยุดแล้ว คุณสามารถใช้ปุ่ม &quot;จัดตารางใหม่&quot; เพื่อเพิ่มคลาสเหล่านี้กลับเข้าไปในวันที่ลบได้
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                    <p className="text-sm text-green-700">
-                      ✓ ไม่มีคลาสที่ควรจะเรียนในวันนี้
-                    </p>
-                  </div>
-                )}
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
-            {!checkingAffected && (
-              <Button
-                onClick={confirmDeleteHoliday}
-                className="bg-red-500 hover:bg-red-600 text-white"
-              >
-                ยืนยันลบ
-              </Button>
-            )}
+            <Button
+              onClick={confirmDeleteHoliday}
+              className="bg-red-500 hover:bg-red-600 text-white"
+            >
+              ยืนยันลบ
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Reschedule Confirmation Dialog */}
-      <AlertDialog open={rescheduleDialogOpen} onOpenChange={setRescheduleDialogOpen}>
-        <AlertDialogContent>
+      {/* Reschedule All Classes Dialog */}
+      <AlertDialog open={rescheduleAllDialogOpen} onOpenChange={setRescheduleAllDialogOpen}>
+        <AlertDialogContent className="max-w-xl">
           <AlertDialogHeader>
             <div className="flex items-center gap-3">
               <div className="p-3 bg-blue-100 rounded-full">
                 <RefreshCw className="h-6 w-6 text-blue-600" />
               </div>
               <AlertDialogTitle className="text-xl">
-                จัดตารางเรียนใหม่
+                จัดตารางเรียนใหม่ทั้งหมด
               </AlertDialogTitle>
             </div>
             <AlertDialogDescription className="mt-4">
               <div className="space-y-3">
                 <p>
-                  คุณต้องการจัดตารางเรียนใหม่สำหรับวันที่ <strong>{holidayToReschedule && formatDate(holidayToReschedule.date, 'long')}</strong> หรือไม่?
+                  ระบบจะจัดตารางเรียนใหม่ทั้งหมดให้ตรงกับจำนวนครั้งที่กำหนดในแต่ละคลาส
                 </p>
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                  <p className="text-sm text-blue-800">
-                    ระบบจะตรวจสอบและเพิ่มคลาสที่ควรจะเรียนในวันนี้กลับเข้าไปในตารางเรียน
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <p className="text-sm text-blue-800 font-medium mb-2">
+                    ระบบจะดำเนินการ:
+                  </p>
+                  <ul className="text-sm text-blue-700 space-y-1">
+                    <li>• ลบตารางเรียนเดิมทั้งหมด</li>
+                    <li>• สร้างตารางเรียนใหม่โดยหลบวันหยุดปัจจุบัน</li>
+                    <li>• ปรับวันสิ้นสุดคลาสให้ตรงกับตารางจริง</li>
+                    <li>• รับประกันว่าจะได้จำนวนครั้งเรียนตามที่กำหนด</li>
+                  </ul>
+                </div>
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  <p className="text-sm text-amber-800">
+                    <strong>คำเตือน:</strong> การทำงานนี้จะใช้เวลาสักครู่ กรุณาอย่าปิดหน้าจอ
                   </p>
                 </div>
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={rescheduling}>ยกเลิก</AlertDialogCancel>
+            <AlertDialogCancel disabled={rescheduleAllLoading}>ยกเลิก</AlertDialogCancel>
             <Button
-              onClick={confirmRescheduleClasses}
+              onClick={confirmRescheduleAllClasses}
               className="bg-blue-500 hover:bg-blue-600"
-              disabled={rescheduling}
+              disabled={rescheduleAllLoading}
             >
-              {rescheduling ? (
+              {rescheduleAllLoading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   กำลังจัดตารางใหม่...
@@ -571,7 +513,7 @@ export default function HolidaysPage() {
               ) : (
                 <>
                   <RefreshCw className="mr-2 h-4 w-4" />
-                  จัดตารางใหม่
+                  เริ่มจัดตารางใหม่
                 </>
               )}
             </Button>
