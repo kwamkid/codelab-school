@@ -1,12 +1,9 @@
 import { 
   collection, 
   getDocs, 
-  updateDoc,
-  doc,
   query,
   where,
-  Timestamp,
-  writeBatch
+  Timestamp
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { Class, ClassSchedule, Holiday } from '@/types/models';
@@ -139,7 +136,8 @@ async function findNextAvailableDate(
     }
     
     // ถ้าไม่พบวันว่างในช่วงคลาส ให้ต่อท้ายคลาส
-    return extendClassEndDate(cls, fromDate);
+    return extendClassEndDate(cls);
+    
   } catch (error) {
     console.error('Error finding next available date:', error);
     return null;
@@ -187,11 +185,10 @@ async function checkIfHoliday(
 
 // ขยายวันสิ้นสุดคลาส
 async function extendClassEndDate(
-  cls: Class,
-  fromDate: Date
+  cls: Class
 ): Promise<Date | null> {
   try {
-    let newEndDate = new Date(cls.endDate);
+    const newEndDate = new Date(cls.endDate);
     let attempts = 0;
     const maxAttempts = 30; // พยายามหาไม่เกิน 30 วัน
     
@@ -233,7 +230,7 @@ export async function revertRescheduleForDeletedHoliday(
     let totalReverted = 0;
     const affectedClasses = await getAffectedClasses(holiday);
     
-    for (const { class: cls, schedules: _ } of affectedClasses) {
+    for (const { class: cls } of affectedClasses) {
       // ดึงตารางเรียนทั้งหมดของคลาส
       const allSchedules = await getClassSchedules(cls.id);
       

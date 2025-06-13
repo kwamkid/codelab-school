@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Holiday, Branch } from '@/types/models';
-import { addHoliday, updateHoliday } from '@/lib/services/holidays';
+import { addHoliday, updateHoliday, checkHolidayExists } from '@/lib/services/holidays';
 import { useAuth } from '@/hooks/useAuth';
 import {
   Dialog,
@@ -49,7 +49,7 @@ export default function HolidayDialog({
   const [formData, setFormData] = useState({
     name: '',
     date: '',
-    endDate: '', // สำหรับกรณีเลือกช่วงวันที่
+    endDate: '',
     type: 'national' as Holiday['type'],
     isSchoolClosed: true,
     branches: [] as string[],
@@ -116,8 +116,22 @@ export default function HolidayDialog({
     setLoading(true);
 
     try {
-      // กรณีแก้ไข (ไม่สร้างหลายวัน)
+      // กรณีแก้ไข
       if (holiday) {
+        // ตรวจสอบวันหยุดซ้ำ
+        const exists = await checkHolidayExists(
+          new Date(formData.date),
+          undefined,
+          formData.type === 'national' ? undefined : formData.branches[0],
+          holiday.id
+        );
+        
+        if (exists) {
+          toast.error('มีวันหยุดในวันนี้อยู่แล้ว');
+          setLoading(false);
+          return;
+        }
+        
         const holidayData = {
           ...formData,
           date: new Date(formData.date),
@@ -133,6 +147,7 @@ export default function HolidayDialog({
           const startDate = new Date(formData.date);
           const endDate = new Date(formData.endDate);
           const dates: Date[] = [];
+          let duplicateCount = 0;
           
           // สร้าง array ของวันที่ทั้งหมดในช่วง
           const currentDate = new Date(startDate);
@@ -142,19 +157,57 @@ export default function HolidayDialog({
           }
           
           // สร้างวันหยุดสำหรับแต่ละวัน
-          const promises = dates.map(date => {
+          const promises = [];
+          for (const date of dates) {
+            // ตรวจสอบวันหยุดซ้ำ
+            const exists = await checkHolidayExists(
+              date,
+              undefined,
+              formData.type === 'national' ? undefined : formData.branches[0]
+            );
+            
+            if (exists) {
+              duplicateCount++;
+              continue;
+            }
+            
             const holidayData = {
               ...formData,
               date,
               branches: formData.type === 'national' ? [] : formData.branches,
             };
-            return addHoliday(holidayData, user?.uid);
-          });
+            promises.push(addHoliday(holidayData, user?.uid));
+          }
           
-          await Promise.all(promises);
-          toast.success(`เพิ่มวันหยุด ${dates.length} วันเรียบร้อยแล้ว`);
+          if (promises.length > 0) {
+            await Promise.all(promises);
+            
+            if (duplicateCount > 0) {
+              toast.success(
+                `เพิ่มวันหยุด ${promises.length} วันเรียบร้อยแล้ว (มี ${duplicateCount} วันที่ซ้ำ)`,
+                { duration: 5000 }
+              );
+            } else {
+              toast.success(`เพิ่มวันหยุด ${dates.length} วันเรียบร้อยแล้ว`);
+            }
+          } else {
+            toast.error('วันหยุดทั้งหมดมีอยู่แล้ว');
+          }
         } else {
-          // สร้างวันหยุดวันเดียว (แก้ไขใหม่)
+          // สร้างวันหยุดวันเดียว
+          // ตรวจสอบวันหยุดซ้ำ
+          const exists = await checkHolidayExists(
+            new Date(formData.date),
+            undefined,
+            formData.type === 'national' ? undefined : formData.branches[0]
+          );
+          
+          if (exists) {
+            toast.error('มีวันหยุดในวันนี้อยู่แล้ว');
+            setLoading(false);
+            return;
+          }
+          
           const holidayData = {
             ...formData,
             date: new Date(formData.date),

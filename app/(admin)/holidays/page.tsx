@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { Holiday, Branch } from '@/types/models';
-import { getHolidays, addHoliday, updateHoliday, deleteHoliday } from '@/lib/services/holidays';
+import { getHolidays, deleteHoliday, deleteAllHolidays } from '@/lib/services/holidays';
 import { getActiveBranches } from '@/lib/services/branches';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Plus, Calendar, Edit, Trash2, Building } from 'lucide-react';
+import { Plus, Calendar, Edit, Trash2, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from "@/components/ui/badge";
 import { formatDate } from '@/lib/utils';
@@ -97,6 +97,17 @@ export default function HolidaysPage() {
     }
   };
 
+  const handleDeleteAllHolidays = async () => {
+    try {
+      const count = await deleteAllHolidays(selectedYear);
+      toast.success(`ลบวันหยุดทั้งหมด ${count} วันเรียบร้อยแล้ว`);
+      loadData();
+    } catch (error) {
+      console.error('Error deleting all holidays:', error);
+      toast.error('ไม่สามารถลบวันหยุดทั้งหมดได้');
+    }
+  };
+
   const handleHolidaySaved = () => {
     loadData();
     setDialogOpen(false);
@@ -140,13 +151,60 @@ export default function HolidaysPage() {
           <h1 className="text-3xl font-bold text-gray-900">จัดการวันหยุด</h1>
           <p className="text-gray-600 mt-2">กำหนดวันหยุดประจำปีและวันหยุดพิเศษของแต่ละสาขา</p>
         </div>
-        <Button 
-          onClick={handleAddHoliday}
-          className="bg-red-500 hover:bg-red-600"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          เพิ่มวันหยุด
-        </Button>
+        <div className="flex gap-2">
+          {filteredHolidays.length > 0 && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive">
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  ลบทั้งหมด
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <div className="flex items-center gap-3">
+                    <div className="p-3 bg-red-100 rounded-full">
+                      <AlertTriangle className="h-6 w-6 text-red-600" />
+                    </div>
+                    <AlertDialogTitle className="text-xl">
+                      ยืนยันการลบวันหยุดทั้งหมด
+                    </AlertDialogTitle>
+                  </div>
+                  <AlertDialogDescription className="mt-4">
+                    <div className="space-y-2">
+                      <p>คุณแน่ใจหรือไม่ที่จะลบวันหยุดทั้งหมดในปี {selectedYear}?</p>
+                      <p className="font-medium text-red-600">
+                        จะลบวันหยุด {filteredHolidays.length} วัน
+                      </p>
+                      <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mt-4">
+                        <p className="text-sm text-amber-800">
+                          <strong>คำเตือน:</strong> การลบวันหยุดที่มีคลาสเรียนถูกเลื่อนไว้ 
+                          อาจทำให้ต้องจัดตารางเรียนใหม่
+                        </p>
+                      </div>
+                    </div>
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+                  <AlertDialogAction 
+                    onClick={handleDeleteAllHolidays}
+                    className="bg-red-500 hover:bg-red-600"
+                  >
+                    ยืนยันลบทั้งหมด
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+          <Button 
+            onClick={handleAddHoliday}
+            className="bg-red-500 hover:bg-red-600"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            เพิ่มวันหยุด
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -329,7 +387,7 @@ export default function HolidaysPage() {
                                     <AlertDialogHeader>
                                       <AlertDialogTitle>ยืนยันการลบวันหยุด</AlertDialogTitle>
                                       <AlertDialogDescription>
-                                        คุณแน่ใจหรือไม่ที่จะลบวันหยุด "{holiday.name}"?
+                                        คุณแน่ใจหรือไม่ที่จะลบวันหยุด &quot;{holiday.name}&quot;?
                                       </AlertDialogDescription>
                                     </AlertDialogHeader>
                                     <AlertDialogFooter>

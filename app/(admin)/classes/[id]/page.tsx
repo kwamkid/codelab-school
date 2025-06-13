@@ -1,7 +1,6 @@
 'use client';
 
-import { useState } from 'react';
-import { useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Class, Branch, Subject, Teacher, Room, ClassSchedule } from '@/types/models';
 import { getClass, getClassSchedules, updateClass } from '@/lib/services/classes';
@@ -17,9 +16,7 @@ import {
   Edit, 
   Trash2, 
   Calendar, 
-  Clock, 
   Users, 
-  MapPin,
   DollarSign,
   AlertCircle,
   History
@@ -83,6 +80,7 @@ export default function ClassDetailPage() {
     if (classId) {
       loadClassDetails();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [classId]);
 
   const loadClassDetails = async () => {
@@ -199,7 +197,7 @@ export default function ClassDetailPage() {
                 <AlertDialogHeader>
                   <AlertDialogTitle>ยืนยันการลบคลาส</AlertDialogTitle>
                   <AlertDialogDescription>
-                    คุณแน่ใจหรือไม่ที่จะลบคลาส "{classData.name}"? 
+                    คุณแน่ใจหรือไม่ที่จะลบคลาส &quot;{classData.name}&quot;? 
                     การกระทำนี้ไม่สามารถยกเลิกได้
                   </AlertDialogDescription>
                 </AlertDialogHeader>
@@ -225,7 +223,7 @@ export default function ClassDetailPage() {
                 <AlertDialogHeader>
                   <AlertDialogTitle>ยืนยันการยกเลิกคลาส</AlertDialogTitle>
                   <AlertDialogDescription>
-                    คุณแน่ใจหรือไม่ที่จะยกเลิกคลาส "{classData.name}"? 
+                    คุณแน่ใจหรือไม่ที่จะยกเลิกคลาส &quot;{classData.name}&quot;? 
                     {classData.enrolledCount > 0 && (
                       <span className="block mt-2 text-red-600">
                         คลาสนี้มีนักเรียน {classData.enrolledCount} คน

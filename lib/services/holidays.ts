@@ -92,7 +92,7 @@ export async function getHolidaysInRange(
   }
 }
 
-// Add new holiday (แก้ไขใหม่)
+// Add new holiday
 export async function addHoliday(
   holidayData: Omit<Holiday, 'id'>,
   userId?: string
@@ -149,7 +149,7 @@ export async function updateHoliday(
   }
 }
 
-// Delete holiday (แก้ไขใหม่)
+// Delete holiday
 export async function deleteHoliday(id: string): Promise<number> {
   try {
     // ดึงข้อมูล holiday ก่อนลบ
@@ -183,6 +183,34 @@ export async function deleteHoliday(id: string): Promise<number> {
   }
 }
 
+// Delete all holidays for a specific year
+export async function deleteAllHolidays(year: number): Promise<number> {
+  try {
+    const startOfYear = new Date(year, 0, 1);
+    const endOfYear = new Date(year, 11, 31, 23, 59, 59);
+    
+    const q = query(
+      collection(db, COLLECTION_NAME),
+      where('date', '>=', Timestamp.fromDate(startOfYear)),
+      where('date', '<=', Timestamp.fromDate(endOfYear))
+    );
+    
+    const querySnapshot = await getDocs(q);
+    let deletedCount = 0;
+    
+    // Delete each holiday
+    for (const doc of querySnapshot.docs) {
+      await deleteDoc(doc.ref);
+      deletedCount++;
+    }
+    
+    return deletedCount;
+  } catch (error) {
+    console.error('Error deleting all holidays:', error);
+    throw error;
+  }
+}
+
 // Create recurring holidays for future years
 async function createRecurringHolidays(
   holidayData: Omit<Holiday, 'id'>,
@@ -211,8 +239,13 @@ async function createRecurringHolidays(
   }
 }
 
-// Check if holiday exists
-async function checkHolidayExists(date: Date, name: string): Promise<boolean> {
+// Check if holiday exists (Updated version with more options)
+export async function checkHolidayExists(
+  date: Date, 
+  name?: string,
+  branchId?: string,
+  excludeId?: string
+): Promise<boolean> {
   try {
     const startOfDay = new Date(date);
     startOfDay.setHours(0, 0, 0, 0);
@@ -223,12 +256,34 @@ async function checkHolidayExists(date: Date, name: string): Promise<boolean> {
     const q = query(
       collection(db, COLLECTION_NAME),
       where('date', '>=', Timestamp.fromDate(startOfDay)),
-      where('date', '<=', Timestamp.fromDate(endOfDay)),
-      where('name', '==', name)
+      where('date', '<=', Timestamp.fromDate(endOfDay))
     );
     
     const querySnapshot = await getDocs(q);
-    return !querySnapshot.empty;
+    
+    // Filter results
+    const holidays = querySnapshot.docs.filter(doc => {
+      // Exclude current holiday if editing
+      if (excludeId && doc.id === excludeId) return false;
+      
+      const holiday = doc.data() as Holiday;
+      
+      // If name is provided, check for exact name match
+      if (name && holiday.name === name) return true;
+      
+      // Check if it's the same branch or national holiday
+      if (!branchId) {
+        // If no branch specified, check for any holiday on this date
+        return true;
+      }
+      
+      if (holiday.type === 'national') return true;
+      if (holiday.branches?.includes(branchId)) return true;
+      
+      return false;
+    });
+    
+    return holidays.length > 0;
   } catch (error) {
     console.error('Error checking holiday exists:', error);
     return false;
