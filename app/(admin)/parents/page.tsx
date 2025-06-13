@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Parent, Branch } from '@/types/models';
+import type { Parent } from '@/types/models';
 import { getParents, getStudentsByParent } from '@/lib/services/parents';
 import { getActiveBranches } from '@/lib/services/branches';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
