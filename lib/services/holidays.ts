@@ -92,8 +92,11 @@ export async function getHolidaysInRange(
   }
 }
 
-// Add new holiday
-export async function addHoliday(holidayData: Omit<Holiday, 'id'>): Promise<string> {
+// Add new holiday (แก้ไขใหม่)
+export async function addHoliday(
+  holidayData: Omit<Holiday, 'id'>,
+  userId?: string
+): Promise<{ id: string; rescheduledCount: number }> {
   try {
     const docRef = await addDoc(collection(db, COLLECTION_NAME), {
       ...holidayData,
@@ -105,7 +108,18 @@ export async function addHoliday(holidayData: Omit<Holiday, 'id'>): Promise<stri
       await createRecurringHolidays(holidayData, docRef.id);
     }
     
-    return docRef.id;
+    // ตรวจสอบและ reschedule คลาสที่ได้รับผลกระทบ
+    let rescheduledCount = 0;
+    if (holidayData.isSchoolClosed && userId) {
+      const { rescheduleClassesForHoliday } = await import('./reschedule');
+      const holiday: Holiday = {
+        id: docRef.id,
+        ...holidayData
+      };
+      rescheduledCount = await rescheduleClassesForHoliday(holiday, userId);
+    }
+    
+    return { id: docRef.id, rescheduledCount };
   } catch (error) {
     console.error('Error adding holiday:', error);
     throw error;
@@ -135,10 +149,34 @@ export async function updateHoliday(
   }
 }
 
-// Delete holiday
-export async function deleteHoliday(id: string): Promise<void> {
+// Delete holiday (แก้ไขใหม่)
+export async function deleteHoliday(id: string): Promise<number> {
   try {
-    await deleteDoc(doc(db, COLLECTION_NAME, id));
+    // ดึงข้อมูล holiday ก่อนลบ
+    const docRef = doc(db, COLLECTION_NAME, id);
+    const docSnap = await getDoc(docRef);
+    
+    if (!docSnap.exists()) {
+      throw new Error('Holiday not found');
+    }
+    
+    const holiday = {
+      id: docSnap.id,
+      ...docSnap.data(),
+      date: docSnap.data().date?.toDate() || new Date(),
+    } as Holiday;
+    
+    // ถ้าเป็นวันหยุดที่ปิดโรงเรียน ให้ revert การ reschedule
+    let revertedCount = 0;
+    if (holiday.isSchoolClosed) {
+      const { revertRescheduleForDeletedHoliday } = await import('./reschedule');
+      revertedCount = await revertRescheduleForDeletedHoliday(holiday);
+    }
+    
+    // ลบวันหยุด
+    await deleteDoc(docRef);
+    
+    return revertedCount;
   } catch (error) {
     console.error('Error deleting holiday:', error);
     throw error;

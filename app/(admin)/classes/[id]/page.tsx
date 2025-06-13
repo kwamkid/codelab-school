@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Class, Branch, Subject, Teacher, Room, ClassSchedule } from '@/types/models';
 import { getClass, getClassSchedules, updateClass } from '@/lib/services/classes';
@@ -20,7 +21,8 @@ import {
   Users, 
   MapPin,
   DollarSign,
-  AlertCircle
+  AlertCircle,
+  History
 } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
@@ -44,6 +46,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import RescheduleHistoryDialog from '@/components/classes/reschedule-history-dialog';
 
 const statusColors = {
   'draft': 'bg-gray-100 text-gray-700',
@@ -74,6 +77,7 @@ export default function ClassDetailPage() {
   const [schedules, setSchedules] = useState<ClassSchedule[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
+  const [showRescheduleHistory, setShowRescheduleHistory] = useState(false);
 
   useEffect(() => {
     if (classId) {
@@ -343,7 +347,19 @@ export default function ClassDetailPage() {
 
               {/* Sessions List */}
               <div className="mt-6">
-                <h4 className="font-medium mb-3">รายละเอียดแต่ละครั้ง</h4>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="font-medium">รายละเอียดแต่ละครั้ง</h4>
+                  {schedules.some(s => s.status === 'rescheduled') && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowRescheduleHistory(true)}
+                    >
+                      <History className="h-4 w-4 mr-2" />
+                      ดูประวัติการเลื่อน
+                    </Button>
+                  )}
+                </div>
                 <div className="max-h-64 overflow-y-auto">
                   <Table>
                     <TableHeader>
@@ -358,16 +374,30 @@ export default function ClassDetailPage() {
                       {schedules.map((schedule) => (
                         <TableRow key={schedule.id}>
                           <TableCell className="text-center">{schedule.sessionNumber}</TableCell>
-                          <TableCell>{formatDate(schedule.sessionDate, 'long')}</TableCell>
+                          <TableCell>
+                            {formatDate(schedule.sessionDate, 'long')}
+                            {schedule.originalDate && (
+                              <span className="block text-xs text-gray-500">
+                                (เลื่อนจาก {formatDate(schedule.originalDate, 'short')})
+                              </span>
+                            )}
+                          </TableCell>
                           <TableCell>{classData.startTime} - {classData.endTime}</TableCell>
                           <TableCell>
                             <Badge 
-                              variant={schedule.status === 'completed' ? 'secondary' : 'outline'}
-                              className="text-xs"
+                              variant={
+                                schedule.status === 'completed' ? 'secondary' : 
+                                schedule.status === 'rescheduled' ? 'default' :
+                                'outline'
+                              }
+                              className={
+                                schedule.status === 'rescheduled' ? 'bg-orange-100 text-orange-700' : ''
+                              }
                             >
                               {schedule.status === 'scheduled' && 'รอเรียน'}
                               {schedule.status === 'completed' && 'เรียนแล้ว'}
                               {schedule.status === 'cancelled' && 'ยกเลิก'}
+                              {schedule.status === 'rescheduled' && 'เลื่อนแล้ว'}
                             </Badge>
                           </TableCell>
                         </TableRow>
@@ -398,14 +428,14 @@ export default function ClassDetailPage() {
                 </p>
               </div>
               
-              {classData.pricing.materialFee > 0 && (
+              {classData.pricing.materialFee && classData.pricing.materialFee > 0 && (
                 <div>
                   <p className="text-sm text-gray-500">ค่าอุปกรณ์</p>
                   <p className="font-medium">{formatCurrency(classData.pricing.materialFee)}</p>
                 </div>
               )}
               
-              {classData.pricing.registrationFee > 0 && (
+              {classData.pricing.registrationFee && classData.pricing.registrationFee > 0 && (
                 <div>
                   <p className="text-sm text-gray-500">ค่าลงทะเบียน</p>
                   <p className="font-medium">{formatCurrency(classData.pricing.registrationFee)}</p>
@@ -463,6 +493,16 @@ export default function ClassDetailPage() {
           </Card>
         </div>
       </div>
+
+      {/* Reschedule History Dialog */}
+      {classData && (
+        <RescheduleHistoryDialog
+          open={showRescheduleHistory}
+          onOpenChange={setShowRescheduleHistory}
+          classId={classId}
+          className={classData.name}
+        />
+      )}
     </div>
   );
 }

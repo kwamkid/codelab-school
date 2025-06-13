@@ -132,7 +132,7 @@ export interface ClassSchedule {
   sessionDate: Date;
   sessionNumber: number;
   topic?: string;
-  status: 'scheduled' | 'completed' | 'cancelled';
+  status: 'scheduled' | 'completed' | 'cancelled' | 'rescheduled';
   actualTeacherId?: string;
   note?: string;
   attendance?: {
@@ -140,6 +140,9 @@ export interface ClassSchedule {
     status: 'present' | 'absent' | 'late';
     note?: string;
   }[];
+  originalDate?: Date; // เก็บวันเดิมกรณี reschedule
+  rescheduledAt?: Date; // วันที่ทำการ reschedule
+  rescheduledBy?: string; // ใครเป็นคน reschedule
 }
 
 // Enrollment & Payment Types

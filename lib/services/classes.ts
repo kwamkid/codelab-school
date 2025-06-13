@@ -229,7 +229,7 @@ async function generateScheduleDates(
   return schedules;
 }
 
-// Get class schedules
+// Get class schedules (แก้ไขใหม่)
 export async function getClassSchedules(classId: string): Promise<ClassSchedule[]> {
   try {
     const schedulesRef = collection(db, COLLECTION_NAME, classId, 'schedules');
@@ -240,6 +240,8 @@ export async function getClassSchedules(classId: string): Promise<ClassSchedule[
       id: doc.id,
       ...doc.data(),
       sessionDate: doc.data().sessionDate?.toDate() || new Date(),
+      originalDate: doc.data().originalDate?.toDate(),
+      rescheduledAt: doc.data().rescheduledAt?.toDate(),
     } as ClassSchedule));
   } catch (error) {
     console.error('Error getting class schedules:', error);
@@ -247,7 +249,7 @@ export async function getClassSchedules(classId: string): Promise<ClassSchedule[
   }
 }
 
-// Update class schedule
+// Update class schedule (แก้ไขใหม่)
 export async function updateClassSchedule(
   classId: string,
   scheduleId: string,
@@ -263,10 +265,20 @@ export async function updateClassSchedule(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     delete (dataToUpdate as any).classId;
     
-    // Convert date to Firestore timestamp
+    // Convert dates to Firestore timestamp
     if (dataToUpdate.sessionDate instanceof Date) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (dataToUpdate as any).sessionDate = Timestamp.fromDate(dataToUpdate.sessionDate);
+    }
+    
+    if (dataToUpdate.originalDate instanceof Date) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (dataToUpdate as any).originalDate = Timestamp.fromDate(dataToUpdate.originalDate);
+    }
+    
+    if (dataToUpdate.rescheduledAt instanceof Date) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (dataToUpdate as any).rescheduledAt = Timestamp.fromDate(dataToUpdate.rescheduledAt);
     }
     
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

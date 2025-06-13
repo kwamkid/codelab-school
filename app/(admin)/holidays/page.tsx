@@ -79,8 +79,17 @@ export default function HolidaysPage() {
 
   const handleDeleteHoliday = async (id: string) => {
     try {
-      await deleteHoliday(id);
-      toast.success('ลบวันหยุดเรียบร้อยแล้ว');
+      const revertedCount = await deleteHoliday(id);
+      
+      if (revertedCount > 0) {
+        toast.success(
+          `ลบวันหยุดเรียบร้อยแล้ว และได้คืนตารางเรียน ${revertedCount} คลาสกลับวันเดิม`,
+          { duration: 5000 }
+        );
+      } else {
+        toast.success('ลบวันหยุดเรียบร้อยแล้ว');
+      }
+      
       loadData();
     } catch (error) {
       console.error('Error deleting holiday:', error);

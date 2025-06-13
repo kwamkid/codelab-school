@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Holiday, Branch } from '@/types/models';
 import { addHoliday, updateHoliday } from '@/lib/services/holidays';
+import { useAuth } from '@/hooks/useAuth';
 import {
   Dialog,
   DialogContent,
@@ -42,6 +43,7 @@ export default function HolidayDialog({
   branches,
   onSaved
 }: HolidayDialogProps) {
+  const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [isDateRange, setIsDateRange] = useState(false);
   const [formData, setFormData] = useState({
@@ -146,21 +148,29 @@ export default function HolidayDialog({
               date,
               branches: formData.type === 'national' ? [] : formData.branches,
             };
-            return addHoliday(holidayData);
+            return addHoliday(holidayData, user?.uid);
           });
           
           await Promise.all(promises);
           toast.success(`เพิ่มวันหยุด ${dates.length} วันเรียบร้อยแล้ว`);
         } else {
-          // สร้างวันหยุดวันเดียว
+          // สร้างวันหยุดวันเดียว (แก้ไขใหม่)
           const holidayData = {
             ...formData,
             date: new Date(formData.date),
             branches: formData.type === 'national' ? [] : formData.branches,
           };
           
-          await addHoliday(holidayData);
-          toast.success('เพิ่มวันหยุดเรียบร้อยแล้ว');
+          const result = await addHoliday(holidayData, user?.uid);
+          
+          if (result.rescheduledCount > 0) {
+            toast.success(
+              `เพิ่มวันหยุดเรียบร้อยแล้ว และได้เลื่อนตารางเรียน ${result.rescheduledCount} คลาส`,
+              { duration: 5000 }
+            );
+          } else {
+            toast.success('เพิ่มวันหยุดเรียบร้อยแล้ว');
+          }
         }
       }
 
