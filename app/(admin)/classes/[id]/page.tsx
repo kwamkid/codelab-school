@@ -343,7 +343,7 @@ export default function ClassDetailPage() {
                 </div>
               </div>
 
-              {/* Sessions List */}
+             {/* Sessions List */}
               <div className="mt-6">
                 <div className="flex items-center justify-between mb-3">
                   <h4 className="font-medium">รายละเอียดแต่ละครั้ง</h4>
@@ -369,37 +369,55 @@ export default function ClassDetailPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {schedules.map((schedule) => (
-                        <TableRow key={schedule.id}>
-                          <TableCell className="text-center">{schedule.sessionNumber}</TableCell>
-                          <TableCell>
-                            {formatDate(schedule.sessionDate, 'long')}
-                            {schedule.originalDate && (
-                              <span className="block text-xs text-gray-500">
-                                (เลื่อนจาก {formatDate(schedule.originalDate, 'short')})
-                              </span>
-                            )}
-                          </TableCell>
-                          <TableCell>{classData.startTime} - {classData.endTime}</TableCell>
-                          <TableCell>
-                            <Badge 
-                              variant={
-                                schedule.status === 'completed' ? 'secondary' : 
-                                schedule.status === 'rescheduled' ? 'default' :
-                                'outline'
-                              }
-                              className={
-                                schedule.status === 'rescheduled' ? 'bg-orange-100 text-orange-700' : ''
-                              }
-                            >
-                              {schedule.status === 'scheduled' && 'รอเรียน'}
-                              {schedule.status === 'completed' && 'เรียนแล้ว'}
-                              {schedule.status === 'cancelled' && 'ยกเลิก'}
-                              {schedule.status === 'rescheduled' && 'เลื่อนแล้ว'}
-                            </Badge>
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                      {schedules
+                        .sort((a, b) => new Date(a.sessionDate).getTime() - new Date(b.sessionDate).getTime())
+                        .map((schedule, index) => {
+                          const isPast = new Date(schedule.sessionDate) < new Date();
+                          const today = new Date();
+                          today.setHours(0, 0, 0, 0);
+                          const scheduleDate = new Date(schedule.sessionDate);
+                          scheduleDate.setHours(0, 0, 0, 0);
+                          const isToday = scheduleDate.getTime() === today.getTime();
+                          
+                          return (
+                            <TableRow key={schedule.id}>
+                              <TableCell className="text-center">{index + 1}</TableCell>
+                              <TableCell>
+                                {formatDate(schedule.sessionDate, 'long')}
+                                {schedule.originalDate && (
+                                  <span className="block text-xs text-gray-500">
+                                    (เลื่อนจาก {formatDate(schedule.originalDate, 'short')})
+                                  </span>
+                                )}
+                              </TableCell>
+                              <TableCell>{classData.startTime} - {classData.endTime}</TableCell>
+                              <TableCell>
+                                {schedule.status === 'completed' && (
+                                  <Badge className="bg-green-100 text-green-700">เรียนแล้ว</Badge>
+                                )}
+                                {schedule.status === 'cancelled' && (
+                                  <Badge variant="destructive">ยกเลิก</Badge>
+                                )}
+                                {schedule.status === 'rescheduled' && (
+                                  <Badge className="bg-orange-100 text-orange-700">เลื่อนแล้ว</Badge>
+                                )}
+                                {schedule.status === 'scheduled' && (
+                                  <>
+                                    {isToday && (
+                                      <Badge className="bg-blue-100 text-blue-700">วันนี้</Badge>
+                                    )}
+                                    {!isToday && isPast && (
+                                      <Badge className="bg-gray-100 text-gray-700">รอบันทึกผล</Badge>
+                                    )}
+                                    {!isToday && !isPast && (
+                                      <Badge variant="outline">รอเรียน</Badge>
+                                    )}
+                                  </>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
                     </TableBody>
                   </Table>
                 </div>

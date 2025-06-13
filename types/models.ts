@@ -1,10 +1,10 @@
 // User Types
 export interface Parent {
   id: string;
-  lineUserId: string;
+  lineUserId?: string;
   displayName: string;
   pictureUrl?: string;
-  phone?: string;
+  phone: string;
   email?: string;
   preferredBranchId?: string;
   createdAt: Date;

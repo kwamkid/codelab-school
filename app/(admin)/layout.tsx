@@ -23,7 +23,8 @@ import { useState } from 'react';
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'สาขา', href: '/branches', icon: Building2 },
-  { name: 'นักเรียน', href: '/students', icon: Users },
+  { name: 'ผู้ปกครอง', href: '/parents', icon: Users },
+  { name: 'นักเรียน', href: '/students', icon: GraduationCap },
   { name: 'คลาสเรียน', href: '/classes', icon: Calendar },
   { name: 'วิชา', href: '/subjects', icon: GraduationCap },
   { name: 'ครูผู้สอน', href: '/teachers', icon: UserCheck },
