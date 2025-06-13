@@ -6,7 +6,7 @@ import { getHolidays, deleteHoliday, deleteAllHolidays } from '@/lib/services/ho
 import { getActiveBranches } from '@/lib/services/branches';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Plus, Calendar, Edit, Trash2, AlertTriangle } from 'lucide-react';
+import { Plus, Calendar, Edit, Trash2, AlertTriangle, RefreshCw, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from "@/components/ui/badge";
 import { formatDate } from '@/lib/utils';
@@ -46,6 +46,13 @@ export default function HolidaysPage() {
   const [selectedBranch, setSelectedBranch] = useState<string>('all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedHoliday, setSelectedHoliday] = useState<Holiday | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [holidayToDelete, setHolidayToDelete] = useState<Holiday | null>(null);
+  const [affectedClasses, setAffectedClasses] = useState<{ className: string; sessionDate: Date }[]>([]);
+  const [checkingAffected, setCheckingAffected] = useState(false);
+  const [rescheduleDialogOpen, setRescheduleDialogOpen] = useState(false);
+  const [holidayToReschedule, setHolidayToReschedule] = useState<Holiday | null>(null);
+  const [rescheduling, setRescheduling] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -77,23 +84,78 @@ export default function HolidaysPage() {
     setDialogOpen(true);
   };
 
-  const handleDeleteHoliday = async (id: string) => {
+  const handleDeleteHoliday = async (holiday: Holiday) => {
+    setHolidayToDelete(holiday);
+    setCheckingAffected(true);
+    
     try {
-      const revertedCount = await deleteHoliday(id);
+      const { getClassesOnHoliday } = await import('@/lib/services/reschedule');
+      const affected = await getClassesOnHoliday(holiday);
+      setAffectedClasses(affected);
+    } catch (error) {
+      console.error('Error checking affected classes:', error);
+      setAffectedClasses([]);
+    } finally {
+      setCheckingAffected(false);
+    }
+    
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDeleteHoliday = async () => {
+    if (!holidayToDelete) return;
+    
+    try {
+      const result = await deleteHoliday(holidayToDelete.id);
       
-      if (revertedCount > 0) {
+      if (result.affectedClasses.length > 0) {
         toast.success(
-          `ลบวันหยุดเรียบร้อยแล้ว และได้คืนตารางเรียน ${revertedCount} คลาสกลับวันเดิม`,
+          `ลบวันหยุดเรียบร้อยแล้ว (มี ${result.affectedClasses.length} คลาสที่ควรจะเรียนในวันนี้)`,
           { duration: 5000 }
         );
       } else {
         toast.success('ลบวันหยุดเรียบร้อยแล้ว');
       }
       
+      setDeleteDialogOpen(false);
+      setHolidayToDelete(null);
+      setAffectedClasses([]);
       loadData();
     } catch (error) {
       console.error('Error deleting holiday:', error);
       toast.error('ไม่สามารถลบวันหยุดได้');
+    }
+  };
+
+  const handleRescheduleClasses = async (holiday: Holiday) => {
+    setHolidayToReschedule(holiday);
+    setRescheduleDialogOpen(true);
+  };
+
+  const confirmRescheduleClasses = async () => {
+    if (!holidayToReschedule) return;
+    
+    setRescheduling(true);
+    try {
+      const { rescheduleClassesForDeletedHoliday } = await import('@/lib/services/holidays');
+      const result = await rescheduleClassesForDeletedHoliday(holidayToReschedule.id);
+      
+      if (result.rescheduledCount > 0) {
+        toast.success(
+          `จัดตารางเรียนใหม่เรียบร้อยแล้ว เพิ่ม ${result.rescheduledCount} คลาสในวันที่ ${formatDate(holidayToReschedule.date, 'long')}`,
+          { duration: 5000 }
+        );
+      } else {
+        toast.info('ไม่มีคลาสที่ต้องจัดตารางใหม่');
+      }
+      
+      setRescheduleDialogOpen(false);
+      setHolidayToReschedule(null);
+    } catch (error) {
+      console.error('Error rescheduling classes:', error);
+      toast.error('ไม่สามารถจัดตารางเรียนใหม่ได้');
+    } finally {
+      setRescheduling(false);
     }
   };
 
@@ -231,7 +293,7 @@ export default function HolidaysPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">ทั้งหมด</SelectItem>
-            <SelectItem value="national">วันหยุดนักขัตฤกษ์</SelectItem>
+            <SelectItem value="national">วันหยุดทุกสาขา</SelectItem>
             {branches.map(branch => (
               <SelectItem key={branch.id} value={branch.id}>
                 {branch.name}
@@ -242,7 +304,7 @@ export default function HolidaysPage() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">วันหยุดทั้งหมด</CardTitle>
@@ -254,7 +316,7 @@ export default function HolidaysPage() {
         
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">วันหยุดนักขัตฤกษ์</CardTitle>
+            <CardTitle className="text-sm font-medium">วันหยุดทุกสาขา</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-blue-600">
@@ -265,22 +327,11 @@ export default function HolidaysPage() {
         
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">วันหยุดสาขา</CardTitle>
+            <CardTitle className="text-sm font-medium">วันหยุดประจำสาขา</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-600">
               {filteredHolidays.filter(h => h.type === 'branch').length}
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">วันหยุดพิเศษ</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-orange-600">
-              {filteredHolidays.filter(h => h.type === 'special').length}
             </div>
           </CardContent>
         </Card>
@@ -322,7 +373,6 @@ export default function HolidaysPage() {
                         <TableHead>ชื่อวันหยุด</TableHead>
                         <TableHead>ประเภท</TableHead>
                         <TableHead>สาขาที่หยุด</TableHead>
-                        <TableHead className="text-center">ปิดโรงเรียน</TableHead>
                         <TableHead className="text-right">จัดการ</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -338,11 +388,9 @@ export default function HolidaysPage() {
                             <TableCell>
                               <Badge className={
                                 holiday.type === 'national' ? 'bg-blue-100 text-blue-700' :
-                                holiday.type === 'branch' ? 'bg-green-100 text-green-700' :
-                                'bg-orange-100 text-orange-700'
+                                'bg-green-100 text-green-700'
                               }>
-                                {holiday.type === 'national' ? 'นักขัตฤกษ์' :
-                                 holiday.type === 'branch' ? 'วันหยุดสาขา' : 'วันหยุดพิเศษ'}
+                                {holiday.type === 'national' ? 'ทุกสาขา' : 'ประจำสาขา'}
                               </Badge>
                             </TableCell>
                             <TableCell>
@@ -361,13 +409,6 @@ export default function HolidaysPage() {
                                 </div>
                               )}
                             </TableCell>
-                            <TableCell className="text-center">
-                              {holiday.isSchoolClosed ? (
-                                <Badge className="bg-red-100 text-red-700">ปิด</Badge>
-                              ) : (
-                                <Badge className="bg-gray-100 text-gray-700">เปิด</Badge>
-                              )}
-                            </TableCell>
                             <TableCell className="text-right">
                               <div className="flex justify-end gap-2">
                                 <Button
@@ -377,30 +418,21 @@ export default function HolidaysPage() {
                                 >
                                   <Edit className="h-4 w-4" />
                                 </Button>
-                                <AlertDialog>
-                                  <AlertDialogTrigger asChild>
-                                    <Button variant="ghost" size="sm">
-                                      <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                  </AlertDialogTrigger>
-                                  <AlertDialogContent>
-                                    <AlertDialogHeader>
-                                      <AlertDialogTitle>ยืนยันการลบวันหยุด</AlertDialogTitle>
-                                      <AlertDialogDescription>
-                                        คุณแน่ใจหรือไม่ที่จะลบวันหยุด &quot;{holiday.name}&quot;?
-                                      </AlertDialogDescription>
-                                    </AlertDialogHeader>
-                                    <AlertDialogFooter>
-                                      <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
-                                      <AlertDialogAction 
-                                        onClick={() => handleDeleteHoliday(holiday.id)}
-                                        className="bg-red-500 hover:bg-red-600"
-                                      >
-                                        ลบ
-                                      </AlertDialogAction>
-                                    </AlertDialogFooter>
-                                  </AlertDialogContent>
-                                </AlertDialog>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleRescheduleClasses(holiday)}
+                                  title="จัดตารางเรียนใหม่"
+                                >
+                                  <RefreshCw className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleDeleteHoliday(holiday)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
                               </div>
                             </TableCell>
                           </TableRow>
@@ -421,6 +453,131 @@ export default function HolidaysPage() {
         branches={branches}
         onSaved={handleHolidaySaved}
       />
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent className="max-w-2xl">
+          <AlertDialogHeader>
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-red-100 rounded-full">
+                <AlertTriangle className="h-6 w-6 text-red-600" />
+              </div>
+              <AlertDialogTitle className="text-xl">
+                ยืนยันการลบวันหยุด
+              </AlertDialogTitle>
+            </div>
+            <AlertDialogDescription className="mt-4">
+              <div className="space-y-3">
+                <p>
+                  คุณกำลังจะลบวันหยุด <strong>&quot;{holidayToDelete?.name}&quot;</strong>
+                  <br />
+                  วันที่ {holidayToDelete && formatDate(holidayToDelete.date, 'long')}
+                </p>
+                
+                {checkingAffected ? (
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 border-2 border-red-500 border-t-transparent rounded-full animate-spin"></div>
+                      <p className="text-sm text-gray-600">กำลังตรวจสอบคลาสที่ได้รับผลกระทบ...</p>
+                    </div>
+                  </div>
+                ) : affectedClasses.length > 0 ? (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                    <div className="flex items-start gap-2">
+                      <Calendar className="h-5 w-5 text-amber-600 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="font-medium text-amber-800">
+                          พบคลาสที่ควรจะเรียนในวันนี้ {affectedClasses.length} คลาส:
+                        </p>
+                        <ul className="mt-2 space-y-1 text-sm text-amber-700">
+                          {affectedClasses.slice(0, 5).map((cls, index) => (
+                            <li key={index}>
+                              • {cls.className}
+                            </li>
+                          ))}
+                          {affectedClasses.length > 5 && (
+                            <li className="text-amber-600">
+                              และอีก {affectedClasses.length - 5} คลาส...
+                            </li>
+                          )}
+                        </ul>
+                        <p className="mt-3 text-sm text-amber-800">
+                          <strong>หมายเหตุ:</strong> หลังจากลบวันหยุดแล้ว คุณสามารถใช้ปุ่ม &quot;จัดตารางใหม่&quot; เพื่อเพิ่มคลาสเหล่านี้กลับเข้าไปในวันที่ลบได้
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                    <p className="text-sm text-green-700">
+                      ✓ ไม่มีคลาสที่ควรจะเรียนในวันนี้
+                    </p>
+                  </div>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+            {!checkingAffected && (
+              <Button
+                onClick={confirmDeleteHoliday}
+                className="bg-red-500 hover:bg-red-600 text-white"
+              >
+                ยืนยันลบ
+              </Button>
+            )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Reschedule Confirmation Dialog */}
+      <AlertDialog open={rescheduleDialogOpen} onOpenChange={setRescheduleDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-blue-100 rounded-full">
+                <RefreshCw className="h-6 w-6 text-blue-600" />
+              </div>
+              <AlertDialogTitle className="text-xl">
+                จัดตารางเรียนใหม่
+              </AlertDialogTitle>
+            </div>
+            <AlertDialogDescription className="mt-4">
+              <div className="space-y-3">
+                <p>
+                  คุณต้องการจัดตารางเรียนใหม่สำหรับวันที่ <strong>{holidayToReschedule && formatDate(holidayToReschedule.date, 'long')}</strong> หรือไม่?
+                </p>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <p className="text-sm text-blue-800">
+                    ระบบจะตรวจสอบและเพิ่มคลาสที่ควรจะเรียนในวันนี้กลับเข้าไปในตารางเรียน
+                  </p>
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={rescheduling}>ยกเลิก</AlertDialogCancel>
+            <Button
+              onClick={confirmRescheduleClasses}
+              className="bg-blue-500 hover:bg-blue-600"
+              disabled={rescheduling}
+            >
+              {rescheduling ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  กำลังจัดตารางใหม่...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  จัดตารางใหม่
+                </>
+              )}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

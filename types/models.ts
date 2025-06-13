@@ -246,17 +246,16 @@ export interface Promotion {
   isActive: boolean;
 }
 
+
 // Holiday Types
 export interface Holiday {
   id: string;
   name: string;
   date: Date;
-  type: 'national' | 'branch' | 'special';
-  isSchoolClosed: boolean;
+  type: 'national' | 'branch';  // ลบ 'special' ออก
   branches?: string[]; // Empty for national holidays, branch IDs for branch-specific
   description?: string;
-  isRecurring?: boolean;
-  recurringFromId?: string; // Reference to original recurring holiday
+  // ลบ isSchoolClosed และ isRecurring ออก
 }
 
 // Room Availability Check Result

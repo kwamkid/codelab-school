@@ -28,7 +28,7 @@ export async function getAffectedClasses(
       const isAffected = holiday.type === 'national' || 
         (holiday.branches?.includes(cls.branchId));
       
-      if (!isAffected || !holiday.isSchoolClosed) continue;
+      if (!isAffected) continue;
       
       // ตรวจสอบว่าวันหยุดตรงกับวันเรียนของคลาสหรือไม่
       const holidayDayOfWeek = holiday.date.getDay();
@@ -168,11 +168,9 @@ async function checkIfHoliday(
     // ตรวจสอบว่ามีวันหยุดที่กระทบ branch นี้หรือไม่
     for (const doc of snapshot.docs) {
       const holiday = doc.data() as Holiday;
-      if (holiday.isSchoolClosed) {
-        if (holiday.type === 'national' || 
-            holiday.branches?.includes(branchId)) {
-          return true;
-        }
+      if (holiday.type === 'national' || 
+          holiday.branches?.includes(branchId)) {
+        return true;
       }
     }
     
@@ -222,79 +220,6 @@ async function extendClassEndDate(
 // ฟังก์ชันสำหรับอัพเดตคลาส (import จาก classes.ts)
 import { updateClass } from './classes';
 
-// Revert การ reschedule เมื่อลบวันหยุด
-export async function revertRescheduleForDeletedHoliday(
-  holiday: Holiday
-): Promise<number> {
-  try {
-    let totalReverted = 0;
-    const affectedClasses = await getAffectedClasses(holiday);
-    
-    for (const { class: cls } of affectedClasses) {
-      // ดึงตารางเรียนทั้งหมดของคลาส
-      const allSchedules = await getClassSchedules(cls.id);
-      
-      // หา schedule ที่ถูก reschedule เพราะวันหยุดนี้
-      const rescheduledSchedules = allSchedules.filter(schedule => 
-        schedule.originalDate && 
-        new Date(schedule.originalDate).toDateString() === holiday.date.toDateString() &&
-        schedule.status === 'rescheduled'
-      );
-      
-      for (const schedule of rescheduledSchedules) {
-        // ตรวจสอบว่าวันเดิมว่างหรือไม่
-        const originalDateAvailable = await checkDateAvailability(
-          cls,
-          schedule.originalDate!
-        );
-        
-        if (originalDateAvailable) {
-          // คืนกลับไปวันเดิม
-          await updateClassSchedule(cls.id, schedule.id, {
-            sessionDate: schedule.originalDate!,
-            status: 'scheduled',
-            originalDate: undefined,
-            rescheduledAt: undefined,
-            rescheduledBy: undefined,
-            note: `คืนกลับวันเดิม เนื่องจากยกเลิกวันหยุด: ${holiday.name}`
-          });
-          
-          totalReverted++;
-        }
-      }
-    }
-    
-    return totalReverted;
-  } catch (error) {
-    console.error('Error reverting reschedule:', error);
-    throw error;
-  }
-}
-
-// ตรวจสอบว่าวันที่นั้นว่างสำหรับคลาสหรือไม่
-async function checkDateAvailability(
-  cls: Class,
-  date: Date
-): Promise<boolean> {
-  try {
-    // ตรวจสอบว่าไม่ใช่วันหยุด
-    const isHolidayDate = await checkIfHoliday(date, cls.branchId);
-    if (isHolidayDate) return false;
-    
-    // ตรวจสอบว่าไม่มีคลาสอื่นในวันนี้
-    const schedules = await getClassSchedules(cls.id);
-    const hasSchedule = schedules.some(s => 
-      new Date(s.sessionDate).toDateString() === date.toDateString() &&
-      s.status !== 'cancelled'
-    );
-    
-    return !hasSchedule;
-  } catch (error) {
-    console.error('Error checking date availability:', error);
-    return false;
-  }
-}
-
 // ดึงประวัติการ reschedule ของคลาส
 export async function getRescheduleHistory(
   classId: string
@@ -307,5 +232,110 @@ export async function getRescheduleHistory(
   } catch (error) {
     console.error('Error getting reschedule history:', error);
     return [];
+  }
+}
+
+// ดึงคลาสที่มีตารางเรียนตรงกับวันหยุด (ไม่ว่าจะเคย reschedule หรือไม่)
+export async function getClassesOnHoliday(
+  holiday: Holiday
+): Promise<{ className: string; sessionDate: Date }[]> {
+  try {
+    const result: { className: string; sessionDate: Date }[] = [];
+    
+    // ดึงคลาสทั้งหมดที่ active
+    const classes = await getClasses();
+    const activeClasses = classes.filter(c => 
+      ['published', 'started'].includes(c.status)
+    );
+    
+    for (const cls of activeClasses) {
+      // ตรวจสอบว่าเป็นวันหยุดที่กระทบคลาสนี้หรือไม่
+      const isAffected = holiday.type === 'national' || 
+        (holiday.branches?.includes(cls.branchId));
+      
+      if (!isAffected) continue;
+      
+      // ตรวจสอบว่าวันหยุดตรงกับวันเรียนของคลาสหรือไม่
+      const holidayDayOfWeek = holiday.date.getDay();
+      if (!cls.daysOfWeek.includes(holidayDayOfWeek)) continue;
+      
+      // ตรวจสอบว่าวันหยุดอยู่ในช่วงของคลาสหรือไม่
+      if (holiday.date < cls.startDate || holiday.date > cls.endDate) continue;
+      
+      // ถ้าผ่านเงื่อนไขทั้งหมด แสดงว่ามีคลาสที่ควรจะเรียนในวันนี้
+      result.push({
+        className: cls.name,
+        sessionDate: holiday.date
+      });
+    }
+    
+    return result;
+  } catch (error) {
+    console.error('Error getting classes on holiday:', error);
+    return [];
+  }
+}
+
+// Reschedule คลาสทั้งหมดสำหรับวันหยุดที่ถูกลบ
+export async function rescheduleClassesForDeletedHoliday(
+  holiday: Holiday
+): Promise<number> {
+  try {
+    let totalScheduled = 0;
+    
+    // ดึงคลาสทั้งหมดที่ active
+    const classes = await getClasses();
+    const activeClasses = classes.filter(c => 
+      ['published', 'started'].includes(c.status)
+    );
+    
+    for (const cls of activeClasses) {
+      // ตรวจสอบว่าเป็นวันหยุดที่กระทบคลาสนี้หรือไม่
+      const isAffected = holiday.type === 'national' || 
+        (holiday.branches?.includes(cls.branchId));
+      
+      if (!isAffected) continue;
+      
+      // ตรวจสอบว่าวันหยุดตรงกับวันเรียนของคลาสหรือไม่
+      const holidayDayOfWeek = holiday.date.getDay();
+      if (!cls.daysOfWeek.includes(holidayDayOfWeek)) continue;
+      
+      // ตรวจสอบว่าวันหยุดอยู่ในช่วงของคลาสหรือไม่
+      if (holiday.date < cls.startDate || holiday.date > cls.endDate) continue;
+      
+      // ตรวจสอบว่ามี schedule ในวันนี้หรือไม่
+      const schedules = await getClassSchedules(cls.id);
+      const hasScheduleOnDate = schedules.some(s => 
+        new Date(s.sessionDate).toDateString() === holiday.date.toDateString()
+      );
+      
+      // ถ้าไม่มี schedule ในวันนี้ (เพราะเคยหลบวันหยุด) ให้สร้างใหม่
+      if (!hasScheduleOnDate) {
+        // หา session number ที่ถูกต้อง
+        const sessionsBefore = schedules.filter(s => 
+          new Date(s.sessionDate) < holiday.date
+        ).length;
+        const sessionNumber = sessionsBefore + 1;
+        
+        // สร้าง schedule ใหม่
+        const { addDoc } = await import('firebase/firestore');
+        const schedulesRef = collection(db, 'classes', cls.id, 'schedules');
+        
+        await addDoc(schedulesRef, {
+          classId: cls.id,
+          sessionDate: Timestamp.fromDate(holiday.date),
+          sessionNumber: sessionNumber,
+          status: 'scheduled',
+          note: `เพิ่มคืนหลังจากลบวันหยุด: ${holiday.name}`
+        });
+        
+        totalScheduled++;
+      }
+    }
+    
+    return totalScheduled;
+  } catch (error) {
+    console.error('Error rescheduling classes for deleted holiday:', error);
+    throw error;
   }
 }

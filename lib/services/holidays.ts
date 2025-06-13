@@ -103,14 +103,9 @@ export async function addHoliday(
       date: Timestamp.fromDate(holidayData.date),
     });
     
-    // If it's a recurring holiday, create for future years
-    if (holidayData.isRecurring) {
-      await createRecurringHolidays(holidayData, docRef.id);
-    }
-    
     // ตรวจสอบและ reschedule คลาสที่ได้รับผลกระทบ
     let rescheduledCount = 0;
-    if (holidayData.isSchoolClosed && userId) {
+    if (userId) {
       const { rescheduleClassesForHoliday } = await import('./reschedule');
       const holiday: Holiday = {
         id: docRef.id,
@@ -150,7 +145,7 @@ export async function updateHoliday(
 }
 
 // Delete holiday
-export async function deleteHoliday(id: string): Promise<number> {
+export async function deleteHoliday(id: string): Promise<{ deletedCount: number; affectedClasses: { className: string; sessionDate: Date }[] }> {
   try {
     // ดึงข้อมูล holiday ก่อนลบ
     const docRef = doc(db, COLLECTION_NAME, id);
@@ -166,17 +161,17 @@ export async function deleteHoliday(id: string): Promise<number> {
       date: docSnap.data().date?.toDate() || new Date(),
     } as Holiday;
     
-    // ถ้าเป็นวันหยุดที่ปิดโรงเรียน ให้ revert การ reschedule
-    let revertedCount = 0;
-    if (holiday.isSchoolClosed) {
-      const { revertRescheduleForDeletedHoliday } = await import('./reschedule');
-      revertedCount = await revertRescheduleForDeletedHoliday(holiday);
-    }
+    // ตรวจสอบคลาสที่ได้รับผลกระทบ
+    const { getClassesOnHoliday } = await import('./reschedule');
+    const affectedClasses = await getClassesOnHoliday(holiday);
     
     // ลบวันหยุด
     await deleteDoc(docRef);
     
-    return revertedCount;
+    return { 
+      deletedCount: 1, 
+      affectedClasses 
+    };
   } catch (error) {
     console.error('Error deleting holiday:', error);
     throw error;
@@ -211,35 +206,7 @@ export async function deleteAllHolidays(year: number): Promise<number> {
   }
 }
 
-// Create recurring holidays for future years
-async function createRecurringHolidays(
-  holidayData: Omit<Holiday, 'id'>,
-  originalId: string
-): Promise<void> {
-  try {
-    const currentYear = new Date().getFullYear();
-    const maxYear = currentYear + 2; // Create for next 2 years
-    
-    for (let year = currentYear + 1; year <= maxYear; year++) {
-      const newDate = new Date(holidayData.date);
-      newDate.setFullYear(year);
-      
-      // Check if holiday already exists for this date
-      const exists = await checkHolidayExists(newDate, holidayData.name);
-      if (!exists) {
-        await addDoc(collection(db, COLLECTION_NAME), {
-          ...holidayData,
-          date: Timestamp.fromDate(newDate),
-          recurringFromId: originalId,
-        });
-      }
-    }
-  } catch (error) {
-    console.error('Error creating recurring holidays:', error);
-  }
-}
-
-// Check if holiday exists (Updated version with more options)
+// Check if holiday exists
 export async function checkHolidayExists(
   date: Date, 
   name?: string,
@@ -304,8 +271,8 @@ export async function isHoliday(
     
     const holidays = await getHolidaysForBranch(branchId, startOfDay, endOfDay);
     
-    // Check if any holiday is school closed
-    return holidays.some(holiday => holiday.isSchoolClosed);
+    // ทุกวันหยุดคือวันปิดโรงเรียน
+    return holidays.length > 0;
   } catch (error) {
     console.error('Error checking if date is holiday:', error);
     return false;
@@ -330,5 +297,35 @@ export async function getHolidaysForCalendar(
   } catch (error) {
     console.error('Error getting holidays for calendar:', error);
     return [];
+  }
+}
+
+// Reschedule classes for a specific holiday
+export async function rescheduleClassesForDeletedHoliday(
+  holidayId: string
+): Promise<{ rescheduledCount: number; error?: string }> {
+  try {
+    // Get holiday data
+    const docRef = doc(db, COLLECTION_NAME, holidayId);
+    const docSnap = await getDoc(docRef);
+    
+    if (!docSnap.exists()) {
+      return { rescheduledCount: 0, error: 'Holiday not found' };
+    }
+    
+    const holiday = {
+      id: docSnap.id,
+      ...docSnap.data(),
+      date: docSnap.data().date?.toDate() || new Date(),
+    } as Holiday;
+    
+    // Import reschedule service
+    const { rescheduleClassesForDeletedHoliday: doReschedule } = await import('./reschedule');
+    const rescheduledCount = await doReschedule(holiday);
+    
+    return { rescheduledCount };
+  } catch (error) {
+    console.error('Error rescheduling classes:', error);
+    return { rescheduledCount: 0, error: 'Failed to reschedule classes' };
   }
 }

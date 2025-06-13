@@ -51,10 +51,8 @@ export default function HolidayDialog({
     date: '',
     endDate: '',
     type: 'national' as Holiday['type'],
-    isSchoolClosed: true,
     branches: [] as string[],
     description: '',
-    isRecurring: false,
   });
 
   useEffect(() => {
@@ -64,10 +62,8 @@ export default function HolidayDialog({
         date: new Date(holiday.date).toISOString().split('T')[0],
         endDate: '',
         type: holiday.type,
-        isSchoolClosed: holiday.isSchoolClosed,
         branches: holiday.branches || [],
         description: holiday.description || '',
-        isRecurring: holiday.isRecurring || false,
       });
       setIsDateRange(false);
     } else {
@@ -77,10 +73,8 @@ export default function HolidayDialog({
         date: '',
         endDate: '',
         type: 'national',
-        isSchoolClosed: true,
         branches: [],
         description: '',
-        isRecurring: false,
       });
       setIsDateRange(false);
     }
@@ -257,7 +251,7 @@ export default function HolidayDialog({
               {holiday ? 'แก้ไขข้อมูลวันหยุด' : 'เพิ่มวันหยุดใหม่'}
             </DialogTitle>
             <DialogDescription>
-              กำหนดวันหยุดสำหรับโรงเรียน
+              กำหนดวันหยุดสำหรับโรงเรียน (ทุกวันหยุดจะปิดทำการ)
             </DialogDescription>
           </DialogHeader>
 
@@ -352,9 +346,8 @@ export default function HolidayDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="national">วันหยุดนักขัตฤกษ์ (ทุกสาขา)</SelectItem>
+                  <SelectItem value="national">วันหยุดทุกสาขา</SelectItem>
                   <SelectItem value="branch">วันหยุดประจำสาขา</SelectItem>
-                  <SelectItem value="special">วันหยุดพิเศษ</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -393,39 +386,6 @@ export default function HolidayDialog({
                 rows={3}
                 disabled={loading}
               />
-            </div>
-
-            <div className="space-y-3">
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="isSchoolClosed"
-                  checked={formData.isSchoolClosed}
-                  onCheckedChange={(checked) => 
-                    setFormData({ ...formData, isSchoolClosed: checked as boolean })
-                  }
-                  disabled={loading}
-                />
-                <Label htmlFor="isSchoolClosed" className="font-normal cursor-pointer">
-                  ปิดโรงเรียน (ไม่มีการเรียนการสอน)
-                </Label>
-              </div>
-
-              {/* วันหยุดประจำทุกปี - ไม่แสดงถ้าเลือกช่วงวันที่ */}
-              {!isDateRange && (
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="isRecurring"
-                    checked={formData.isRecurring}
-                    onCheckedChange={(checked) => 
-                      setFormData({ ...formData, isRecurring: checked as boolean })
-                    }
-                    disabled={loading}
-                  />
-                  <Label htmlFor="isRecurring" className="font-normal cursor-pointer">
-                    วันหยุดประจำทุกปี (ระบบจะสร้างวันหยุดนี้ในปีถัดไปอัตโนมัติ)
-                  </Label>
-                </div>
-              )}
             </div>
           </div>
 

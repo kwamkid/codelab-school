@@ -207,12 +207,11 @@ async function generateScheduleDates(
   
   // Get all holidays for the branch in the date range
   const holidays = await getHolidaysForBranch(branchId, startDate, maxEndDate);
-  
+
   // Create a Set of holiday dates for faster lookup
+  // ทุกวันหยุดคือวันปิดโรงเรียน
   const holidayDates = new Set(
-    holidays
-      .filter(h => h.isSchoolClosed)
-      .map(h => h.date.toDateString())
+    holidays.map(h => h.date.toDateString())
   );
   
   while (schedules.length < totalSessions) {
