@@ -179,8 +179,13 @@ export interface Enrollment {
   };
   transferredFrom?: string;
   droppedReason?: string;
+  transferHistory?: Array<{
+    fromClassId: string;
+    toClassId: string;
+    transferredAt: Date;
+    reason: string;
+  }>;
 }
-
 // Trial & Booking Types
 export interface TrialBooking {
   id: string;

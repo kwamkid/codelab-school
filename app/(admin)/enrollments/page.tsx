@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Enrollment, Parent, Student, Class, Branch } from '@/types/models';
-import { getEnrollments } from '@/lib/services/enrollments';
+import { getEnrollments, deleteEnrollment } from '@/lib/services/enrollments';
 import { getParents } from '@/lib/services/parents';
 import { getClasses } from '@/lib/services/classes';
 import { getBranches } from '@/lib/services/branches';
@@ -20,7 +20,8 @@ import {
   Calendar,
   Eye,
   Edit,
-  XCircle
+  XCircle,
+  Trash2
 } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
@@ -40,6 +41,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 type StudentWithParent = Student & { parentName: string; parentPhone: string };
 
@@ -79,6 +91,7 @@ export default function EnrollmentsPage() {
   const [selectedBranch, setSelectedBranch] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedPaymentStatus, setSelectedPaymentStatus] = useState<string>('all');
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -117,6 +130,21 @@ export default function EnrollmentsPage() {
   const getBranchName = (branchId: string) => {
     const branch = branches.find(b => b.id === branchId);
     return branch?.name || 'Unknown';
+  };
+
+  // Handle delete enrollment
+  const handleDeleteEnrollment = async (enrollmentId: string) => {
+    setDeletingId(enrollmentId);
+    try {
+      await deleteEnrollment(enrollmentId);
+      toast.success('ลบการลงทะเบียนเรียบร้อยแล้ว');
+      loadData(); // Reload data
+    } catch (error) {
+      console.error('Error deleting enrollment:', error);
+      toast.error('ไม่สามารถลบการลงทะเบียนได้');
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   // Filter enrollments
@@ -387,6 +415,35 @@ export default function EnrollmentsPage() {
                                 <Edit className="h-4 w-4" />
                               </Button>
                             </Link>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm"
+                                  disabled={deletingId === enrollment.id}
+                                >
+                                  <Trash2 className="h-4 w-4 text-red-500" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>ยืนยันการลบ</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    คุณแน่ใจหรือไม่ที่จะลบการลงทะเบียนของ {student?.nickname}?
+                                    การกระทำนี้ไม่สามารถย้อนกลับได้
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+                                  <AlertDialogAction 
+                                    onClick={() => handleDeleteEnrollment(enrollment.id)}
+                                    className="bg-red-500 hover:bg-red-600"
+                                  >
+                                    ลบ
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
                           </div>
                         </TableCell>
                       </TableRow>

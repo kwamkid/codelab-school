@@ -354,7 +354,7 @@ export async function checkAvailableSeats(classId: string): Promise<{
   }
 }
 
-// Transfer enrollment to another class
+// Transfer enrollment to another class (Updated Version)
 export async function transferEnrollment(
   enrollmentId: string,
   newClassId: string,
@@ -364,21 +364,29 @@ export async function transferEnrollment(
     const enrollment = await getEnrollment(enrollmentId);
     if (!enrollment) throw new Error('Enrollment not found');
     
-    // Check available seats in new class
-    const availability = await checkAvailableSeats(newClassId);
-    if (!availability.available) {
-      throw new Error('No available seats in the target class');
-    }
+    // ไม่ต้องเช็คที่นั่งว่างเพราะ admin ตัดสินใจได้
     
     // Use batch write for atomic operation
     const batch = writeBatch(db);
     
-    // 1. Update enrollment
+    // 1. Update enrollment - keep status as 'active' and track transfer history
     const enrollmentRef = doc(db, COLLECTION_NAME, enrollmentId);
     batch.update(enrollmentRef, {
       classId: newClassId,
-      transferredFrom: enrollment.classId,
-      status: 'transferred'
+      status: 'active', // Keep as active instead of 'transferred'
+      transferHistory: enrollment.transferHistory 
+        ? [...enrollment.transferHistory, {
+            fromClassId: enrollment.classId,
+            toClassId: newClassId,
+            transferredAt: Timestamp.now(),
+            reason: reason || 'Admin transfer'
+          }]
+        : [{
+            fromClassId: enrollment.classId,
+            toClassId: newClassId,
+            transferredAt: Timestamp.now(),
+            reason: reason || 'Admin transfer'
+          }]
     });
     
     // 2. Decrease old class enrolled count
@@ -397,6 +405,123 @@ export async function transferEnrollment(
     await batch.commit();
   } catch (error) {
     console.error('Error transferring enrollment:', error);
+    throw error;
+  }
+}
+
+// Get classes available for transfer
+export async function getAvailableClassesForTransfer(
+  studentId: string,
+  currentClassId: string,
+  studentAge: number
+): Promise<{
+  eligibleClasses: any[];
+  allClasses: any[];
+}> {
+  try {
+    // Import required functions
+    const { getClasses } = await import('./classes');
+    const { getSubjects } = await import('./subjects');
+    
+    // Get all classes and subjects
+    const [allClasses, subjects] = await Promise.all([
+      getClasses(),
+      getSubjects()
+    ]);
+    
+    // Create subject map for quick lookup
+    const subjectMap = new Map(subjects.map(s => [s.id, s]));
+    
+    // Filter classes
+    const availableClasses = allClasses.filter(cls => {
+      // Exclude current class
+      if (cls.id === currentClassId) return false;
+      
+      // Include all statuses: draft, published, started, completed
+      // Admin can transfer to any class
+      return true;
+    });
+    
+    // Separate into eligible (by age) and all classes
+    const eligibleClasses = availableClasses.filter(cls => {
+      const subject = subjectMap.get(cls.subjectId);
+      if (!subject) return false;
+      
+      // Check if student age is within subject age range
+      return studentAge >= subject.ageRange.min && 
+             studentAge <= subject.ageRange.max;
+    });
+    
+    // Add subject info to classes for display
+    const enrichClasses = (classes: any[]) => 
+      classes.map(cls => ({
+        ...cls,
+        subject: subjectMap.get(cls.subjectId)
+      }));
+    
+    return {
+      eligibleClasses: enrichClasses(eligibleClasses),
+      allClasses: enrichClasses(availableClasses)
+    };
+  } catch (error) {
+    console.error('Error getting available classes:', error);
+    return {
+      eligibleClasses: [],
+      allClasses: []
+    };
+  }
+}
+
+// Get transfer history for enrollment
+export async function getEnrollmentTransferHistory(
+  enrollmentId: string
+): Promise<Array<{
+  fromClassId: string;
+  toClassId: string;
+  transferredAt: Date;
+  reason: string;
+}>> {
+  try {
+    const enrollment = await getEnrollment(enrollmentId);
+    if (!enrollment) return [];
+    
+    // Return transfer history if exists
+    return (enrollment.transferHistory || []).map(transfer => ({
+      ...transfer,
+      transferredAt: transfer.transferredAt?.toDate() || new Date()
+    }));
+  } catch (error) {
+    console.error('Error getting transfer history:', error);
+    return [];
+  }
+}
+
+// Delete enrollment completely (hard delete)
+export async function deleteEnrollment(
+  enrollmentId: string
+): Promise<void> {
+  try {
+    // Get enrollment data first
+    const enrollment = await getEnrollment(enrollmentId);
+    if (!enrollment) throw new Error('Enrollment not found');
+    
+    // Use batch write for atomic operation
+    const batch = writeBatch(db);
+    
+    // 1. Delete enrollment document
+    const enrollmentRef = doc(db, COLLECTION_NAME, enrollmentId);
+    batch.delete(enrollmentRef);
+    
+    // 2. Decrease class enrolled count
+    const classRef = doc(db, 'classes', enrollment.classId);
+    batch.update(classRef, {
+      enrolledCount: increment(-1)
+    });
+    
+    // 3. Commit the batch
+    await batch.commit();
+  } catch (error) {
+    console.error('Error deleting enrollment:', error);
     throw error;
   }
 }

@@ -18,12 +18,22 @@ import {
   School,
   CreditCard,
   FileText,
-  X
+  X,
+  Clock,
+  Users,
+  ArrowRight,
+  History
 } from 'lucide-react';
 import { Enrollment, Student, Parent, Class, Branch, Subject, Teacher } from '@/types/models';
-import { updateEnrollment, transferEnrollment, checkAvailableSeats } from '@/lib/services/enrollments';
+import { 
+  updateEnrollment, 
+  transferEnrollment, 
+  checkAvailableSeats,
+  getAvailableClassesForTransfer,
+  getEnrollmentTransferHistory
+} from '@/lib/services/enrollments';
 import { getStudent, getParent } from '@/lib/services/parents';
-import { getClass, getClasses } from '@/lib/services/classes';
+import { getClass } from '@/lib/services/classes';
 import { getBranch } from '@/lib/services/branches';
 import { getSubject } from '@/lib/services/subjects';
 import { getTeacher } from '@/lib/services/teachers';
@@ -45,6 +55,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 
 interface EnrollmentEditFormProps {
   enrollment: Enrollment;
@@ -80,10 +96,13 @@ export default function EnrollmentEditForm({ enrollment }: EnrollmentEditFormPro
   
   // Transfer class
   const [showTransferDialog, setShowTransferDialog] = useState(false);
-  const [availableClasses, setAvailableClasses] = useState<Class[]>([]);
+  const [eligibleClasses, setEligibleClasses] = useState<any[]>([]);
+  const [allClasses, setAllClasses] = useState<any[]>([]);
   const [selectedNewClassId, setSelectedNewClassId] = useState('');
   const [transferReason, setTransferReason] = useState('');
   const [transferring, setTransferring] = useState(false);
+  const [transferHistory, setTransferHistory] = useState<any[]>([]);
+  const [showOnlyEligible, setShowOnlyEligible] = useState(true);
 
   useEffect(() => {
     loadRelatedData();
@@ -118,27 +137,24 @@ export default function EnrollmentEditForm({ enrollment }: EnrollmentEditFormPro
       setTeacher(teacherData);
       
       // Load available classes for transfer
-      await loadAvailableClassesForTransfer(enrollment.branchId, enrollment.studentId);
+      const studentAge = calculateAge(studentData.birthdate);
+      const { eligibleClasses, allClasses } = await getAvailableClassesForTransfer(
+        enrollment.studentId,
+        enrollment.classId,
+        studentAge
+      );
+      
+      setEligibleClasses(eligibleClasses);
+      setAllClasses(allClasses);
+      
+      // Load transfer history
+      const history = await getEnrollmentTransferHistory(enrollment.id);
+      setTransferHistory(history);
     } catch (error) {
       console.error('Error loading related data:', error);
       toast.error('ไม่สามารถโหลดข้อมูลได้');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const loadAvailableClassesForTransfer = async (branchId: string, studentId: string) => {
-    try {
-      const allClasses = await getClasses();
-      const availableClasses = allClasses.filter(cls => 
-        cls.branchId === branchId &&
-        cls.id !== enrollment.classId &&
-        ['published', 'started'].includes(cls.status) &&
-        cls.enrolledCount < cls.maxStudents
-      );
-      setAvailableClasses(availableClasses);
-    } catch (error) {
-      console.error('Error loading available classes:', error);
     }
   };
 
@@ -214,7 +230,9 @@ export default function EnrollmentEditForm({ enrollment }: EnrollmentEditFormPro
     try {
       await transferEnrollment(enrollment.id, selectedNewClassId, transferReason);
       toast.success('ย้ายคลาสเรียบร้อยแล้ว');
-      router.push(`/enrollments/${enrollment.id}`);
+      
+      // Reload page to show updated data
+      window.location.reload();
     } catch (error) {
       console.error('Error transferring enrollment:', error);
       toast.error('ไม่สามารถย้ายคลาสได้');
@@ -222,6 +240,12 @@ export default function EnrollmentEditForm({ enrollment }: EnrollmentEditFormPro
       setTransferring(false);
       setShowTransferDialog(false);
     }
+  };
+
+  // Get class info for display
+  const getClassInfo = (classId: string) => {
+    const cls = [...eligibleClasses, ...allClasses].find(c => c.id === classId);
+    return cls;
   };
 
   if (loading) {
@@ -244,6 +268,9 @@ export default function EnrollmentEditForm({ enrollment }: EnrollmentEditFormPro
   }
 
   const isActive = enrollment.status === 'active';
+
+  // Filter classes based on tab selection
+  const displayClasses = showOnlyEligible ? eligibleClasses : allClasses;
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -279,6 +306,40 @@ export default function EnrollmentEditForm({ enrollment }: EnrollmentEditFormPro
         </CardContent>
       </Card>
 
+      {/* Transfer History */}
+      {transferHistory.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <History className="h-5 w-5" />
+              ประวัติการย้ายคลาส
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {transferHistory.map((transfer, index) => {
+                const fromClass = getClassInfo(transfer.fromClassId);
+                const toClass = getClassInfo(transfer.toClassId);
+                
+                return (
+                  <div key={index} className="flex items-center gap-3 text-sm">
+                    <Badge variant="outline">{formatDate(transfer.transferredAt)}</Badge>
+                    <div className="flex items-center gap-2">
+                      <span>{fromClass?.name || transfer.fromClassId}</span>
+                      <ArrowRight className="h-4 w-4" />
+                      <span className="font-medium">{toClass?.name || transfer.toClassId}</span>
+                    </div>
+                    {transfer.reason && (
+                      <span className="text-gray-500">({transfer.reason})</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Transfer Class Option */}
       {isActive && (
         <Card>
@@ -293,43 +354,126 @@ export default function EnrollmentEditForm({ enrollment }: EnrollmentEditFormPro
               <DialogTrigger asChild>
                 <Button variant="outline">ย้ายไปคลาสอื่น</Button>
               </DialogTrigger>
-              <DialogContent className="max-w-2xl">
+              <DialogContent className="max-w-3xl max-h-[80vh] overflow-hidden flex flex-col">
                 <DialogHeader>
                   <DialogTitle>ย้ายคลาส</DialogTitle>
                   <DialogDescription>
-                    เลือกคลาสใหม่ที่ต้องการย้าย
+                    เลือกคลาสใหม่ที่ต้องการย้าย (นักเรียนอายุ {calculateAge(student.birthdate)} ปี)
                   </DialogDescription>
                 </DialogHeader>
                 
-                <div className="space-y-4 py-4">
-                  <div>
-                    <Label>เลือกคลาสใหม่</Label>
-                    <Select value={selectedNewClassId} onValueChange={setSelectedNewClassId}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="เลือกคลาส" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {availableClasses.map(cls => (
-                          <SelectItem key={cls.id} value={cls.id}>
-                            <div>
-                              <p>{cls.name}</p>
-                              <p className="text-sm text-gray-500">
-                                {getDayName(cls.daysOfWeek[0])} {cls.startTime} - {cls.endTime} 
-                                (เหลือ {cls.maxStudents - cls.enrolledCount} ที่)
-                              </p>
+                <div className="flex-1 overflow-y-auto space-y-4 py-4">
+                  <Tabs defaultValue="eligible" onValueChange={(value) => setShowOnlyEligible(value === 'eligible')}>
+                    <TabsList className="grid w-full grid-cols-2">
+                      <TabsTrigger value="eligible">
+                        คลาสที่เหมาะกับอายุ ({eligibleClasses.length})
+                      </TabsTrigger>
+                      <TabsTrigger value="all">
+                        คลาสทั้งหมด ({allClasses.length})
+                      </TabsTrigger>
+                    </TabsList>
+                    
+                    <TabsContent value="eligible" className="mt-4">
+                      {eligibleClasses.length === 0 ? (
+                        <Alert>
+                          <AlertCircle className="h-4 w-4" />
+                          <AlertDescription>
+                            ไม่พบคลาสที่เหมาะสมกับช่วงอายุของนักเรียน
+                          </AlertDescription>
+                        </Alert>
+                      ) : null}
+                    </TabsContent>
+                    
+                    <TabsContent value="all" className="mt-4">
+                      {!showOnlyEligible && (
+                        <Alert className="mb-4">
+                          <AlertCircle className="h-4 w-4" />
+                          <AlertDescription>
+                            แสดงคลาสทั้งหมด รวมถึงคลาสที่อาจไม่เหมาะกับช่วงอายุของนักเรียน
+                          </AlertDescription>
+                        </Alert>
+                      )}
+                    </TabsContent>
+                  </Tabs>
+
+                  <div className="space-y-2">
+                    {displayClasses.map(cls => {
+                      const isEligible = eligibleClasses.some(ec => ec.id === cls.id);
+                      const statusColor = 
+                        cls.status === 'published' ? 'bg-blue-100 text-blue-700' :
+                        cls.status === 'started' ? 'bg-green-100 text-green-700' :
+                        cls.status === 'completed' ? 'bg-gray-100 text-gray-700' :
+                        cls.status === 'draft' ? 'bg-yellow-100 text-yellow-700' :
+                        'bg-red-100 text-red-700';
+                      
+                      return (
+                        <div
+                          key={cls.id}
+                          className={`border rounded-lg p-4 cursor-pointer transition-all ${
+                            selectedNewClassId === cls.id 
+                              ? 'border-red-500 bg-red-50' 
+                              : 'hover:border-gray-300'
+                          }`}
+                          onClick={() => setSelectedNewClassId(cls.id)}
+                        >
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <h4 className="font-medium">{cls.name}</h4>
+                                <Badge className={statusColor}>
+                                  {cls.status === 'published' ? 'เปิดรับสมัคร' :
+                                   cls.status === 'started' ? 'กำลังเรียน' :
+                                   cls.status === 'completed' ? 'จบแล้ว' :
+                                   cls.status === 'draft' ? 'ร่าง' : 'ยกเลิก'}
+                                </Badge>
+                                {!isEligible && (
+                                  <Badge variant="outline" className="text-orange-600 border-orange-300">
+                                    อายุไม่ตรง (ต้อง {cls.subject?.ageRange.min}-{cls.subject?.ageRange.max} ปี)
+                                  </Badge>
+                                )}
+                              </div>
+                              <div className="grid grid-cols-2 gap-4 text-sm text-gray-600">
+                                <div>
+                                  <span className="flex items-center gap-1">
+                                    <Calendar className="h-3 w-3" />
+                                    {getDayName(cls.daysOfWeek[0])} {cls.startTime} - {cls.endTime}
+                                  </span>
+                                  <span className="text-xs">
+                                    {formatDate(cls.startDate)} - {formatDate(cls.endDate)}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="flex items-center gap-1">
+                                    <Users className="h-3 w-3" />
+                                    {cls.enrolledCount}/{cls.maxStudents} คน
+                                    {cls.enrolledCount >= cls.maxStudents && (
+                                      <Badge variant="destructive" className="text-xs ml-1">เต็ม</Badge>
+                                    )}
+                                  </span>
+                                  <span className="text-xs">
+                                    ราคา: {formatCurrency(cls.pricing.totalPrice)}
+                                  </span>
+                                </div>
+                              </div>
                             </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                            {selectedNewClassId === cls.id && (
+                              <div className="text-red-500">
+                                <AlertCircle className="h-5 w-5" />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                   
                   <div>
-                    <Label>เหตุผลในการย้าย</Label>
+                    <Label>เหตุผลในการย้าย *</Label>
                     <Textarea
                       placeholder="กรุณาระบุเหตุผล..."
                       value={transferReason}
                       onChange={(e) => setTransferReason(e.target.value)}
+                      className="mt-2"
                     />
                   </div>
                 </div>
