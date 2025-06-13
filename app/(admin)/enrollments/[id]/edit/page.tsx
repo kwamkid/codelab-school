@@ -61,13 +61,13 @@ export default function EditEnrollmentPage() {
 
   return (
     <div>
-      <div className="mb-6">
+          <div className="mb-6">
         <Link 
-          href={`/enrollments/${enrollmentId}`}
+          href="/enrollments"
           className="inline-flex items-center text-sm text-gray-600 hover:text-gray-900"
         >
           <ChevronLeft className="h-4 w-4 mr-1" />
-          กลับไปหน้ารายละเอียด
+          กลับไปหน้ารายการลงทะเบียน
         </Link>
       </div>
 

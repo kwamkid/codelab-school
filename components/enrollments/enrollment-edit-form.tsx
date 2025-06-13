@@ -210,7 +210,7 @@ export default function EnrollmentEditForm({ enrollment }: EnrollmentEditFormPro
       
       await updateEnrollment(enrollment.id, updateData);
       toast.success('บันทึกข้อมูลเรียบร้อยแล้ว');
-      router.push(`/enrollments/${enrollment.id}`);
+      router.push(`/enrollments`);
     } catch (error) {
       console.error('Error updating enrollment:', error);
       toast.error('ไม่สามารถบันทึกข้อมูลได้');
@@ -704,7 +704,7 @@ export default function EnrollmentEditForm({ enrollment }: EnrollmentEditFormPro
       <div className="flex justify-end gap-2">
         <Button
           variant="outline"
-          onClick={() => router.push(`/enrollments/${enrollment.id}`)}
+          onClick={() => router.push(`/enrollments`)}
         >
           <X className="h-4 w-4 mr-2" />
           ยกเลิก

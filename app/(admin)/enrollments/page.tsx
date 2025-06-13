@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Enrollment, Parent, Student, Class, Branch } from '@/types/models';
-import { getEnrollments, deleteEnrollment } from '@/lib/services/enrollments';
+import { getEnrollments, deleteEnrollment, updateEnrollment, cancelEnrollment } from '@/lib/services/enrollments';
 import { getParents } from '@/lib/services/parents';
 import { getClasses } from '@/lib/services/classes';
 import { getBranches } from '@/lib/services/branches';
@@ -21,7 +21,12 @@ import {
   Eye,
   Edit,
   XCircle,
-  Trash2
+  Trash2,
+  MoreVertical,
+  CreditCard,
+  CheckCircle,
+  Loader2,
+  Printer
 } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
@@ -52,8 +57,26 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 
-type StudentWithParent = Student & { parentName: string; parentPhone: string };
+type StudentWithParent = Student & { parentName: string; parentPhone: string; parentId: string };
 
 const statusColors = {
   'active': 'bg-green-100 text-green-700',
@@ -92,6 +115,21 @@ export default function EnrollmentsPage() {
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedPaymentStatus, setSelectedPaymentStatus] = useState<string>('all');
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  
+  // Quick payment update states
+  const [showPaymentDialog, setShowPaymentDialog] = useState(false);
+  const [selectedEnrollment, setSelectedEnrollment] = useState<Enrollment | null>(null);
+  const [paymentUpdating, setPaymentUpdating] = useState(false);
+  const [quickPayment, setQuickPayment] = useState({
+    status: 'pending' as 'pending' | 'partial' | 'paid',
+    paidAmount: 0,
+    receiptNumber: ''
+  });
+  
+  // Cancel enrollment states
+  const [showCancelDialog, setShowCancelDialog] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelling, setCancelling] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -145,6 +183,71 @@ export default function EnrollmentsPage() {
     } finally {
       setDeletingId(null);
     }
+  };
+
+  // Handle quick payment update
+  const handleQuickPaymentUpdate = async () => {
+    if (!selectedEnrollment) return;
+    
+    setPaymentUpdating(true);
+    try {
+      const updateData: Partial<Enrollment> = {
+        payment: {
+          ...selectedEnrollment.payment,
+          status: quickPayment.status,
+          paidAmount: quickPayment.paidAmount,
+          method: selectedEnrollment.payment.method
+        }
+      };
+
+      // Add receipt number if provided
+      if (quickPayment.receiptNumber) {
+        updateData.payment!.receiptNumber = quickPayment.receiptNumber;
+      }
+
+      // Set paid date if status is paid
+      if (quickPayment.status === 'paid' && selectedEnrollment.payment.status !== 'paid') {
+        updateData.payment!.paidDate = new Date();
+      }
+
+      await updateEnrollment(selectedEnrollment.id, updateData);
+      toast.success('อัพเดทการชำระเงินเรียบร้อยแล้ว');
+      setShowPaymentDialog(false);
+      loadData(); // Reload data
+    } catch (error) {
+      console.error('Error updating payment:', error);
+      toast.error('ไม่สามารถอัพเดทการชำระเงินได้');
+    } finally {
+      setPaymentUpdating(false);
+    }
+  };
+
+  // Handle cancel enrollment
+  const handleCancelEnrollment = async () => {
+    if (!selectedEnrollment || !cancelReason.trim()) {
+      toast.error('กรุณาระบุเหตุผลในการยกเลิก');
+      return;
+    }
+    
+    setCancelling(true);
+    try {
+      await cancelEnrollment(selectedEnrollment.id, cancelReason);
+      toast.success('ยกเลิกการลงทะเบียนเรียบร้อยแล้ว');
+      setShowCancelDialog(false);
+      setCancelReason('');
+      loadData(); // Reload data
+    } catch (error) {
+      console.error('Error cancelling enrollment:', error);
+      toast.error('ไม่สามารถยกเลิกการลงทะเบียนได้');
+    } finally {
+      setCancelling(false);
+    }
+  };
+
+  // Handle print receipt
+  const handlePrintReceipt = () => {
+    // TODO: Implement print receipt
+    toast.info('ฟังก์ชันพิมพ์ใบเสร็จจะเพิ่มในภายหลัง');
   };
 
   // Filter enrollments
@@ -404,47 +507,115 @@ export default function EnrollmentsPage() {
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right">
-                          <div className="flex justify-end gap-2">
-                            <Link href={`/enrollments/${enrollment.id}`}>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="sm">
-                                <Eye className="h-4 w-4" />
+                                <MoreVertical className="h-4 w-4" />
                               </Button>
-                            </Link>
-                            <Link href={`/enrollments/${enrollment.id}/edit`}>
-                              <Button variant="ghost" size="sm">
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                            </Link>
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button 
-                                  variant="ghost" 
-                                  size="sm"
-                                  disabled={deletingId === enrollment.id}
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuLabel>จัดการ</DropdownMenuLabel>
+                              <DropdownMenuSeparator />
+                              
+                              <Link href={`/enrollments/${enrollment.id}`}>
+                                <DropdownMenuItem>
+                                  <Eye className="h-4 w-4 mr-2" />
+                                  ดูรายละเอียด
+                                </DropdownMenuItem>
+                              </Link>
+                              
+                              {/* Payment related actions */}
+                              {enrollment.payment.status === 'paid' && (
+                                <DropdownMenuItem onClick={handlePrintReceipt}>
+                                  <Printer className="h-4 w-4 mr-2" />
+                                  พิมพ์ใบเสร็จ
+                                </DropdownMenuItem>
+                              )}
+                              
+                              {enrollment.payment.status !== 'paid' && (
+                                <DropdownMenuItem
+                                  onClick={() => {
+                                    setSelectedEnrollment(enrollment);
+                                    setQuickPayment({
+                                      status: enrollment.payment.status,
+                                      paidAmount: enrollment.payment.paidAmount,
+                                      receiptNumber: enrollment.payment.receiptNumber || ''
+                                    });
+                                    setShowPaymentDialog(true);
+                                  }}
+                                  className="text-green-600"
                                 >
-                                  <Trash2 className="h-4 w-4 text-red-500" />
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>ยืนยันการลบ</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    คุณแน่ใจหรือไม่ที่จะลบการลงทะเบียนของ {student?.nickname}?
-                                    การกระทำนี้ไม่สามารถย้อนกลับได้
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
-                                  <AlertDialogAction 
-                                    onClick={() => handleDeleteEnrollment(enrollment.id)}
-                                    className="bg-red-500 hover:bg-red-600"
+                                  <CreditCard className="h-4 w-4 mr-2" />
+                                  อัพเดทการชำระ
+                                </DropdownMenuItem>
+                              )}
+                              
+                              <Link href={`/enrollments/${enrollment.id}/edit`}>
+                                <DropdownMenuItem>
+                                  <Edit className="h-4 w-4 mr-2" />
+                                  แก้ไข
+                                </DropdownMenuItem>
+                              </Link>
+                              
+                              {/* Cancel enrollment for active status */}
+                              {enrollment.status === 'active' && (
+                                <>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem
+                                    onClick={() => {
+                                      setSelectedEnrollment(enrollment);
+                                      setCancelReason('');
+                                      setShowCancelDialog(true);
+                                    }}
+                                    className="text-orange-600"
                                   >
+                                    <XCircle className="h-4 w-4 mr-2" />
+                                    ยกเลิกการลงทะเบียน
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                              
+                              <DropdownMenuSeparator />
+                              
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <DropdownMenuItem 
+                                    className="text-red-600"
+                                    onSelect={(e) => e.preventDefault()}
+                                  >
+                                    <Trash2 className="h-4 w-4 mr-2" />
                                     ลบ
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          </div>
+                                  </DropdownMenuItem>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>ยืนยันการลบ</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      คุณแน่ใจหรือไม่ที่จะลบการลงทะเบียนของ {student?.nickname}?
+                                      การกระทำนี้ไม่สามารถย้อนกลับได้
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+                                    <AlertDialogAction 
+                                      onClick={() => handleDeleteEnrollment(enrollment.id)}
+                                      className="bg-red-500 hover:bg-red-600"
+                                      disabled={deletingId === enrollment.id}
+                                    >
+                                      {deletingId === enrollment.id ? (
+                                        <>
+                                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                          กำลังลบ...
+                                        </>
+                                      ) : (
+                                        'ลบ'
+                                      )}
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </TableCell>
                       </TableRow>
                     );
@@ -455,6 +626,164 @@ export default function EnrollmentsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Quick Payment Update Dialog */}
+      <Dialog open={showPaymentDialog} onOpenChange={setShowPaymentDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>อัพเดทการชำระเงิน</DialogTitle>
+            <DialogDescription>
+              อัพเดทสถานะการชำระเงินสำหรับ {selectedEnrollment && getStudentInfo(selectedEnrollment.studentId)?.nickname}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div>
+              <Label>สถานะการชำระ</Label>
+              <Select 
+                value={quickPayment.status}
+                onValueChange={(value: 'pending' | 'partial' | 'paid') => 
+                  setQuickPayment(prev => ({ ...prev, status: value }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pending">รอชำระ</SelectItem>
+                  <SelectItem value="partial">ชำระบางส่วน</SelectItem>
+                  <SelectItem value="paid">ชำระแล้ว</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div>
+              <Label>ยอดที่ชำระแล้ว</Label>
+              <Input
+                type="number"
+                value={quickPayment.paidAmount || ''}
+                onChange={(e) => setQuickPayment(prev => ({ 
+                  ...prev, 
+                  paidAmount: parseFloat(e.target.value) || 0 
+                }))}
+                placeholder="0"
+              />
+              <p className="text-sm text-gray-500 mt-1">
+                ยอดที่ต้องชำระทั้งหมด: {formatCurrency(selectedEnrollment?.pricing.finalPrice || 0)}
+              </p>
+            </div>
+            
+            <div>
+              <Label>เลขที่ใบเสร็จ (ถ้ามี)</Label>
+              <Input
+                value={quickPayment.receiptNumber}
+                onChange={(e) => setQuickPayment(prev => ({ 
+                  ...prev, 
+                  receiptNumber: e.target.value 
+                }))}
+                placeholder="RC2025-001"
+              />
+            </div>
+            
+            {/* Show summary */}
+            {quickPayment.paidAmount > 0 && selectedEnrollment && (
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <div className="space-y-1 text-sm">
+                  <div className="flex justify-between">
+                    <span>ยอดที่ต้องชำระ:</span>
+                    <span>{formatCurrency(selectedEnrollment.pricing.finalPrice)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>ชำระแล้ว:</span>
+                    <span className="text-green-600">{formatCurrency(quickPayment.paidAmount)}</span>
+                  </div>
+                  {quickPayment.paidAmount < selectedEnrollment.pricing.finalPrice && (
+                    <div className="flex justify-between font-medium pt-2 border-t">
+                      <span>คงเหลือ:</span>
+                      <span className="text-red-600">
+                        {formatCurrency(selectedEnrollment.pricing.finalPrice - quickPayment.paidAmount)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowPaymentDialog(false)}>
+              ยกเลิก
+            </Button>
+            <Button 
+              onClick={handleQuickPaymentUpdate}
+              disabled={paymentUpdating || quickPayment.paidAmount < 0}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              {paymentUpdating ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  กำลังบันทึก...
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="h-4 w-4 mr-2" />
+                  บันทึก
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Cancel Enrollment Dialog */}
+      <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>ยกเลิกการลงทะเบียน</DialogTitle>
+            <DialogDescription>
+              คุณแน่ใจหรือไม่ที่จะยกเลิกการลงทะเบียนของ {selectedEnrollment && getStudentInfo(selectedEnrollment.studentId)?.nickname}?
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div>
+              <Label>เหตุผลในการยกเลิก *</Label>
+              <Textarea
+                placeholder="กรุณาระบุเหตุผล..."
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                className="mt-2"
+              />
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setShowCancelDialog(false);
+                setCancelReason('');
+              }}
+            >
+              ไม่ยกเลิก
+            </Button>
+            <Button 
+              onClick={handleCancelEnrollment}
+              disabled={cancelling || !cancelReason.trim()}
+              className="bg-red-500 hover:bg-red-600"
+            >
+              {cancelling ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  กำลังยกเลิก...
+                </>
+              ) : (
+                'ยืนยันการยกเลิก'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
