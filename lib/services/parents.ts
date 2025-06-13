@@ -85,11 +85,32 @@ export async function getParentByLineId(lineUserId: string): Promise<Parent | nu
 // Create new parent
 export async function createParent(parentData: Omit<Parent, 'id' | 'createdAt' | 'lastLoginAt'>): Promise<string> {
   try {
-    const docRef = await addDoc(collection(db, COLLECTION_NAME), {
-      ...parentData,
+    // Prepare data for Firestore
+    const dataToSave = {
+      displayName: parentData.displayName,
+      phone: parentData.phone,
       createdAt: Timestamp.now(),
       lastLoginAt: Timestamp.now(),
-    });
+      ...(parentData.emergencyPhone && { emergencyPhone: parentData.emergencyPhone }),
+      ...(parentData.email && { email: parentData.email }),
+      ...(parentData.lineUserId && { lineUserId: parentData.lineUserId }),
+      ...(parentData.pictureUrl && { pictureUrl: parentData.pictureUrl }),
+      ...(parentData.preferredBranchId && { preferredBranchId: parentData.preferredBranchId }),
+    };
+
+    // Add address if provided
+    if (parentData.address) {
+      dataToSave.address = {
+        houseNumber: parentData.address.houseNumber,
+        ...(parentData.address.street && { street: parentData.address.street }),
+        subDistrict: parentData.address.subDistrict,
+        district: parentData.address.district,
+        province: parentData.address.province,
+        postalCode: parentData.address.postalCode,
+      };
+    }
+
+    const docRef = await addDoc(collection(db, COLLECTION_NAME), dataToSave);
     return docRef.id;
   } catch (error) {
     console.error('Error creating parent:', error);
@@ -101,9 +122,25 @@ export async function createParent(parentData: Omit<Parent, 'id' | 'createdAt' |
 export async function updateParent(id: string, parentData: Partial<Parent>): Promise<void> {
   try {
     const docRef = doc(db, COLLECTION_NAME, id);
-    const updateData = { ...parentData };
+    const updateData: any = { ...parentData };
+    
+    // Remove fields that shouldn't be updated
     delete updateData.id;
     delete updateData.createdAt;
+    delete updateData.lastLoginAt;
+    
+    // Handle address update
+    if (updateData.address) {
+      // Ensure all required address fields are present
+      updateData.address = {
+        houseNumber: updateData.address.houseNumber,
+        ...(updateData.address.street && { street: updateData.address.street }),
+        subDistrict: updateData.address.subDistrict,
+        district: updateData.address.district,
+        province: updateData.address.province,
+        postalCode: updateData.address.postalCode,
+      };
+    }
     
     await updateDoc(docRef, updateData);
   } catch (error) {
@@ -199,27 +236,37 @@ export async function updateStudent(
   }
 }
 
-// Check if phone exists
+// Check if phone exists (updated to check both phone and emergencyPhone)
 export async function checkParentPhoneExists(phone: string, excludeId?: string): Promise<boolean> {
   try {
-    const q = query(
+    // Check main phone
+    const phoneQuery = query(
       collection(db, COLLECTION_NAME),
       where('phone', '==', phone)
     );
-    const querySnapshot = await getDocs(q);
+    const phoneSnapshot = await getDocs(phoneQuery);
+    
+    // Check emergency phone
+    const emergencyPhoneQuery = query(
+      collection(db, COLLECTION_NAME),
+      where('emergencyPhone', '==', phone)
+    );
+    const emergencyPhoneSnapshot = await getDocs(emergencyPhoneQuery);
     
     if (excludeId) {
-      return querySnapshot.docs.some(doc => doc.id !== excludeId);
+      const phoneExists = phoneSnapshot.docs.some(doc => doc.id !== excludeId);
+      const emergencyPhoneExists = emergencyPhoneSnapshot.docs.some(doc => doc.id !== excludeId);
+      return phoneExists || emergencyPhoneExists;
     }
     
-    return !querySnapshot.empty;
+    return !phoneSnapshot.empty || !emergencyPhoneSnapshot.empty;
   } catch (error) {
     console.error('Error checking phone:', error);
     throw error;
   }
 }
 
-// Search parents
+// Search parents (updated to include address search)
 export async function searchParents(searchTerm: string): Promise<Parent[]> {
   try {
     const parents = await getParents();
@@ -228,7 +275,11 @@ export async function searchParents(searchTerm: string): Promise<Parent[]> {
     return parents.filter(parent => 
       parent.displayName.toLowerCase().includes(term) ||
       parent.phone?.toLowerCase().includes(term) ||
-      parent.email?.toLowerCase().includes(term)
+      parent.emergencyPhone?.toLowerCase().includes(term) ||
+      parent.email?.toLowerCase().includes(term) ||
+      parent.address?.province?.toLowerCase().includes(term) ||
+      parent.address?.district?.toLowerCase().includes(term) ||
+      parent.address?.subDistrict?.toLowerCase().includes(term)
     );
   } catch (error) {
     console.error('Error searching parents:', error);
@@ -273,6 +324,19 @@ export async function getAllStudentsWithParents(): Promise<(Student & { parentNa
     return allStudents.sort((a, b) => a.name.localeCompare(b.name));
   } catch (error) {
     console.error('Error getting all students:', error);
+    throw error;
+  }
+}
+
+// Update parent's last login
+export async function updateLastLogin(parentId: string): Promise<void> {
+  try {
+    const docRef = doc(db, COLLECTION_NAME, parentId);
+    await updateDoc(docRef, {
+      lastLoginAt: Timestamp.now()
+    });
+  } catch (error) {
+    console.error('Error updating last login:', error);
     throw error;
   }
 }

@@ -5,25 +5,19 @@ import { Student } from '@/types/models';
 import { getAllStudentsWithParents } from '@/lib/services/parents';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { 
   Search, 
   User,
   Cake,
   School,
   Phone,
-  AlertCircle
+  AlertCircle,
+  Edit
 } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { formatDate, calculateAge } from '@/lib/utils';
 import {
   Select,
@@ -117,7 +111,7 @@ export default function StudentsPage() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">นักเรียนทั้งหมด</CardTitle>
@@ -135,7 +129,7 @@ export default function StudentsPage() {
           <CardContent>
             <div className="text-2xl font-bold text-blue-600">{stats.male}</div>
             <p className="text-xs text-gray-500 mt-1">
-              {((stats.male / stats.total) * 100).toFixed(0)}%
+              {stats.total > 0 ? ((stats.male / stats.total) * 100).toFixed(0) : 0}%
             </p>
           </CardContent>
         </Card>
@@ -147,7 +141,7 @@ export default function StudentsPage() {
           <CardContent>
             <div className="text-2xl font-bold text-pink-600">{stats.female}</div>
             <p className="text-xs text-gray-500 mt-1">
-              {((stats.female / stats.total) * 100).toFixed(0)}%
+              {stats.total > 0 ? ((stats.female / stats.total) * 100).toFixed(0) : 0}%
             </p>
           </CardContent>
         </Card>
@@ -214,14 +208,13 @@ export default function StudentsPage() {
         </Select>
       </div>
 
-      {/* Students Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>รายชื่อนักเรียน ({filteredStudents.length} คน)</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {filteredStudents.length === 0 ? (
-            <div className="text-center py-12">
+      {/* Students List */}
+      <div className="space-y-2">
+        <h3 className="text-lg font-medium mb-3">รายชื่อนักเรียน ({filteredStudents.length} คน)</h3>
+        
+        {filteredStudents.length === 0 ? (
+          <Card>
+            <CardContent className="text-center py-12">
               <User className="h-12 w-12 text-gray-300 mx-auto mb-4" />
               <h3 className="text-lg font-medium text-gray-900 mb-2">
                 ไม่พบข้อมูลนักเรียน
@@ -229,122 +222,119 @@ export default function StudentsPage() {
               <p className="text-gray-600">
                 {searchTerm ? 'ลองค้นหาด้วยคำค้นอื่น' : 'ยังไม่มีนักเรียนในระบบ'}
               </p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>นักเรียน</TableHead>
-                    <TableHead>ข้อมูลส่วนตัว</TableHead>
-                    <TableHead>โรงเรียน</TableHead>
-                    <TableHead>ผู้ปกครอง</TableHead>
-                    <TableHead className="text-center">สถานะ</TableHead>
-                    <TableHead className="text-center">หมายเหตุ</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredStudents.map((student) => (
-                    <TableRow key={student.id} className={!student.isActive ? 'opacity-60' : ''}>
-                      <TableCell>
-                        <Link 
-                          href={`/parents/${student.parentId}`}
-                          className="hover:text-red-600"
-                        >
-                          <div className="flex items-center gap-3">
-                            {student.profileImage ? (
-                              <img
-                                src={student.profileImage}
-                                alt={student.name}
-                                className="w-10 h-10 rounded-full object-cover"
-                              />
-                            ) : (
-                              <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center">
-                                <User className="h-5 w-5 text-gray-500" />
-                              </div>
-                            )}
-                            <div>
-                              <p className="font-medium">
-                                {student.nickname || student.name}
-                              </p>
-                              <p className="text-sm text-gray-500">{student.name}</p>
-                            </div>
-                          </div>
-                        </Link>
-                      </TableCell>
-                      <TableCell>
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2 text-sm">
-                            <Cake className="h-3 w-3 text-gray-400" />
-                            <span>{formatDate(student.birthdate)}</span>
-                            <Badge variant="outline" className="text-xs">
-                              {calculateAge(student.birthdate)} ปี
-                            </Badge>
-                          </div>
-                          <Badge 
-                            variant={student.gender === 'M' ? 'secondary' : 'default'}
-                            className="text-xs"
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-2">
+            {filteredStudents.map((student) => (
+              <Card key={student.id} className={!student.isActive ? 'opacity-60' : ''}>
+                <CardContent className="p-4">
+                  <div className="flex items-start gap-4">
+                    {/* Profile Picture */}
+                    <div className="flex-shrink-0">
+                      {student.profileImage ? (
+                        <img
+                          src={student.profileImage}
+                          alt={student.name}
+                          className="w-12 h-12 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center">
+                          <User className="h-6 w-6 text-gray-500" />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Student Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <div>
+                          <Link 
+                            href={`/parents/${student.parentId}`}
+                            className="font-medium text-gray-900 hover:text-red-600"
                           >
-                            {student.gender === 'M' ? 'ชาย' : 'หญิง'}
+                            {student.nickname || student.name}
+                          </Link>
+                          {student.nickname && (
+                            <span className="text-sm text-gray-500 ml-2">({student.name})</span>
+                          )}
+                        </div>
+                        <Link href={`/parents/${student.parentId}/students/${student.id}/edit`}>
+                          <Button size="sm" variant="ghost" className="h-8 px-2">
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                        </Link>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-y-1 gap-x-4 text-sm">
+                        {/* Column 1 */}
+                        <div className="flex items-center gap-1 text-gray-600">
+                          <Cake className="h-3 w-3" />
+                          <span>{formatDate(student.birthdate)}</span>
+                          <Badge variant="outline" className="text-xs ml-1">
+                            {calculateAge(student.birthdate)} ปี
                           </Badge>
                         </div>
-                      </TableCell>
-                      <TableCell>
-                        {student.schoolName ? (
-                          <div className="flex items-center gap-1 text-sm">
-                            <School className="h-3 w-3 text-gray-400" />
+
+                        {/* Column 2 */}
+                        <div className="flex items-center gap-1 text-gray-600">
+                          <User className="h-3 w-3" />
+                          <span>ผู้ปกครอง: {student.parentName}</span>
+                        </div>
+
+                        {/* Column 3 */}
+                        {student.schoolName && (
+                          <div className="flex items-center gap-1 text-gray-600">
+                            <School className="h-3 w-3" />
                             <span>{student.schoolName}</span>
                             {student.gradeLevel && (
-                              <Badge variant="outline" className="text-xs ml-1">
-                                {student.gradeLevel}
-                              </Badge>
+                              <span className="text-gray-500">({student.gradeLevel})</span>
                             )}
                           </div>
-                        ) : (
-                          <span className="text-gray-400">-</span>
                         )}
-                      </TableCell>
-                      <TableCell>
-                        <div className="space-y-1">
-                          <p className="text-sm font-medium">{student.parentName}</p>
-                          <div className="flex items-center gap-1 text-xs text-gray-500">
-                            <Phone className="h-3 w-3" />
-                            {student.parentPhone}
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-center">
+                      </div>
+
+                      {/* Tags Row */}
+                      <div className="flex flex-wrap items-center gap-2 mt-2">
+                        <Badge 
+                          variant={student.gender === 'M' ? 'secondary' : 'default'}
+                          className="text-xs"
+                        >
+                          {student.gender === 'M' ? 'ชาย' : 'หญิง'}
+                        </Badge>
+                        
                         {student.isActive ? (
-                          <Badge className="bg-green-100 text-green-700">ใช้งาน</Badge>
+                          <Badge className="bg-green-100 text-green-700 text-xs">ใช้งาน</Badge>
                         ) : (
-                          <Badge variant="destructive">ไม่ใช้งาน</Badge>
+                          <Badge variant="destructive" className="text-xs">ไม่ใช้งาน</Badge>
                         )}
-                      </TableCell>
-                      <TableCell className="text-center">
+
                         {student.allergies && (
-                          <div className="flex items-center justify-center">
-                            <div className="group relative">
-                              <AlertCircle className="h-4 w-4 text-red-500 cursor-help" />
-                              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-1 bg-gray-900 text-white text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                                แพ้: {student.allergies}
-                              </div>
-                            </div>
+                          <div className="flex items-center gap-1">
+                            <AlertCircle className="h-3 w-3 text-red-500" />
+                            <span className="text-xs text-red-600">แพ้: {student.allergies}</span>
                           </div>
                         )}
-                        {student.specialNeeds && !student.allergies && (
+
+                        {student.specialNeeds && (
                           <Badge variant="outline" className="text-xs">
-                            พิเศษ
+                            ความต้องการพิเศษ
                           </Badge>
                         )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+
+                        <div className="flex items-center gap-1 text-xs text-gray-500 ml-auto">
+                          <Phone className="h-3 w-3" />
+                          {student.parentPhone}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

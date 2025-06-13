@@ -18,7 +18,8 @@ import {
   Plus,
   User,
   Cake,
-  School
+  School,
+  Home
 } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
@@ -142,7 +143,7 @@ export default function ParentDetailPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Contact Information */}
-        <div className="lg:col-span-1">
+        <div className="lg:col-span-1 space-y-6">
           <Card>
             <CardHeader>
               <CardTitle>ข้อมูลติดต่อ</CardTitle>
@@ -151,7 +152,20 @@ export default function ParentDetailPage() {
               {parent.phone && (
                 <div className="flex items-center gap-3">
                   <Phone className="h-4 w-4 text-gray-400" />
-                  <span>{parent.phone}</span>
+                  <div>
+                    <p className="text-sm text-gray-500">เบอร์โทรหลัก</p>
+                    <p>{parent.phone}</p>
+                  </div>
+                </div>
+              )}
+              
+              {parent.emergencyPhone && (
+                <div className="flex items-center gap-3">
+                  <Phone className="h-4 w-4 text-red-400" />
+                  <div>
+                    <p className="text-sm text-gray-500">เบอร์โทรฉุกเฉิน</p>
+                    <p>{parent.emergencyPhone}</p>
+                  </div>
                 </div>
               )}
               
@@ -163,7 +177,7 @@ export default function ParentDetailPage() {
               )}
               
               {preferredBranch && (
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 pt-3 border-t">
                   <MapPin className="h-4 w-4 text-gray-400" />
                   <div>
                     <p className="text-sm text-gray-500">สาขาหลัก</p>
@@ -180,6 +194,35 @@ export default function ParentDetailPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* Address Card */}
+          {parent.address && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Home className="h-5 w-5" />
+                  ที่อยู่
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-1 text-sm">
+                  <p>
+                    {parent.address.houseNumber} 
+                    {parent.address.street && ` ถ.${parent.address.street}`}
+                  </p>
+                  <p>
+                    แขวง/ตำบล {parent.address.subDistrict}
+                  </p>
+                  <p>
+                    เขต/อำเภอ {parent.address.district}
+                  </p>
+                  <p>
+                    จังหวัด {parent.address.province} {parent.address.postalCode}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* Students List */}
@@ -245,6 +288,9 @@ export default function ParentDetailPage() {
                                 <div className="flex items-center gap-1">
                                   <School className="h-4 w-4 text-gray-400" />
                                   <span>{student.schoolName}</span>
+                                  {student.gradeLevel && (
+                                    <span className="text-gray-500">({student.gradeLevel})</span>
+                                  )}
                                 </div>
                               )}
                               <Badge variant={student.gender === 'M' ? 'secondary' : 'default'}>
@@ -258,6 +304,12 @@ export default function ParentDetailPage() {
                             {student.allergies && (
                               <div className="mt-2">
                                 <span className="text-sm text-red-600">⚠️ แพ้: {student.allergies}</span>
+                              </div>
+                            )}
+
+                            {student.specialNeeds && (
+                              <div className="mt-1">
+                                <span className="text-sm text-orange-600">📋 ความต้องการพิเศษ: {student.specialNeeds}</span>
                               </div>
                             )}
                           </div>

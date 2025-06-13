@@ -5,7 +5,16 @@ export interface Parent {
   displayName: string;
   pictureUrl?: string;
   phone: string;
+  emergencyPhone?: string; // เพิ่ม field ใหม่
   email?: string;
+  address?: { // เพิ่ม field ใหม่
+    houseNumber: string;
+    street?: string;
+    subDistrict: string;
+    district: string;
+    province: string;
+    postalCode: string;
+  };
   preferredBranchId?: string;
   createdAt: Date;
   lastLoginAt: Date;
