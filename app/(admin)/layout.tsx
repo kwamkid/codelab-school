@@ -1,8 +1,8 @@
 'use client';
 
 import { useAuth } from '@/hooks/useAuth';
-import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useRouter, usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import {
@@ -16,23 +16,117 @@ import {
   Settings,
   LogOut,
   Menu,
-  X
-} from 'lucide-react';
-import { useState } from 'react';
+  X,
+  ChevronDown,
+  BookOpen,
+  CalendarCheck,
+  Home,
+  CalendarDays  // เพิ่ม icon สำหรับ Makeup Class
 
-const navigation = [
+} from 'lucide-react';
+import Image from 'next/image';
+
+interface NavigationItem {
+  name: string;
+  href?: string;
+  icon: React.ElementType;
+  children?: NavigationItem[];
+}
+
+const navigation: NavigationItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { name: 'สาขา', href: '/branches', icon: Building2 },
-  { name: 'ผู้ปกครอง', href: '/parents', icon: Users },
-  { name: 'นักเรียน', href: '/students', icon: GraduationCap },
-  { name: 'คลาสเรียน', href: '/classes', icon: Calendar },
+  {
+    name: 'ข้อมูลพื้นฐาน',
+    icon: Building2,
+    children: [
+      { name: 'สาขา', href: '/branches', icon: Home },
+      { name: 'วิชา', href: '/subjects', icon: BookOpen },
+      { name: 'ครูผู้สอน', href: '/teachers', icon: UserCheck },
+      { name: 'วันหยุด', href: '/holidays', icon: CalendarCheck },
+    ]
+  },
+  {
+    name: 'ลูกค้า',
+    icon: Users,
+    children: [
+      { name: 'ผู้ปกครอง', href: '/parents', icon: Users },
+      { name: 'นักเรียน', href: '/students', icon: GraduationCap },
+    ]
+  },
+  {
+    name: 'จัดการคลาส',
+    icon: Calendar,
+    children: [
+      { name: 'คลาสเรียน', href: '/classes', icon: Calendar },
+      { name: 'Makeup Class', href: '/makeup', icon: CalendarDays },  // เพิ่ม Makeup Class
+    ]
+  },
   { name: 'ลงทะเบียน', href: '/enrollments', icon: UserCheck },
-  { name: 'วิชา', href: '/subjects', icon: GraduationCap },
-  { name: 'ครูผู้สอน', href: '/teachers', icon: UserCheck },
-  { name: 'วันหยุด', href: '/holidays', icon: Calendar },
   { name: 'รายงาน', href: '/reports', icon: FileText },
   { name: 'ตั้งค่า', href: '/settings', icon: Settings },
 ];
+
+function NavItem({ item, pathname, setSidebarOpen }: { 
+  item: NavigationItem; 
+  pathname: string; 
+  setSidebarOpen: (open: boolean) => void 
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const hasChildren = item.children && item.children.length > 0;
+  const isActive = item.href ? pathname === item.href : item.children?.some(child => pathname === child.href);
+
+  if (hasChildren) {
+    return (
+      <div>
+        <button
+          onClick={() => setIsOpen(!isOpen)}
+          className={`flex items-center gap-3 px-4 py-2 text-gray-700 rounded-lg hover:bg-red-50 hover:text-red-600 transition-colors w-full ${
+            isActive ? 'bg-red-50 text-red-600' : ''
+          }`}
+        >
+          <item.icon className="h-5 w-5" />
+          <span className="flex-1 text-left">{item.name}</span>
+          <ChevronDown className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        </button>
+        {isOpen && (
+          <div className="mt-1 ml-4 space-y-1">
+            {item.children.map((child) => {
+              if (!child.href) return null;
+              return (
+                <Link
+                  key={child.name}
+                  href={child.href}
+                  className={`flex items-center gap-3 px-4 py-2 text-sm rounded-lg hover:bg-red-50 hover:text-red-600 transition-colors ${
+                    pathname === child.href ? 'bg-red-50 text-red-600' : 'text-gray-600'
+                  }`}
+                  onClick={() => setSidebarOpen(false)}
+                >
+                  <child.icon className="h-4 w-4" />
+                  <span>{child.name}</span>
+                </Link>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (!item.href) return null;
+
+  return (
+    <Link
+      href={item.href}
+      className={`flex items-center gap-3 px-4 py-2 text-gray-700 rounded-lg hover:bg-red-50 hover:text-red-600 transition-colors ${
+        pathname === item.href ? 'bg-red-50 text-red-600' : ''
+      }`}
+      onClick={() => setSidebarOpen(false)}
+    >
+      <item.icon className="h-5 w-5" />
+      <span>{item.name}</span>
+    </Link>
+  );
+}
 
 export default function AdminLayout({
   children,
@@ -41,6 +135,7 @@ export default function AdminLayout({
 }) {
   const { user, loading, signOut } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
@@ -81,9 +176,17 @@ export default function AdminLayout({
         }`}
       >
         <div className="flex items-center justify-between p-4 border-b">
-          <h1 className="text-xl font-bold text-gray-800">
-            <span className="text-red-500">CODE</span>LAB
-          </h1>
+          <div className="flex items-center gap-3">
+            {/* Logo */}
+            <div className="relative h-10" style={{ width: '180px' }}>
+              <Image 
+                src="/logo.svg" 
+                alt="CodeLab Logo" 
+                fill
+                className="object-contain object-left"
+              />
+            </div>
+          </div>
           <button
             onClick={() => setSidebarOpen(false)}
             className="lg:hidden"
@@ -96,14 +199,7 @@ export default function AdminLayout({
           <ul className="space-y-2">
             {navigation.map((item) => (
               <li key={item.name}>
-                <Link
-                  href={item.href}
-                  className="flex items-center gap-3 px-4 py-2 text-gray-700 rounded-lg hover:bg-red-50 hover:text-red-600 transition-colors"
-                  onClick={() => setSidebarOpen(false)}
-                >
-                  <item.icon className="h-5 w-5" />
-                  <span>{item.name}</span>
-                </Link>
+                <NavItem item={item} pathname={pathname} setSidebarOpen={setSidebarOpen} />
               </li>
             ))}
           </ul>

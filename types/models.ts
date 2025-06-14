@@ -270,3 +270,38 @@ export interface RoomAvailabilityResult {
     daysOfWeek: number[];
   }[];
 }
+
+// เพิ่มใน types/models.ts หลังจาก ClassSchedule interface
+
+// Makeup Class Types
+export interface MakeupClass {
+  id: string;
+  type: 'scheduled' | 'ad-hoc'; // ขอล่วงหน้า หรือ ขอหลังขาดเรียน
+  originalClassId: string; // คลาสเดิม
+  originalScheduleId: string; // คาบเรียนเดิม (schedule id)
+  studentId: string; // นักเรียนที่ขอ makeup
+  parentId: string; // ผู้ปกครอง
+  requestDate: Date; // วันที่ขอ
+  requestedBy: string; // user id ของคนที่สร้าง request
+  reason: string; // เหตุผลที่ขาด
+  status: 'pending' | 'scheduled' | 'completed' | 'cancelled';
+  makeupSchedule?: { // ข้อมูลการนัด makeup (อาจยังไม่มีถ้า status = pending)
+    date: Date;
+    startTime: string;
+    endTime: string;
+    teacherId: string; // ครูที่สอน (อาจไม่ใช่คนเดิม)
+    branchId: string;
+    roomId: string;
+    confirmedAt?: Date;
+    confirmedBy?: string;
+  };
+  attendance?: { // ผลการเข้าเรียน
+    status: 'present' | 'absent';
+    checkedBy: string;
+    checkedAt: Date;
+    note?: string;
+  };
+  createdAt: Date;
+  updatedAt?: Date;
+  notes?: string; // หมายเหตุเพิ่มเติม
+}

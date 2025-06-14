@@ -11,7 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Calendar, Clock, Info, Save, X } from 'lucide-react';
-import { Student, Parent } from '@/types/models';
+import { Student } from '@/types/models';
 import { formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
 import { Input } from "@/components/ui/input";
@@ -23,6 +23,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { createMakeupRequest, getMakeupCount } from '@/lib/services/makeup';
+import { auth } from '@/lib/firebase/client';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 interface MakeupClassDialogProps {
   open: boolean;
@@ -35,13 +38,10 @@ interface MakeupClassDialogProps {
     branchId: string;
     roomId: string;
   };
-  absentSessions: Array<{
-    sessionNumber: number;
-    sessionDate: Date;
-    makeupDate?: Date;
-    makeupStatus?: 'pending' | 'scheduled' | 'completed';
-  }>;
-  onScheduleMakeup: (sessionNumber: number, makeupDate: Date, time: string, note: string) => Promise<void>;
+  scheduleId: string;
+  sessionDate: Date;
+  sessionNumber: number;
+  onMakeupCreated: () => void;
 }
 
 export default function MakeupClassDialog({
@@ -49,49 +49,77 @@ export default function MakeupClassDialog({
   onOpenChange,
   student,
   classInfo,
-  absentSessions,
-  onScheduleMakeup
+  scheduleId,
+  sessionDate,
+  sessionNumber,
+  onMakeupCreated
 }: MakeupClassDialogProps) {
-  const [selectedSession, setSelectedSession] = useState<number | null>(null);
-  const [makeupDate, setMakeupDate] = useState<string>('');
-  const [makeupTime, setMakeupTime] = useState<string>('');
-  const [note, setNote] = useState<string>('');
-  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [checkingCount, setCheckingCount] = useState(true);
+  const [makeupCount, setMakeupCount] = useState(0);
+  const [formData, setFormData] = useState({
+    type: 'ad-hoc' as 'scheduled' | 'ad-hoc',
+    reason: ''
+  });
 
-  // Filter sessions that need makeup (absent and not yet scheduled)
-  const pendingSessions = absentSessions.filter(
-    session => session.makeupStatus === 'pending' || !session.makeupStatus
-  );
+  useEffect(() => {
+    if (open) {
+      checkMakeupCount();
+    }
+  }, [open, student.id, classInfo.id]);
 
-  const handleSave = async () => {
-    if (!selectedSession || !makeupDate || !makeupTime) {
-      toast.error('กรุณากรอกข้อมูลให้ครบถ้วน');
+  const checkMakeupCount = async () => {
+    setCheckingCount(true);
+    try {
+      const count = await getMakeupCount(student.id, classInfo.id);
+      setMakeupCount(count);
+    } catch (error) {
+      console.error('Error checking makeup count:', error);
+    } finally {
+      setCheckingCount(false);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!formData.reason.trim()) {
+      toast.error('กรุณาระบุเหตุผลที่ขาดเรียน');
       return;
     }
 
-    setSaving(true);
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      toast.error('กรุณาเข้าสู่ระบบ');
+      return;
+    }
+
+    setLoading(true);
     try {
-      await onScheduleMakeup(
-        selectedSession,
-        new Date(makeupDate),
-        makeupTime,
-        note
-      );
-      
-      toast.success('บันทึกการนัด Makeup Class เรียบร้อยแล้ว');
+      await createMakeupRequest({
+        type: formData.type,
+        originalClassId: classInfo.id,
+        originalScheduleId: scheduleId,
+        studentId: student.id,
+        parentId: student.parentId,
+        requestDate: new Date(),
+        requestedBy: currentUser.uid,
+        reason: formData.reason,
+        status: 'pending'
+      });
+
+      toast.success('บันทึกการขอ Makeup Class เรียบร้อยแล้ว');
+      onMakeupCreated();
+      onOpenChange(false);
       
       // Reset form
-      setSelectedSession(null);
-      setMakeupDate('');
-      setMakeupTime('');
-      setNote('');
-      
-      onOpenChange(false);
+      setFormData({
+        type: 'ad-hoc',
+        reason: ''
+      });
     } catch (error) {
-      console.error('Error scheduling makeup:', error);
+      console.error('Error creating makeup request:', error);
       toast.error('ไม่สามารถบันทึกข้อมูลได้');
     } finally {
-      setSaving(false);
+      setLoading(false);
     }
   };
 
@@ -99,97 +127,95 @@ export default function MakeupClassDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>นัดหมาย Makeup Class</DialogTitle>
+          <DialogTitle>ขอเรียนชดเชย (Makeup Class)</DialogTitle>
           <DialogDescription>
-            สำหรับ {student.nickname} ({student.name})
+            บันทึกการขอเรียนชดเชยสำหรับ {student.nickname}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           {/* Student Info */}
           <div className="bg-gray-50 rounded-lg p-4 space-y-2">
-            <p className="text-sm font-medium">ข้อมูลนักเรียน</p>
-            <div className="text-sm text-gray-600">
-              <p>ผู้ปกครอง: {student.parentName}</p>
-              <p>เบอร์โทร: {student.parentPhone}</p>
+            <p className="text-sm font-medium">ข้อมูลการขาดเรียน</p>
+            <div className="text-sm text-gray-600 space-y-1">
+              <p>นักเรียน: {student.name} ({student.nickname})</p>
+              <p>คลาส: {classInfo.name}</p>
+              <p>ครั้งที่: {sessionNumber} - {formatDate(sessionDate, 'long')}</p>
+              <p>ผู้ปกครอง: {student.parentName} ({student.parentPhone})</p>
             </div>
           </div>
 
-          {/* Select Absent Session */}
+          {/* Makeup Count Alert */}
+          {!checkingCount && (
+            <Alert className={makeupCount >= 4 ? 'border-red-200' : 'border-blue-200'}>
+              <Info className="h-4 w-4" />
+              <AlertDescription>
+                {makeupCount >= 4 ? (
+                  <>
+                    <strong>หมายเหตุ:</strong> นักเรียนได้ใช้สิทธิ์ Makeup ครบ 4 ครั้งแล้ว 
+                    แต่ Admin สามารถอนุมัติเพิ่มได้ตามดุลยพินิจ
+                  </>
+                ) : (
+                  <>
+                    นักเรียนใช้สิทธิ์ Makeup ไปแล้ว <strong>{makeupCount}</strong> ครั้ง 
+                    (เหลืออีก {4 - makeupCount} ครั้ง)
+                  </>
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* Request Type */}
           <div className="space-y-2">
-            <Label>เลือกครั้งที่ขาดเรียน</Label>
+            <Label>ประเภทการขอ</Label>
             <Select
-              value={selectedSession?.toString()}
-              onValueChange={(value) => setSelectedSession(Number(value))}
+              value={formData.type}
+              onValueChange={(value: 'scheduled' | 'ad-hoc') => 
+                setFormData(prev => ({ ...prev, type: value }))
+              }
             >
               <SelectTrigger>
-                <SelectValue placeholder="เลือกครั้งที่ขาด" />
+                <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {pendingSessions.map((session) => (
-                  <SelectItem key={session.sessionNumber} value={session.sessionNumber.toString()}>
-                    ครั้งที่ {session.sessionNumber} - {formatDate(session.sessionDate, 'long')}
-                  </SelectItem>
-                ))}
+                <SelectItem value="ad-hoc">ขอหลังขาดเรียน (Ad-hoc)</SelectItem>
+                <SelectItem value="scheduled">ขอล่วงหน้า (Scheduled)</SelectItem>
               </SelectContent>
             </Select>
+            <p className="text-xs text-gray-500">
+              {formData.type === 'ad-hoc' 
+                ? 'สำหรับกรณีขาดเรียนแบบกะทันหัน ไม่ได้แจ้งล่วงหน้า'
+                : 'สำหรับกรณีที่รู้ล่วงหน้าว่าจะขาดเรียน'}
+            </p>
           </div>
 
-          {/* Makeup Date */}
+          {/* Reason */}
           <div className="space-y-2">
-            <Label htmlFor="makeup-date">วันที่นัด Makeup</Label>
-            <Input
-              id="makeup-date"
-              type="date"
-              value={makeupDate}
-              onChange={(e) => setMakeupDate(e.target.value)}
-              min={new Date().toISOString().split('T')[0]}
-            />
-          </div>
-
-          {/* Makeup Time */}
-          <div className="space-y-2">
-            <Label htmlFor="makeup-time">เวลานัด</Label>
-            <Input
-              id="makeup-time"
-              type="time"
-              value={makeupTime}
-              onChange={(e) => setMakeupTime(e.target.value)}
-            />
-          </div>
-
-          {/* Note */}
-          <div className="space-y-2">
-            <Label htmlFor="note">หมายเหตุ (ถ้ามี)</Label>
+            <Label htmlFor="reason">เหตุผลที่ขาดเรียน *</Label>
             <Textarea
-              id="note"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="เช่น ติดต่อผู้ปกครองแล้ว, นัดที่ห้องพิเศษ"
+              id="reason"
+              value={formData.reason}
+              onChange={(e) => setFormData(prev => ({ ...prev, reason: e.target.value }))}
+              placeholder="เช่น ป่วย, ติดธุระสำคัญ, เดินทางต่างจังหวัด"
               rows={3}
+              required
             />
           </div>
 
-          {/* Scheduled Makeups */}
-          {absentSessions.filter(s => s.makeupStatus === 'scheduled').length > 0 && (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <div className="flex items-start gap-2">
-                <Info className="h-5 w-5 text-blue-600 mt-0.5" />
-                <div className="text-sm">
-                  <p className="font-medium text-blue-800">Makeup ที่นัดไว้แล้ว</p>
-                  <ul className="mt-1 space-y-1">
-                    {absentSessions
-                      .filter(s => s.makeupStatus === 'scheduled')
-                      .map(session => (
-                        <li key={session.sessionNumber} className="text-blue-700">
-                          ครั้งที่ {session.sessionNumber} → {formatDate(session.makeupDate!, 'long')}
-                        </li>
-                      ))}
-                  </ul>
-                </div>
+          {/* Info */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="flex items-start gap-2">
+              <Info className="h-5 w-5 text-blue-600 mt-0.5" />
+              <div className="text-sm text-blue-800">
+                <p className="font-medium">ขั้นตอนถัดไป:</p>
+                <ol className="list-decimal list-inside mt-1 space-y-1">
+                  <li>Admin จะจัดตารางเรียนชดเชยให้</li>
+                  <li>ผู้ปกครองจะได้รับการแจ้งเตือนผ่าน LINE</li>
+                  <li>นักเรียนต้องเข้าเรียนตามวันเวลาที่นัดหมาย</li>
+                </ol>
               </div>
             </div>
-          )}
+          </div>
         </div>
 
         {/* Actions */}
@@ -199,16 +225,16 @@ export default function MakeupClassDialog({
             ยกเลิก
           </Button>
           <Button 
-            onClick={handleSave}
-            disabled={saving || !selectedSession || !makeupDate || !makeupTime}
+            onClick={handleSubmit}
+            disabled={loading || !formData.reason.trim()}
             className="bg-blue-500 hover:bg-blue-600"
           >
-            {saving ? (
+            {loading ? (
               <>กำลังบันทึก...</>
             ) : (
               <>
                 <Save className="h-4 w-4 mr-2" />
-                บันทึกการนัด
+                บันทึกการขอ
               </>
             )}
           </Button>

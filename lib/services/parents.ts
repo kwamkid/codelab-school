@@ -347,39 +347,50 @@ export async function getParentWithStudents(
   }
 }
 
-// Get all students with parent info
-export async function getAllStudentsWithParents(): Promise<(Student & { parentName: string; parentPhone: string })[]> {
+// Get all students with parent info (including LINE display name)
+export async function getAllStudentsWithParents(): Promise<(Student & { 
+  parentName: string; 
+  parentPhone: string;
+  lineDisplayName?: string;
+})[]> {
   try {
-    const parents = await getParents();
-    const allStudents: (Student & { parentName: string; parentPhone: string })[] = [];
+    const parentsSnapshot = await getDocs(collection(db, 'parents'));
+    const allStudents: (Student & { 
+      parentName: string; 
+      parentPhone: string;
+      lineDisplayName?: string;
+    })[] = [];
     
-    for (const parent of parents) {
-      const students = await getStudentsByParent(parent.id);
-      const studentsWithParent = students.map(student => ({
-        ...student,
-        parentName: parent.displayName,
-        parentPhone: parent.phone
+    for (const parentDoc of parentsSnapshot.docs) {
+      const parentData = {
+        id: parentDoc.id,
+        ...parentDoc.data()
+      } as Parent;
+      
+      const studentsSnapshot = await getDocs(
+        collection(db, 'parents', parentDoc.id, 'students')
+      );
+      
+      const students = studentsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        parentId: parentDoc.id,
+        ...doc.data(),
+        birthdate: doc.data().birthdate?.toDate() || new Date(),
+        parentName: parentData.displayName,
+        parentPhone: parentData.phone,
+        lineDisplayName: parentData.displayName // LINE display name
+      } as Student & { 
+        parentName: string; 
+        parentPhone: string;
+        lineDisplayName?: string;
       }));
-      allStudents.push(...studentsWithParent);
+      
+      allStudents.push(...students);
     }
     
-    // Sort by name
-    return allStudents.sort((a, b) => a.name.localeCompare(b.name));
+    return allStudents;
   } catch (error) {
-    console.error('Error getting all students:', error);
-    throw error;
-  }
-}
-
-// Update parent's last login
-export async function updateLastLogin(parentId: string): Promise<void> {
-  try {
-    const docRef = doc(db, COLLECTION_NAME, parentId);
-    await updateDoc(docRef, {
-      lastLoginAt: Timestamp.now()
-    });
-  } catch (error) {
-    console.error('Error updating last login:', error);
-    throw error;
+    console.error('Error getting all students with parents:', error);
+    return [];
   }
 }

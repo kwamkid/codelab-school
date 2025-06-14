@@ -77,10 +77,11 @@ export async function getEnrollmentsByClass(classId: string): Promise<Enrollment
 export async function getEnrollmentsByStudent(studentId: string): Promise<Enrollment[]> {
   try {
     const q = query(
-      collection(db, COLLECTION_NAME),
+      collection(db, 'enrollments'),
       where('studentId', '==', studentId),
-      orderBy('enrolledAt', 'desc')
+      where('status', 'in', ['active', 'completed'])
     );
+    
     const querySnapshot = await getDocs(q);
     
     return querySnapshot.docs.map(doc => ({
@@ -90,11 +91,15 @@ export async function getEnrollmentsByStudent(studentId: string): Promise<Enroll
       payment: {
         ...doc.data().payment,
         paidDate: doc.data().payment?.paidDate?.toDate()
-      }
+      },
+      transferHistory: doc.data().transferHistory?.map((th: any) => ({
+        ...th,
+        transferredAt: th.transferredAt?.toDate() || new Date()
+      }))
     } as Enrollment));
   } catch (error) {
     console.error('Error getting enrollments by student:', error);
-    throw error;
+    return [];
   }
 }
 
