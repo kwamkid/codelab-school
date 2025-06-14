@@ -620,3 +620,71 @@ export async function checkTeacherAvailability(
     return false;
   }
 }
+
+// Get makeup class by original schedule
+export async function getMakeupByOriginalSchedule(
+  studentId: string,
+  classId: string,
+  scheduleId: string
+): Promise<MakeupClass | null> {
+  try {
+    const q = query(
+      collection(db, COLLECTION_NAME),
+      where('studentId', '==', studentId),
+      where('originalClassId', '==', classId),
+      where('originalScheduleId', '==', scheduleId),
+      where('status', 'in', ['pending', 'scheduled'])
+    );
+    
+    const querySnapshot = await getDocs(q);
+    if (querySnapshot.size > 0) {
+      const doc = querySnapshot.docs[0];
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...data,
+        requestDate: data.requestDate?.toDate() || new Date(),
+        createdAt: data.createdAt?.toDate() || new Date(),
+        updatedAt: data.updatedAt?.toDate(),
+        makeupSchedule: data.makeupSchedule ? {
+          ...data.makeupSchedule,
+          date: data.makeupSchedule.date?.toDate() || new Date(),
+          confirmedAt: data.makeupSchedule.confirmedAt?.toDate(),
+        } : undefined,
+        attendance: data.attendance ? {
+          ...data.attendance,
+          checkedAt: data.attendance.checkedAt?.toDate() || new Date(),
+        } : undefined,
+      } as MakeupClass;
+    }
+    return null;
+  } catch (error) {
+    console.error('Error getting makeup by original schedule:', error);
+    return null;
+  }
+}
+
+// Delete makeup class (soft delete for completed, hard delete for pending/scheduled)
+export async function deleteMakeupForSchedule(
+  studentId: string,
+  classId: string,
+  scheduleId: string,
+  deletedBy: string,
+  reason: string = 'Attendance updated to present'
+): Promise<void> {
+  try {
+    const makeup = await getMakeupByOriginalSchedule(studentId, classId, scheduleId);
+    if (!makeup) return;
+
+    if (makeup.status === 'completed') {
+      // For completed makeup, just update status to cancelled
+      await cancelMakeupClass(makeup.id, reason, deletedBy);
+    } else {
+      // For pending/scheduled, delete the makeup
+      await deleteMakeupClass(makeup.id, deletedBy, reason);
+    }
+  } catch (error) {
+    console.error('Error deleting makeup for schedule:', error);
+    throw error;
+  }
+}

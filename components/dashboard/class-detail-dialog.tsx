@@ -33,6 +33,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import MakeupClassDialog from '@/components/classes/makeup-class-dialog';
 import { getMakeupClass } from '@/lib/services/makeup';
 import { useRouter } from 'next/navigation';
+import { auth } from '@/lib/firebase/client';
 import {
   Select,
   SelectContent,
@@ -191,22 +192,96 @@ export default function ClassDetailDialog({
     }
   };
 
-  const handleAttendanceChange = (studentId: string, status: string) => {
+  const handleAttendanceChange = async (studentId: string, status: string) => {
     const newRecords = new Map(attendanceRecords);
+    const previousStatus = attendanceRecords.get(studentId);
+    
     if (status === 'none') {
       newRecords.delete(studentId);
     } else {
       newRecords.set(studentId, status);
     }
     setAttendanceRecords(newRecords);
+    
+    // Auto-manage makeup class when changing attendance status
+    if (event && scheduleId) {
+      try {
+        const currentUser = auth.currentUser;
+        if (!currentUser) return;
+        
+        // Get student info
+        const student = students.find(s => s.id === studentId);
+        if (!student) return;
+        
+        // Import makeup services
+        const { getMakeupByOriginalSchedule, deleteMakeupForSchedule, createMakeupRequest } = 
+          await import('@/lib/services/makeup');
+        
+        // Check if makeup exists for this schedule
+        const existingMakeup = await getMakeupByOriginalSchedule(
+          studentId,
+          event.classId,
+          scheduleId
+        );
+        
+        // If changing from absent to present/late
+        if ((previousStatus === 'absent' || !previousStatus) && 
+            (status === 'present' || status === 'late')) {
+          if (existingMakeup) {
+            // Delete existing makeup
+            await deleteMakeupForSchedule(
+              studentId,
+              event.classId,
+              scheduleId,
+              currentUser.uid,
+              'นักเรียนมาเรียนตามปกติ'
+            );
+            toast.success('ยกเลิก Makeup Class แล้ว');
+          }
+        }
+        
+        // If changing to absent
+        if (status === 'absent' && !existingMakeup) {
+          // Auto-create makeup request
+          await createMakeupRequest({
+            type: 'ad-hoc',
+            originalClassId: event.classId,
+            originalScheduleId: scheduleId,
+            studentId: studentId,
+            parentId: student.parentId,
+            requestDate: new Date(),
+            requestedBy: currentUser.uid,
+            reason: 'ขาดเรียน (บันทึกโดยระบบ)',
+            status: 'pending'
+          });
+          toast.success('สร้าง Makeup Request อัตโนมัติแล้ว');
+        }
+      } catch (error) {
+        console.error('Error managing makeup:', error);
+        // Don't show error to user, just log it
+      }
+    }
   };
 
-  const handleMarkAbsent = (student: StudentWithAttendance) => {
+  const handleMarkAbsent = async (student: StudentWithAttendance) => {
     // Mark as absent first
-    handleAttendanceChange(student.id, 'absent');
-    // Then open makeup dialog
-    setSelectedStudent(student);
-    setShowMakeupDialog(true);
+    await handleAttendanceChange(student.id, 'absent');
+    
+    // Check if makeup already exists
+    const { getMakeupByOriginalSchedule } = await import('@/lib/services/makeup');
+    const existingMakeup = await getMakeupByOriginalSchedule(
+      student.id,
+      event!.classId,
+      scheduleId
+    );
+    
+    if (!existingMakeup) {
+      // Open makeup dialog only if no makeup exists
+      setSelectedStudent(student);
+      setShowMakeupDialog(true);
+    } else {
+      toast.info('มี Makeup Request สำหรับวันนี้อยู่แล้ว');
+    }
   };
 
   const handleSaveAttendance = async () => {
@@ -517,7 +592,7 @@ export default function ClassDetailDialog({
                                   size="sm"
                                   variant={attendanceRecords.get(student.id) === 'absent' ? 'default' : 'outline'}
                                   className={attendanceRecords.get(student.id) === 'absent' ? 'bg-red-500 hover:bg-red-600' : ''}
-                                  onClick={() => handleMarkAbsent(student)}
+                                  onClick={() => handleAttendanceChange(student.id, 'absent')}
                                 >
                                   ขาดเรียน
                                 </Button>
