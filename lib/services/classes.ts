@@ -313,28 +313,44 @@ export async function getClassSchedules(classId: string): Promise<ClassSchedule[
 }
 
 // Get single class schedule
-export async function getClassSchedule(classId: string, scheduleId: string): Promise<ClassSchedule | null> {
+// เพิ่มใน lib/services/classes.ts
+// แทนที่ function getClassSchedule เดิมด้วย:
+
+export async function getClassSchedule(
+  classId: string, 
+  scheduleId: string
+): Promise<ClassSchedule | null> {
+  console.log(`[getClassSchedule] Called with classId: ${classId}, scheduleId: ${scheduleId}`);
+  
   try {
-    const docRef = doc(db, COLLECTION_NAME, classId, 'schedules', scheduleId);
+    const docRef = doc(db, 'classes', classId, 'schedules', scheduleId);
+    console.log(`[getClassSchedule] Document path: classes/${classId}/schedules/${scheduleId}`);
+    
     const docSnap = await getDoc(docRef);
+    console.log(`[getClassSchedule] Document exists: ${docSnap.exists()}`);
     
     if (docSnap.exists()) {
       const data = docSnap.data();
-      console.log('Raw schedule data from Firestore:', data); // Debug log
+      console.log(`[getClassSchedule] Document data:`, data);
       
-      return {
+      const schedule = {
         id: docSnap.id,
+        classId: classId,
         ...data,
         sessionDate: data.sessionDate?.toDate() || new Date(),
         originalDate: data.originalDate?.toDate(),
         rescheduledAt: data.rescheduledAt?.toDate(),
-        attendance: data.attendance || [] // Make sure attendance is included
       } as ClassSchedule;
+      
+      console.log(`[getClassSchedule] Returning schedule:`, schedule);
+      return schedule;
     }
+    
+    console.log(`[getClassSchedule] Document not found`);
     return null;
   } catch (error) {
-    console.error('Error getting class schedule:', error);
-    throw error;
+    console.error(`[getClassSchedule] Error:`, error);
+    return null;
   }
 }
 

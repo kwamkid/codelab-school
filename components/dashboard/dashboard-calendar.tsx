@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
@@ -9,22 +9,23 @@ import interactionPlugin from '@fullcalendar/interaction';
 import { CalendarEvent } from '@/lib/services/dashboard';
 import { DatesSetArg, EventClickArg, EventContentArg } from '@fullcalendar/core';
 import { Clock, Users, MapPin, User } from 'lucide-react';
-import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
 
 interface DashboardCalendarProps {
   events: CalendarEvent[];
   onDatesSet: (dateInfo: DatesSetArg) => void;
   onEventClick: (clickInfo: EventClickArg) => void;
+  showHalfHour: boolean;
+  setShowHalfHour: (value: boolean) => void;
 }
 
 export default function DashboardCalendar({ 
   events, 
   onDatesSet,
-  onEventClick 
+  onEventClick,
+  showHalfHour,
+  setShowHalfHour
 }: DashboardCalendarProps) {
   const calendarRef = useRef<FullCalendar>(null);
-  const [showHalfHour, setShowHalfHour] = useState(false);
 
   useEffect(() => {
     // Set calendar to today when component mounts
@@ -153,18 +154,6 @@ export default function DashboardCalendar({
 
   return (
     <div className="dashboard-calendar">
-      {/* Time slot display toggle */}
-      <div className="flex items-center gap-2 mb-4 justify-end">
-        <Label htmlFor="half-hour" className="text-sm text-gray-600">
-          แสดงช่วงเวลา 30 นาที
-        </Label>
-        <Switch
-          id="half-hour"
-          checked={showHalfHour}
-          onCheckedChange={setShowHalfHour}
-        />
-      </div>
-
       <FullCalendar
         ref={calendarRef}
         plugins={[dayGridPlugin, timeGridPlugin, listPlugin, interactionPlugin]}
@@ -179,12 +168,34 @@ export default function DashboardCalendar({
         datesSet={onDatesSet}
         locale="th"
         firstDay={0}
-        height="auto"
+        height={650}
         dayMaxEvents={3}
         slotMinTime="08:00:00"
         slotMaxTime="19:00:00"
-        slotDuration={showHalfHour ? "00:30:00" : "01:00:00"}
-        slotLabelInterval={showHalfHour ? "00:30:00" : "01:00:00"}
+        slotDuration="01:00:00"
+        slotLabelInterval="01:00:00"
+        slotLabelFormat={{
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false,
+          meridiem: false,
+          omitZeroMinute: false,
+          // Custom formatting based on showHalfHour
+          ...(showHalfHour && {
+            minute: undefined, // Hide default minute
+          })
+        }}
+        slotLabelContent={(arg) => {
+          // Custom slot label rendering
+          if (showHalfHour) {
+            const hour = arg.date.getHours();
+            return `${hour.toString().padStart(2, '0')}:30`;
+          }
+          // Default formatting for normal view
+          const hour = arg.date.getHours();
+          return `${hour.toString().padStart(2, '0')}:00`;
+        }}
+        expandRows={true}
         eventTimeFormat={{
           hour: '2-digit',
           minute: '2-digit',
@@ -212,7 +223,6 @@ export default function DashboardCalendar({
         }}
         allDayText="ทั้งวัน"
         noEventsText="ไม่มีคลาสเรียน"
-        expandRows={true}
         nowIndicator={true}
         navLinks={true}
       />

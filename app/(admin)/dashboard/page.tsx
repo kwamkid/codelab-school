@@ -17,14 +17,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [allEvents, setAllEvents] = useState<CalendarEvent[]>([]); // Store all events for filtering
+  const [allEvents, setAllEvents] = useState<CalendarEvent[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedScheduleId, setSelectedScheduleId] = useState<string>('');
+  const [showHalfHour, setShowHalfHour] = useState(false);
   
   // Filter states
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -50,11 +53,10 @@ export default function DashboardPage() {
     setDateRange({ start: dateInfo.start, end: dateInfo.end });
     
     try {
-      // ส่ง branchId ไปด้วยถ้าไม่ใช่ 'all'
       const branchIdToQuery = selectedBranch === 'all' ? undefined : selectedBranch;
       const fetchedEvents = await getCalendarEvents(dateInfo.start, dateInfo.end, branchIdToQuery);
       setAllEvents(fetchedEvents);
-      setEvents(fetchedEvents); // ไม่ต้อง filter อีกรอบเพราะ query มาถูกแล้ว
+      setEvents(fetchedEvents);
     } catch (error) {
       toast.error('ไม่สามารถโหลดข้อมูลตารางเรียนได้');
       console.error(error);
@@ -62,8 +64,6 @@ export default function DashboardPage() {
       setLoading(false);
     }
   }, [selectedBranch]);
-  
-
   
   // Re-apply filters when branch changes
   const handleBranchChange = async (value: string) => {
@@ -112,7 +112,12 @@ export default function DashboardPage() {
         enrolled: clickInfo.event.extendedProps.enrolled,
         maxStudents: clickInfo.event.extendedProps.maxStudents,
         sessionNumber: clickInfo.event.extendedProps.sessionNumber,
-        status: clickInfo.event.extendedProps.status
+        status: clickInfo.event.extendedProps.status,
+        type: clickInfo.event.extendedProps.type,
+        studentName: clickInfo.event.extendedProps.studentName,
+        studentNickname: clickInfo.event.extendedProps.studentNickname,
+        originalClassName: clickInfo.event.extendedProps.originalClassName,
+        makeupStatus: clickInfo.event.extendedProps.makeupStatus
       }
     };
     
@@ -126,7 +131,6 @@ export default function DashboardPage() {
   const handleDialogClose = async (open: boolean) => {
     if (!open) {
       setDialogOpen(false);
-      // Don't refresh or save anything when just closing
     }
   };
   
@@ -177,7 +181,20 @@ export default function DashboardPage() {
       {/* Calendar */}
       <Card>
         <CardHeader>
-          <CardTitle>ตารางเรียนทั้งหมด</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle>ตารางเรียนทั้งหมด</CardTitle>
+            {/* Time slot display toggle */}
+            <div className="flex items-center gap-2">
+              <Label htmlFor="half-hour" className="text-sm text-gray-600 cursor-pointer">
+                แสดงช่วงเวลา 30 นาที
+              </Label>
+              <Switch
+                id="half-hour"
+                checked={showHalfHour}
+                onCheckedChange={setShowHalfHour}
+              />
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="relative">
           {loading && (
@@ -190,6 +207,8 @@ export default function DashboardPage() {
             events={events} 
             onDatesSet={handleDatesSet}
             onEventClick={handleEventClick}
+            showHalfHour={showHalfHour}
+            setShowHalfHour={setShowHalfHour}
           />
         </CardContent>
       </Card>

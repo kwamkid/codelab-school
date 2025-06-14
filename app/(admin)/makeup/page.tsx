@@ -91,8 +91,6 @@ const statusIcons = {
   'cancelled': XCircle,
 };
 
-import Link from 'next/link';
-
 export default function MakeupPage() {
   const router = useRouter();
   const [makeupClasses, setMakeupClasses] = useState<MakeupClass[]>([]);
@@ -100,7 +98,7 @@ export default function MakeupPage() {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [students, setStudents] = useState<StudentWithParent[]>([]);
   const [loading, setLoading] = useState(true);
-  const [originalSchedules, setOriginalSchedules] = useState<Record<string, ClassSchedule>>({});
+  const [originalSchedules, setOriginalSchedules] = useState<Record<string, ClassSchedule | null>>({});
   
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -123,6 +121,7 @@ export default function MakeupPage() {
   }, []);
 
   const loadData = async () => {
+    console.log('=== Starting loadData ===');
     try {
       const [makeupData, classesData, branchesData, studentsData] = await Promise.all([
         getMakeupClasses(),
@@ -131,33 +130,103 @@ export default function MakeupPage() {
         getAllStudentsWithParents()
       ]);
       
+      console.log('Makeup data loaded:', makeupData);
+      console.log('Classes data loaded:', classesData);
+      
       setMakeupClasses(makeupData);
       setClasses(classesData);
       setBranches(branchesData);
       setStudents(studentsData);
       
       // Load original schedules for each makeup
-      const schedules: Record<string, ClassSchedule> = {};
+      console.log('=== Loading schedules for makeups ===');
+      const schedules: Record<string, ClassSchedule | null> = {};
+      
       for (const makeup of makeupData) {
+        console.log(`\nProcessing makeup ${makeup.id}:`, {
+          originalClassId: makeup.originalClassId,
+          originalScheduleId: makeup.originalScheduleId,
+          hasClassId: !!makeup.originalClassId,
+          hasScheduleId: !!makeup.originalScheduleId
+        });
+        
         if (makeup.originalClassId && makeup.originalScheduleId) {
           try {
+            console.log(`Calling getClassSchedule(${makeup.originalClassId}, ${makeup.originalScheduleId})`);
             const schedule = await getClassSchedule(makeup.originalClassId, makeup.originalScheduleId);
-            if (schedule) {
-              schedules[makeup.id] = schedule;
-            }
+            console.log(`Schedule result:`, schedule);
+            schedules[makeup.id] = schedule;
           } catch (error) {
-            console.error('Error loading schedule:', error);
+            console.error(`Error loading schedule for makeup ${makeup.id}:`, error);
+            schedules[makeup.id] = null;
           }
+        } else {
+          console.log(`Skipping - missing IDs`);
+          schedules[makeup.id] = null;
         }
       }
+      
+      console.log('=== Final schedules object:', schedules);
       setOriginalSchedules(schedules);
     } catch (error) {
-      console.error('Error loading data:', error);
+      console.error('Error in loadData:', error);
       toast.error('ไม่สามารถโหลดข้อมูลได้');
     } finally {
       setLoading(false);
     }
   };
+
+  // เพิ่ม function นี้ใน makeup page เพื่อตรวจสอบ schedules ที่มีอยู่จริง
+
+const debugCheckSchedules = async () => {
+  console.log('=== DEBUG: Checking actual schedules ===');
+  
+  // ดู class ที่มีปัญหา
+  const problemClassIds = ['ti9H088p9LNPPY05xFKy', 'lZlIe1zel3rMrZaKS7ro'];
+  
+  for (const classId of problemClassIds) {
+    console.log(`\nChecking class: ${classId}`);
+    
+    // หา class info
+    const classInfo = classes.find(c => c.id === classId);
+    console.log('Class info:', classInfo?.name, classInfo?.code);
+    
+    // ดึง schedules ทั้งหมดของ class นี้
+    try {
+      const { getClassSchedules } = await import('@/lib/services/classes');
+      const schedules = await getClassSchedules(classId);
+      console.log(`Found ${schedules.length} schedules:`);
+      
+      schedules.forEach(schedule => {
+        console.log(`- Schedule ID: ${schedule.id}, Session: ${schedule.sessionNumber}, Date: ${formatDate(schedule.sessionDate)}`);
+      });
+      
+      // เช็คว่า schedule IDs ที่ makeup อ้างอิง มีอยู่จริงไหม
+      const makeupScheduleIds = [
+        '5JhBQJJwxxOrvaXZ6rxK',
+        'l0daEdaBVb4Nb85OCmRg', 
+        'ZJ9oe25NNKX2wwisrtKx',
+        'arq5aziY9FKtagqFff4T'
+      ];
+      
+      console.log('\nChecking if makeup schedule IDs exist:');
+      makeupScheduleIds.forEach(id => {
+        const exists = schedules.some(s => s.id === id);
+        console.log(`- ${id}: ${exists ? 'EXISTS' : 'NOT FOUND'}`);
+      });
+      
+    } catch (error) {
+      console.error('Error loading schedules:', error);
+    }
+  }
+};
+
+// เรียกใช้ใน useEffect
+useEffect(() => {
+  if (classes.length > 0) {
+    debugCheckSchedules();
+  }
+}, [classes]);
 
   // Helper functions
   const getStudentInfo = (studentId: string) => {
@@ -170,7 +239,7 @@ export default function MakeupPage() {
 
   const getBranchName = (branchId: string) => {
     const branch = branches.find(b => b.id === branchId);
-    return branch?.name || 'Unknown';
+    return branch?.name || '-';
   };
 
   // Filter makeup classes
@@ -439,29 +508,55 @@ export default function MakeupPage() {
                         </TableCell>
                         <TableCell>
                           <div>
-                            <p className="font-medium">{student?.nickname || student?.name}</p>
-                            <p className="text-xs text-gray-500">{student?.parentName}</p>
+                            <p className="font-medium">{student?.nickname || student?.name || '-'}</p>
+                            <p className="text-xs text-gray-500">{student?.parentName || '-'}</p>
                           </div>
                         </TableCell>
                         <TableCell>
                           <div>
-                            <p className="font-medium">{cls?.name}</p>
-                            <p className="text-xs text-gray-500">{cls?.code}</p>
+                            <p className="font-medium">{cls?.name || '-'}</p>
+                            <p className="text-xs text-gray-500">{cls?.code || '-'}</p>
                           </div>
                         </TableCell>
                         <TableCell className="whitespace-nowrap">
-                          {originalSchedule ? (
-                            <div>
-                              <p className="font-medium">
-                                ครั้งที่ {originalSchedule.sessionNumber}
-                              </p>
-                              <p className="text-xs text-gray-500">
-                                {formatDate(originalSchedule.sessionDate)}
-                              </p>
-                            </div>
-                          ) : (
-                            '-'
-                          )}
+                          {(() => {
+                            const originalSchedule = originalSchedules[makeup.id];
+                            
+                            // ถ้ามี schedule data จาก Firebase
+                            if (originalSchedule) {
+                              return (
+                                <div>
+                                  <p className="font-medium text-red-600">
+                                    ครั้งที่ {originalSchedule.sessionNumber}
+                                  </p>
+                                  <p className="text-xs text-gray-500">
+                                    {formatDate(originalSchedule.sessionDate)}
+                                  </p>
+                                </div>
+                              );
+                            }
+                            
+                            // ถ้าไม่มี schedule แต่อาจมีข้อมูลใน makeup document
+                            if (makeup.originalSessionNumber || makeup.originalSessionDate) {
+                              return (
+                                <div>
+                                  {makeup.originalSessionNumber && (
+                                    <p className="font-medium text-red-600">
+                                      ครั้งที่ {makeup.originalSessionNumber}
+                                    </p>
+                                  )}
+                                  {makeup.originalSessionDate && (
+                                    <p className="text-xs text-gray-500">
+                                      {formatDate(makeup.originalSessionDate)}
+                                    </p>
+                                  )}
+                                </div>
+                              );
+                            }
+                            
+                            // ถ้าไม่มีข้อมูลเลย
+                            return <span className="text-gray-400">ไม่มีข้อมูล</span>;
+                          })()}
                         </TableCell>
                         <TableCell>{cls ? getBranchName(cls.branchId) : '-'}</TableCell>
                         <TableCell>
@@ -476,7 +571,7 @@ export default function MakeupPage() {
                               </p>
                             </div>
                           ) : (
-                            '-'
+                            <span className="text-gray-400">-</span>
                           )}
                         </TableCell>
                         <TableCell className="text-center">
@@ -560,8 +655,8 @@ export default function MakeupPage() {
           {selectedMakeup && (
             <div className="my-4 space-y-3">
               <div className="bg-gray-50 rounded p-3 text-sm">
-                <p><strong>นักเรียน:</strong> {getStudentInfo(selectedMakeup.studentId)?.name}</p>
-                <p><strong>คลาส:</strong> {getClassInfo(selectedMakeup.originalClassId)?.name}</p>
+                <p><strong>นักเรียน:</strong> {getStudentInfo(selectedMakeup.studentId)?.name || '-'}</p>
+                <p><strong>คลาส:</strong> {getClassInfo(selectedMakeup.originalClassId)?.name || '-'}</p>
                 <p><strong>สถานะ:</strong> {statusLabels[selectedMakeup.status]}</p>
               </div>
               <div>
