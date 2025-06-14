@@ -1,243 +1,304 @@
-import {
-  collection,
-  getDocs,
-  query,
-  where,
+// lib/services/dashboard.ts
+
+import { 
+  collection, 
+  query, 
+  where, 
+  getDocs, 
   Timestamp,
-  doc,
-  getDoc
+  orderBy
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
-import { Class, ClassSchedule, Subject, Teacher, Room, Branch } from '@/types/models';
+import { getClasses } from './classes';
+import { getSubjects } from './subjects';
+import { getTeachers } from './teachers';
+import { getBranches } from './branches';
+import { getMakeupClasses } from './makeup';
+import { getStudentWithParent } from './parents';
+import { EventInput } from '@fullcalendar/core';
 
-/**
- * Interface สำหรับข้อมูลสถิติบน Dashboard
- */
-export interface DashboardStats {
-  totalBranches: number;
-  totalStudents: number;
-  activeClasses: number;
-  monthlyRevenue: number;
-}
-
-/**
- * ดึงข้อมูลสถิติหลักสำหรับหน้า Dashboard
- */
-export async function getDashboardStats(): Promise<DashboardStats> {
-  try {
-    // 1. Get total branches
-    const branchesSnapshot = await getDocs(collection(db, 'branches'));
-    const totalBranches = branchesSnapshot.size;
-
-    // 2. Get total students (นับเฉพาะนักเรียนที่ Active)
-    const parentsSnapshot = await getDocs(collection(db, 'parents'));
-    let totalStudents = 0;
-    for (const parentDoc of parentsSnapshot.docs) {
-      const studentsQuery = query(
-        collection(db, 'parents', parentDoc.id, 'students'),
-        where('isActive', '==', true)
-      );
-      const studentsSnapshot = await getDocs(studentsQuery);
-      totalStudents += studentsSnapshot.size;
-    }
-
-    // 3. Get active classes (ที่เปิดรับสมัคร หรือกำลังเรียน)
-    const classesQuery = query(collection(db, 'classes'), where('status', 'in', ['published', 'started']));
-    const activeClassesSnapshot = await getDocs(classesQuery);
-    const activeClasses = activeClassesSnapshot.size;
-
-    // 4. Get monthly revenue
-    const monthlyRevenue = 0;
-
-    return {
-      totalBranches,
-      totalStudents,
-      activeClasses,
-      monthlyRevenue,
-    };
-  } catch (error) {
-    console.error("Error getting dashboard stats:", error);
-    return {
-      totalBranches: 0,
-      totalStudents: 0,
-      activeClasses: 0,
-      monthlyRevenue: 0,
-    };
-  }
-}
-
-/**
- * Interface สำหรับ Event ที่จะแสดงบนปฏิทิน
- */
-export interface CalendarEvent {
-  id: string;
+export interface CalendarEvent extends EventInput {
   classId: string;
-  title: string;
-  start: Date;
-  end: Date;
-  backgroundColor: string;
-  borderColor: string;
   extendedProps: {
+    type: 'class' | 'makeup'; // เพิ่ม type เพื่อแยกประเภท
     branchId: string;
     branchName: string;
     roomName: string;
     teacherName: string;
-    enrolled: number;
-    maxStudents: number;
-    sessionNumber: number;
-    status: string;
+    enrolled?: number;
+    maxStudents?: number;
+    sessionNumber?: number;
+    status?: string;
+    // สำหรับ makeup
+    studentName?: string;
+    studentNickname?: string;
+    originalClassName?: string;
+    makeupStatus?: 'pending' | 'scheduled' | 'completed' | 'cancelled';
   };
 }
 
-/**
- * ดึงข้อมูลคลาสทั้งหมดเพื่อมาแสดงผลในปฏิทินตามช่วงวันที่และสาขา
- * @param viewStart วันที่เริ่มต้นของมุมมองปฏิทิน
- * @param viewEnd วันที่สิ้นสุดของมุมมองปฏิทิน
- * @param branchId ID ของสาขาที่ต้องการดู (ถ้าเป็น 'all' จะแสดงทุกสาขา)
- * @returns Array ของ CalendarEvent
- */
 export async function getCalendarEvents(
-  viewStart: Date, 
-  viewEnd: Date,
+  start: Date, 
+  end: Date,
   branchId?: string
 ): Promise<CalendarEvent[]> {
   try {
-    console.log('Getting calendar events for range:', viewStart, 'to', viewEnd);
-    
-    // 1. ดึงข้อมูลพื้นฐานทั้งหมดที่ต้องใช้
-    const [subjectsSnap, teachersSnap, branchesSnap] = await Promise.all([
-      getDocs(collection(db, 'subjects')),
-      getDocs(collection(db, 'teachers')),
-      getDocs(collection(db, 'branches'))
+    // Get all necessary data
+    const [classes, subjects, teachers, branches, makeupClasses] = await Promise.all([
+      getClasses(),
+      getSubjects(),
+      getTeachers(),
+      getBranches(),
+      getMakeupClasses()
     ]);
 
-    // 2. แปลงข้อมูลเป็น Map
-    const subjectMap = new Map(subjectsSnap.docs.map(doc => [doc.id, doc.data() as Subject]));
-    const teacherMap = new Map(teachersSnap.docs.map(doc => [doc.id, doc.data() as Teacher]));
-    const branchMap = new Map(branchesSnap.docs.map(doc => [doc.id, doc.data() as Branch]));
+    // Create lookup maps
+    const subjectMap = new Map(subjects.map(s => [s.id, s]));
+    const teacherMap = new Map(teachers.map(t => [t.id, t]));
+    const branchMap = new Map(branches.map(b => [b.id, b]));
+    const classMap = new Map(classes.map(c => [c.id, c]));
+
+    // Get all rooms data
+    const roomsModule = await import('./rooms');
+    const allRooms = await Promise.all(
+      branches.map(async (branch) => {
+        const rooms = await roomsModule.getRoomsByBranch(branch.id);
+        return rooms.map(room => ({ ...room, branchId: branch.id }));
+      })
+    );
+    const roomMap = new Map(
+      allRooms.flat().map(room => [`${room.branchId}-${room.id}`, room])
+    );
 
     const events: CalendarEvent[] = [];
-    
-    // 3. ดึงคลาสที่ active ทั้งหมด (ไม่ filter ด้วย date range ตรงนี้)
-    let classQuery = query(
-      collection(db, 'classes'),
-      where('status', 'in', ['published', 'started'])
-    );
-    
-    if (branchId && branchId !== 'all') {
-      classQuery = query(
-        collection(db, 'classes'),
-        where('status', 'in', ['published', 'started']),
-        where('branchId', '==', branchId)
-      );
-    }
-    
-    const classSnap = await getDocs(classQuery);
-    console.log('Found classes:', classSnap.size);
 
-    // 4. Process each class
-    for (const classDoc of classSnap.docs) {
-      const classData = { 
-        id: classDoc.id, 
-        ...classDoc.data(),
-        startDate: classDoc.data().startDate?.toDate() || new Date(),
-        endDate: classDoc.data().endDate?.toDate() || new Date(),
-      } as Class;
+    // Process regular class schedules
+    for (const cls of classes) {
+      // Skip if filtering by branch and doesn't match
+      if (branchId && cls.branchId !== branchId) continue;
       
-      // Get schedules for this class in the date range
-      const schedulesRef = collection(db, 'classes', classDoc.id, 'schedules');
+      // Skip draft or cancelled classes
+      if (cls.status === 'draft' || cls.status === 'cancelled') continue;
+
+      const subject = subjectMap.get(cls.subjectId);
+      const teacher = teacherMap.get(cls.teacherId);
+      const branch = branchMap.get(cls.branchId);
+
+      if (!subject || !teacher || !branch) continue;
+
+      // Get schedules for this class
+      const schedulesRef = collection(db, 'classes', cls.id, 'schedules');
       const scheduleQuery = query(
         schedulesRef,
-        where('sessionDate', '>=', Timestamp.fromDate(viewStart)),
-        where('sessionDate', '<=', Timestamp.fromDate(viewEnd))
+        where('sessionDate', '>=', Timestamp.fromDate(start)),
+        where('sessionDate', '<=', Timestamp.fromDate(end)),
+        orderBy('sessionDate', 'asc')
       );
+
+      const scheduleSnapshot = await getDocs(scheduleQuery);
       
-      const scheduleSnap = await getDocs(scheduleQuery);
-      
-      if (scheduleSnap.empty) {
-        console.log(`No schedules found for class ${classData.name} in date range`);
-        continue;
-      }
-      
-      console.log(`Found ${scheduleSnap.size} schedules for class ${classData.name}`);
-
-      // Get related data
-      const subject = subjectMap.get(classData.subjectId);
-      const teacher = teacherMap.get(classData.teacherId);
-      const branch = branchMap.get(classData.branchId);
-      
-      // Get room data
-      let room: Room | null = null;
-      try {
-        const roomDoc = await getDoc(doc(db, 'branches', classData.branchId, 'rooms', classData.roomId));
-        if (roomDoc.exists()) {
-          room = { id: roomDoc.id, branchId: classData.branchId, ...roomDoc.data() } as Room;
-        }
-      } catch (error) {
-        console.error('Error fetching room:', error);
-      }
-      
-      // Create events for each schedule
-      for (const scheduleDoc of scheduleSnap.docs) {
-        const scheduleData = { 
-          id: scheduleDoc.id, 
-          ...scheduleDoc.data(),
-          sessionDate: scheduleDoc.data().sessionDate?.toDate() || new Date()
-        } as ClassSchedule;
-
-        // Skip cancelled sessions only (show completed for reference)
-        if (scheduleData.status === 'cancelled') {
-          continue;
-        }
-
-        if (!classData.startTime || !classData.endTime) {
-          console.log('Missing time info for class:', classData.name);
-          continue;
-        }
-
-        const sessionDate = scheduleData.sessionDate;
-        const [startHour, startMinute] = classData.startTime.split(':').map(Number);
-        const [endHour, endMinute] = classData.endTime.split(':').map(Number);
-
-        const startDateTime = new Date(sessionDate);
-        startDateTime.setHours(startHour, startMinute, 0, 0);
-
-        const endDateTime = new Date(sessionDate);
-        endDateTime.setHours(endHour, endMinute, 0, 0);
+      scheduleSnapshot.forEach(doc => {
+        const schedule = doc.data();
+        const sessionDate = schedule.sessionDate.toDate();
         
-        // Create calendar event
-        const event: CalendarEvent = {
-          id: `${classData.id}-${scheduleDoc.id}`,
-          classId: classData.id,
-          title: `${classData.name} (${classData.enrolledCount}/${classData.maxStudents})`,
-          start: startDateTime,
-          end: endDateTime,
-          backgroundColor: subject?.color || '#3788d8',
-          borderColor: subject?.color || '#3788d8',
+        // Skip cancelled schedules
+        if (schedule.status === 'cancelled') return;
+
+        // Parse times and create proper date objects
+        const [startHour, startMinute] = cls.startTime.split(':').map(Number);
+        const [endHour, endMinute] = cls.endTime.split(':').map(Number);
+        
+        const eventStart = new Date(sessionDate);
+        eventStart.setHours(startHour, startMinute, 0, 0);
+        
+        const eventEnd = new Date(sessionDate);
+        eventEnd.setHours(endHour, endMinute, 0, 0);
+
+        // Determine color based on status
+        let backgroundColor = subject.color || '#EF4444'; // Default red
+        let borderColor = backgroundColor;
+        
+        if (schedule.status === 'completed') {
+          backgroundColor = '#10B981'; // Green for completed
+          borderColor = backgroundColor;
+        } else if (schedule.status === 'rescheduled') {
+          backgroundColor = '#F59E0B'; // Amber for rescheduled
+          borderColor = backgroundColor;
+        }
+
+        // Get room name
+        const room = roomMap.get(`${cls.branchId}-${cls.roomId}`);
+        const roomName = room?.name || cls.roomId;
+
+        events.push({
+          id: `${cls.id}-${doc.id}`,
+          classId: cls.id,
+          title: `${subject.name} - ${cls.code}`,
+          start: eventStart,
+          end: eventEnd,
+          backgroundColor,
+          borderColor,
           extendedProps: {
-            branchId: classData.branchId,
-            branchName: branch?.name || 'N/A',
-            roomName: room?.name || 'N/A',
-            teacherName: teacher?.nickname || teacher?.name || 'N/A',
-            enrolled: classData.enrolledCount,
-            maxStudents: classData.maxStudents,
-            sessionNumber: scheduleData.sessionNumber,
-            status: scheduleData.status
+            type: 'class',
+            branchId: cls.branchId,
+            branchName: branch.name,
+            roomName: roomName,
+            teacherName: teacher.nickname || teacher.name,
+            enrolled: cls.enrolledCount,
+            maxStudents: cls.maxStudents,
+            sessionNumber: schedule.sessionNumber,
+            status: schedule.status
           }
-        };
-        
-        events.push(event);
-        console.log('Added event:', event.title, 'at', event.start);
-      }
+        });
+      });
     }
-    
-    // Sort events by start time
-    events.sort((a, b) => a.start.getTime() - b.start.getTime());
-    
-    console.log('Total events returned:', events.length);
-    return events;
+
+    // Process makeup classes
+    for (const makeup of makeupClasses) {
+      // Skip if not scheduled
+      if (!makeup.makeupSchedule || makeup.status !== 'scheduled') continue;
+      
+      // Get class info
+      const originalClass = classMap.get(makeup.originalClassId);
+      if (!originalClass) continue;
+      
+      // Skip if filtering by branch and doesn't match
+      if (branchId && makeup.makeupSchedule.branchId !== branchId) continue;
+      
+      // Check if makeup date is within range
+      const makeupDate = new Date(makeup.makeupSchedule.date);
+      if (makeupDate < start || makeupDate > end) continue;
+      
+      // Get additional info
+      const student = await getStudentWithParent(makeup.studentId);
+      const teacher = teacherMap.get(makeup.makeupSchedule.teacherId);
+      const branch = branchMap.get(makeup.makeupSchedule.branchId);
+      const room = roomMap.get(`${makeup.makeupSchedule.branchId}-${makeup.makeupSchedule.roomId}`);
+      
+      if (!student || !teacher || !branch) continue;
+      
+      // Parse times and create proper date objects
+      const [startHour, startMinute] = makeup.makeupSchedule.startTime.split(':').map(Number);
+      const [endHour, endMinute] = makeup.makeupSchedule.endTime.split(':').map(Number);
+      
+      const eventStart = new Date(makeupDate);
+      eventStart.setHours(startHour, startMinute, 0, 0);
+      
+      const eventEnd = new Date(makeupDate);
+      eventEnd.setHours(endHour, endMinute, 0, 0);
+      
+      // Purple color for makeup classes
+      const backgroundColor = '#8B5CF6';
+      
+      events.push({
+        id: `makeup-${makeup.id}`,
+        classId: makeup.originalClassId,
+        title: `[Makeup] ${student.nickname} - ${originalClass.name}`,
+        start: eventStart,
+        end: eventEnd,
+        backgroundColor,
+        borderColor: backgroundColor,
+        extendedProps: {
+          type: 'makeup',
+          branchId: makeup.makeupSchedule.branchId,
+          branchName: branch.name,
+          roomName: room?.name || makeup.makeupSchedule.roomId,
+          teacherName: teacher.nickname || teacher.name,
+          studentName: student.name,
+          studentNickname: student.nickname,
+          originalClassName: originalClass.name,
+          makeupStatus: makeup.status
+        }
+      });
+    }
+
+    return events.sort((a, b) => {
+      const dateA = a.start as Date;
+      const dateB = b.start as Date;
+      return dateA.getTime() - dateB.getTime();
+    });
   } catch (error) {
-    console.error("Error getting calendar events:", error);
+    console.error('Error getting calendar events:', error);
     return [];
+  }
+}
+
+// Get dashboard statistics
+export interface DashboardStats {
+  totalStudents: number;
+  totalClasses: number;
+  activeClasses: number;
+  todayClasses: number;
+  upcomingMakeups: number;
+  pendingMakeups: number;
+}
+
+export async function getDashboardStats(branchId?: string): Promise<DashboardStats> {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    // Get all data
+    const [classes, makeupClasses] = await Promise.all([
+      getClasses(),
+      getMakeupClasses()
+    ]);
+
+    // Filter by branch if specified
+    const filteredClasses = branchId 
+      ? classes.filter(c => c.branchId === branchId)
+      : classes;
+
+    // Calculate stats
+    const activeClasses = filteredClasses.filter(c => 
+      c.status === 'published' || c.status === 'started'
+    );
+
+    // Get today's classes
+    const todayEvents = await getCalendarEvents(today, tomorrow, branchId);
+    const todayClassCount = todayEvents.filter(e => e.extendedProps.type === 'class').length;
+
+    // Calculate student count
+    const totalStudents = activeClasses.reduce((sum, cls) => sum + cls.enrolledCount, 0);
+
+    // Filter makeups by branch if specified
+    const filteredMakeups = branchId
+      ? makeupClasses.filter(m => 
+          m.makeupSchedule?.branchId === branchId || 
+          (m.status === 'pending' && classes.find(c => c.id === m.originalClassId)?.branchId === branchId)
+        )
+      : makeupClasses;
+
+    // Count upcoming and pending makeups
+    const upcomingMakeups = filteredMakeups.filter(m => 
+      m.status === 'scheduled' && 
+      m.makeupSchedule && 
+      new Date(m.makeupSchedule.date) >= today
+    ).length;
+
+    const pendingMakeups = filteredMakeups.filter(m => 
+      m.status === 'pending'
+    ).length;
+
+    return {
+      totalStudents,
+      totalClasses: filteredClasses.length,
+      activeClasses: activeClasses.length,
+      todayClasses: todayClassCount,
+      upcomingMakeups,
+      pendingMakeups
+    };
+  } catch (error) {
+    console.error('Error getting dashboard stats:', error);
+    return {
+      totalStudents: 0,
+      totalClasses: 0,
+      activeClasses: 0,
+      todayClasses: 0,
+      upcomingMakeups: 0,
+      pendingMakeups: 0
+    };
   }
 }

@@ -17,21 +17,17 @@ import {
   Calendar,
   Clock,
   User,
-  MapPin,
   Phone,
   CheckCircle,
   XCircle,
   AlertCircle,
   CalendarCheck,
-  Save,
   CalendarDays,
   Trash2,
   ChevronLeft,
-  Edit,
-  BookOpen,
   History
 } from 'lucide-react';
-import { formatDate, getDayName, formatDateWithDay } from '@/lib/utils';
+import { formatDate, formatDateWithDay } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
   AlertDialog,
@@ -98,7 +94,6 @@ export default function MakeupDetailPage() {
 
   const loadMakeupDetails = async () => {
     try {
-      // Load makeup data
       const makeupData = await getMakeupClass(makeupId);
       if (!makeupData) {
         toast.error('ไม่พบข้อมูล Makeup Class');
@@ -107,7 +102,6 @@ export default function MakeupDetailPage() {
       }
       setMakeup(makeupData);
 
-      // Load related data
       const [studentData, classData] = await Promise.all([
         getStudentWithParent(makeupData.studentId),
         getClass(makeupData.originalClassId)
@@ -116,13 +110,11 @@ export default function MakeupDetailPage() {
       setStudent(studentData);
       setClassInfo(classData);
 
-      // Load original schedule
       if (makeupData.originalScheduleId) {
         const scheduleData = await getClassSchedule(makeupData.originalClassId, makeupData.originalScheduleId);
         setOriginalSchedule(scheduleData);
       }
 
-      // Load makeup teacher and room if scheduled
       if (makeupData.makeupSchedule) {
         const [teacherData, roomData] = await Promise.all([
           getTeacher(makeupData.makeupSchedule.teacherId),
@@ -258,15 +250,15 @@ export default function MakeupDetailPage() {
   const StatusIcon = statusIcons[makeup.status];
 
   return (
-    <div>
+    <div className="p-4 sm:p-6 max-w-7xl mx-auto">
       {/* Header */}
-      <div className="mb-6 flex justify-between items-center">
+      <div className="mb-4 flex justify-between items-center">
         <Link 
           href="/makeup" 
           className="inline-flex items-center text-sm text-gray-600 hover:text-gray-900"
         >
           <ChevronLeft className="h-4 w-4 mr-1" />
-          กลับไปหน้ารายการ Makeup
+          กลับ
         </Link>
         
         <Badge className={statusColors[makeup.status]}>
@@ -276,57 +268,50 @@ export default function MakeupDetailPage() {
       </div>
 
       {/* Title */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">รายละเอียด Makeup Class</h1>
-        <p className="text-gray-600 mt-2">ข้อมูลการขอเรียนชดเชยของ {student.nickname}</p>
+      <div className="mb-6">
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Makeup Class - {student.nickname}</h1>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Main Content */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Original Class Information */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+        {/* Main Content - 2 columns */}
+        <div className="lg:col-span-2 space-y-4">
+          {/* Class & Schedule Info */}
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <BookOpen className="h-5 w-5" />
-                ข้อมูลคลาสเดิม
-              </CardTitle>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg">ข้อมูลการขาดเรียน</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Class Info Row */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <p className="text-sm text-gray-500">คลาส</p>
+                  <p className="text-sm text-gray-500 mb-1">คลาส</p>
                   <p className="font-medium">{classInfo.name}</p>
                   <p className="text-sm text-gray-500">{classInfo.code}</p>
                 </div>
-                <div>
-                  <p className="text-sm text-gray-500">วันที่ขาด</p>
-                  {originalSchedule ? (
-                    <div className="bg-red-50 border border-red-200 rounded-lg p-3 mt-1">
-                      <p className="font-bold text-red-700 text-lg mb-1">
-                        ครั้งที่ {originalSchedule.sessionNumber}
-                      </p>
-                      <p className="font-medium text-red-600">
-                        {getDayName(new Date(originalSchedule.sessionDate).getDay())}, {formatDate(originalSchedule.sessionDate, 'long')}
-                      </p>
-                      <p className="text-sm text-red-500 mt-1">
-                        เวลา {classInfo.startTime} - {classInfo.endTime} น.
-                      </p>
-                    </div>
-                  ) : (
-                    <p className="font-medium">-</p>
-                  )}
-                </div>
+                {originalSchedule && (
+                  <div>
+                    <p className="text-sm text-gray-500 mb-1">วันที่ขาด</p>
+                    <p className="font-medium text-red-600">
+                      ครั้งที่ {originalSchedule.sessionNumber} - {formatDateWithDay(originalSchedule.sessionDate)}
+                    </p>
+                    <p className="text-sm text-gray-500">
+                      เวลา {classInfo.startTime} - {classInfo.endTime} น.
+                    </p>
+                  </div>
+                )}
               </div>
-              
+
+              {/* Reason */}
               <div>
-                <p className="text-sm text-gray-500">วันที่ขอ Makeup</p>
-                <p className="font-medium">{formatDate(makeup.requestDate, 'long')}</p>
-              </div>
-              
-              <div>
-                <p className="text-sm text-gray-500">เหตุผลที่ขาด</p>
+                <p className="text-sm text-gray-500 mb-1">เหตุผล</p>
                 <p className="font-medium">{makeup.reason}</p>
+              </div>
+
+              {/* Request Date */}
+              <div className="pt-2 border-t">
+                <p className="text-xs text-gray-500">
+                  ขอ Makeup เมื่อ {formatDate(makeup.requestDate, 'long')}
+                </p>
               </div>
             </CardContent>
           </Card>
@@ -334,12 +319,9 @@ export default function MakeupDetailPage() {
           {/* Makeup Schedule */}
           {makeup.makeupSchedule && (
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  <span className="flex items-center gap-2">
-                    <CalendarCheck className="h-5 w-5" />
-                    ตารางเรียนชดเชย
-                  </span>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center justify-between text-lg">
+                  <span>ตารางเรียนชดเชย</span>
                   {makeup.status === 'scheduled' && (
                     <Button
                       size="sm"
@@ -353,30 +335,32 @@ export default function MakeupDetailPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
-                    <p className="text-sm text-gray-500">วันที่นัด</p>
+                    <p className="text-gray-500 mb-1">วันที่นัด</p>
                     <p className="font-medium text-blue-600">
-                      {getDayName(new Date(makeup.makeupSchedule.date).getDay())}, {formatDate(makeup.makeupSchedule.date, 'long')}
+                      {formatDateWithDay(makeup.makeupSchedule.date)}
                     </p>
                   </div>
                   <div>
-                    <p className="text-sm text-gray-500">เวลา</p>
+                    <p className="text-gray-500 mb-1">เวลา</p>
                     <p className="font-medium">{makeup.makeupSchedule.startTime} - {makeup.makeupSchedule.endTime} น.</p>
                   </div>
                   <div>
-                    <p className="text-sm text-gray-500">ครูผู้สอน</p>
+                    <p className="text-gray-500 mb-1">ครูผู้สอน</p>
                     <p className="font-medium">{makeupTeacher?.nickname || makeupTeacher?.name || '-'}</p>
                   </div>
                   <div>
-                    <p className="text-sm text-gray-500">ห้องเรียน</p>
+                    <p className="text-gray-500 mb-1">ห้องเรียน</p>
                     <p className="font-medium">{makeupRoom?.name || makeup.makeupSchedule.roomId}</p>
                   </div>
                 </div>
                 
-                {makeup.makeupSchedule.confirmedAt && (
-                  <div className="text-sm text-gray-500 border-t pt-4">
-                    นัดหมายเมื่อ {formatDate(makeup.makeupSchedule.confirmedAt, 'long')}
+                {/* Notes */}
+                {makeup.notes && (
+                  <div className="pt-3 border-t">
+                    <p className="text-sm text-gray-500 mb-1">หมายเหตุ</p>
+                    <p className="text-sm whitespace-pre-wrap">{makeup.notes}</p>
                   </div>
                 )}
               </CardContent>
@@ -386,8 +370,8 @@ export default function MakeupDetailPage() {
           {/* Attendance Result */}
           {makeup.attendance && (
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center justify-between text-lg">
                   <span className="flex items-center gap-2">
                     <History className="h-5 w-5" />
                     ผลการเข้าเรียน
@@ -460,43 +444,34 @@ export default function MakeupDetailPage() {
               </CardContent>
             </Card>
           )}
-
-          {/* Notes */}
-          {makeup.notes && (
-            <Card>
-              <CardHeader>
-                <CardTitle>หมายเหตุ</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="whitespace-pre-wrap">{makeup.notes}</p>
-              </CardContent>
-            </Card>
-          )}
         </div>
 
-        {/* Sidebar */}
-        <div className="space-y-6">
+        {/* Sidebar - 1 column */}
+        <div className="space-y-4">
           {/* Student Info */}
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-lg">
                 <User className="h-5 w-5" />
                 ข้อมูลนักเรียน
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="space-y-2 text-sm">
               <div>
-                <p className="text-sm text-gray-500">ชื่อ-นามสกุล</p>
+                <p className="text-gray-500">ชื่อ-นามสกุล</p>
                 <p className="font-medium">{student.name}</p>
-                <p className="text-sm text-gray-500">({student.nickname})</p>
+                <p className="text-gray-500">({student.nickname})</p>
               </div>
-              <div>
-                <p className="text-sm text-gray-500">ผู้ปกครอง</p>
+              <div className="pt-2">
+                <p className="text-gray-500">ผู้ปกครอง</p>
                 <p className="font-medium">{student.parentName}</p>
               </div>
               <div>
-                <p className="text-sm text-gray-500">เบอร์โทร</p>
-                <p className="font-medium">{student.parentPhone}</p>
+                <p className="text-gray-500">เบอร์โทร</p>
+                <p className="font-medium flex items-center gap-1">
+                  <Phone className="h-3 w-3" />
+                  {student.parentPhone}
+                </p>
               </div>
             </CardContent>
           </Card>
@@ -504,30 +479,30 @@ export default function MakeupDetailPage() {
           {/* Actions for scheduled status */}
           {makeup.status === 'scheduled' && (
             <Card>
-              <CardHeader>
-                <CardTitle>บันทึกการเข้าเรียน</CardTitle>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg">บันทึกการเข้าเรียน</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-3">
                 <div>
                   <Label htmlFor="attendance-note">หมายเหตุ (ถ้ามี)</Label>
                   <Textarea
                     id="attendance-note"
                     value={attendanceNote}
                     onChange={(e) => setAttendanceNote(e.target.value)}
-                    placeholder="เช่น มาสาย 10 นาที, เรียนดีมาก"
-                    rows={3}
-                    className="mt-2"
+                    placeholder="เช่น มาสาย 10 นาที"
+                    rows={2}
+                    className="mt-1"
                   />
                 </div>
                 
-                <div className="space-y-2">
+                <div className="grid grid-cols-2 gap-2">
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
                       <Button
                         disabled={actionLoading}
-                        className="w-full bg-green-500 hover:bg-green-600"
+                        className="bg-green-500 hover:bg-green-600"
                       >
-                        <CheckCircle className="h-4 w-4 mr-2" />
+                        <CheckCircle className="h-4 w-4 mr-1" />
                         เข้าเรียน
                       </Button>
                     </AlertDialogTrigger>
@@ -538,12 +513,6 @@ export default function MakeupDetailPage() {
                           คุณแน่ใจหรือไม่ว่า <strong>{student.nickname}</strong> มาเรียน Makeup Class แล้ว?
                         </AlertDialogDescription>
                       </AlertDialogHeader>
-                      <div className="my-4 bg-green-50 border border-green-200 rounded p-3">
-                        <p className="text-sm text-green-800">
-                          <strong>วันที่:</strong> {makeup.makeupSchedule && formatDate(makeup.makeupSchedule.date, 'long')}<br/>
-                          <strong>เวลา:</strong> {makeup.makeupSchedule?.startTime} - {makeup.makeupSchedule?.endTime} น.
-                        </p>
-                      </div>
                       <AlertDialogFooter>
                         <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
                         <AlertDialogAction
@@ -561,9 +530,8 @@ export default function MakeupDetailPage() {
                       <Button
                         disabled={actionLoading}
                         variant="destructive"
-                        className="w-full"
                       >
-                        <XCircle className="h-4 w-4 mr-2" />
+                        <XCircle className="h-4 w-4 mr-1" />
                         ขาดเรียน
                       </Button>
                     </AlertDialogTrigger>
@@ -574,11 +542,6 @@ export default function MakeupDetailPage() {
                           คุณแน่ใจหรือไม่ว่า <strong>{student.nickname}</strong> ไม่ได้มาเรียน Makeup Class?
                         </AlertDialogDescription>
                       </AlertDialogHeader>
-                      <div className="my-4 bg-red-50 border border-red-200 rounded p-3">
-                        <p className="text-sm text-red-800">
-                          หากนักเรียนไม่มาเรียน Makeup ที่นัดไว้ จะถือว่าใช้สิทธิ์ Makeup แล้ว
-                        </p>
-                      </div>
                       <AlertDialogFooter>
                         <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
                         <AlertDialogAction
@@ -598,8 +561,8 @@ export default function MakeupDetailPage() {
           {/* Delete and Cancel Actions */}
           {(makeup.status === 'pending' || makeup.status === 'scheduled') && (
             <Card>
-              <CardHeader>
-                <CardTitle>การจัดการ</CardTitle>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg">การจัดการ</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
                 {/* Delete button */}
