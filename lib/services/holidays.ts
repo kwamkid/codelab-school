@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { 
   collection, 
   doc, 
@@ -18,25 +19,82 @@ const COLLECTION_NAME = 'holidays';
 // Get holidays for a specific year
 export async function getHolidays(year: number): Promise<Holiday[]> {
   try {
-    const startOfYear = new Date(year, 0, 1);
-    const endOfYear = new Date(year, 11, 31, 23, 59, 59);
+    console.log('Getting holidays for year:', year);
     
-    const q = query(
-      collection(db, COLLECTION_NAME),
-      where('date', '>=', Timestamp.fromDate(startOfYear)),
-      where('date', '<=', Timestamp.fromDate(endOfYear)),
-      orderBy('date', 'asc')
-    );
+    // Get all holidays first
+    const querySnapshot = await getDocs(collection(db, COLLECTION_NAME));
     
-    const querySnapshot = await getDocs(q);
+    console.log('Total holidays in collection:', querySnapshot.size);
     
-    return querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      date: doc.data().date?.toDate() || new Date(),
-    } as Holiday));
+    // Filter by year in memory
+    const holidays = querySnapshot.docs
+      .map(doc => {
+        const data = doc.data();
+        console.log('Processing holiday:', doc.id, data);
+        
+        let date: Date;
+        if (data.date?.toDate) {
+          date = data.date.toDate();
+        } else if (data.date) {
+          date = new Date(data.date);
+        } else {
+          date = new Date();
+        }
+        
+        return {
+          id: doc.id,
+          name: data.name || '',
+          date: date,
+          type: data.type || 'national',
+          branches: data.branches || [],
+          description: data.description || ''
+        } as Holiday;
+      })
+      .filter(holiday => {
+        const holidayYear = holiday.date.getFullYear();
+        console.log(`Holiday "${holiday.name}" year: ${holidayYear}, target year: ${year}`);
+        return holidayYear === year;
+      })
+      .sort((a, b) => a.date.getTime() - b.date.getTime());
+    
+    console.log('Filtered holidays for year', year, ':', holidays);
+    
+    return holidays;
   } catch (error) {
     console.error('Error getting holidays:', error);
+    // Return empty array instead of throwing to prevent page crash
+    return [];
+  }
+}
+
+// Alternative: Get all holidays without date filter for debugging
+export async function getAllHolidays(): Promise<Holiday[]> {
+  try {
+    console.log('Getting ALL holidays from collection:', COLLECTION_NAME);
+    
+    const querySnapshot = await getDocs(collection(db, COLLECTION_NAME));
+    
+    console.log('Total documents in holidays collection:', querySnapshot.size);
+    
+    const holidays = querySnapshot.docs.map(doc => {
+      const data = doc.data();
+      console.log('Holiday document:', {
+        id: doc.id,
+        data: data,
+        dateType: typeof data.date,
+        dateValue: data.date
+      });
+      
+      return {
+        id: doc.id,
+        ...data,
+        date: data.date?.toDate ? data.date.toDate() : new Date(data.date),
+      } as Holiday;
+    });
+    
+    return holidays;
+  } catch (error) {
+    console.error('Error getting all holidays:', error);
     throw error;
   }
 }
@@ -91,7 +149,7 @@ export async function getHolidaysInRange(
   }
 }
 
-// Add new holiday (ไม่มี auto reschedule)
+// Add new holiday
 export async function addHoliday(
   holidayData: Omit<Holiday, 'id'>
 ): Promise<{ id: string }> {
@@ -116,13 +174,19 @@ export async function updateHoliday(
   try {
     const docRef = doc(db, COLLECTION_NAME, id);
     
+    // Build update object without id field
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const updateData: any = { ...holidayData };
-    delete updateData.id;
+    const updateData: Record<string, any> = {};
     
-    if (holidayData.date instanceof Date) {
-      updateData.date = Timestamp.fromDate(holidayData.date);
-    }
+    Object.entries(holidayData).forEach(([key, value]) => {
+      if (key !== 'id') {
+        if (key === 'date' && value instanceof Date) {
+          updateData[key] = Timestamp.fromDate(value);
+        } else {
+          updateData[key] = value;
+        }
+      }
+    });
     
     await updateDoc(docRef, updateData);
   } catch (error) {

@@ -28,7 +28,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
   Select,
@@ -48,24 +47,45 @@ export default function HolidaysPage() {
   const [selectedHoliday, setSelectedHoliday] = useState<Holiday | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [holidayToDelete, setHolidayToDelete] = useState<Holiday | null>(null);
+  const [deleteAllDialogOpen, setDeleteAllDialogOpen] = useState(false);
   const [rescheduleAllDialogOpen, setRescheduleAllDialogOpen] = useState(false);
   const [rescheduleAllLoading, setRescheduleAllLoading] = useState(false);
 
   useEffect(() => {
     loadData();
+    // Debug: Load all holidays
+    debugLoadAllHolidays();
   }, [selectedYear]);
+
+  const debugLoadAllHolidays = async () => {
+    try {
+      const { getAllHolidays } = await import('@/lib/services/holidays');
+      const allHolidays = await getAllHolidays();
+      console.log('DEBUG - All holidays in database:', allHolidays);
+    } catch (error) {
+      console.error('DEBUG - Error loading all holidays:', error);
+    }
+  };
 
   const loadData = async () => {
     try {
-      const [holidaysData, branchesData] = await Promise.all([
-        getHolidays(selectedYear),
-        getActiveBranches()
-      ]);
+      // Load holidays
+      const holidaysData = await getHolidays(selectedYear);
+      console.log('Holidays loaded:', holidaysData);
       setHolidays(holidaysData);
-      setBranches(branchesData);
+      
+      // Try to load branches (don't fail if error)
+      try {
+        const branchesData = await getActiveBranches();
+        console.log('Branches loaded:', branchesData);
+        setBranches(branchesData);
+      } catch (branchError) {
+        console.error('Error loading branches:', branchError);
+        setBranches([]); // Set empty branches
+      }
     } catch (error) {
-      console.error('Error loading data:', error);
-      toast.error('ไม่สามารถโหลดข้อมูลได้');
+      console.error('Error loading holidays:', error);
+      toast.error('ไม่สามารถโหลดข้อมูลวันหยุดได้');
     } finally {
       setLoading(false);
     }
@@ -81,7 +101,7 @@ export default function HolidaysPage() {
     setDialogOpen(true);
   };
 
-  const handleDeleteHoliday = async (holiday: Holiday) => {
+  const handleDeleteHoliday = (holiday: Holiday) => {
     setHolidayToDelete(holiday);
     setDeleteDialogOpen(true);
   };
@@ -102,8 +122,16 @@ export default function HolidaysPage() {
     }
   };
 
-  const handleRescheduleAllClasses = () => {
-    setRescheduleAllDialogOpen(true);
+  const confirmDeleteAllHolidays = async () => {
+    try {
+      const count = await deleteAllHolidays(selectedYear);
+      toast.success(`ลบวันหยุดทั้งหมด ${count} วันเรียบร้อยแล้ว`);
+      setDeleteAllDialogOpen(false);
+      loadData();
+    } catch (error) {
+      console.error('Error deleting all holidays:', error);
+      toast.error('ไม่สามารถลบวันหยุดทั้งหมดได้');
+    }
   };
 
   const confirmRescheduleAllClasses = async () => {
@@ -117,6 +145,11 @@ export default function HolidaysPage() {
           `จัดตารางเรียนใหม่เรียบร้อยแล้ว ประมวลผล ${result.processedCount} คลาส`,
           { duration: 5000 }
         );
+        
+        // แสดงรายละเอียด
+        if (result.details && result.details.length > 0) {
+          console.log('Rescheduled classes:', result.details);
+        }
       } else {
         toast.info('ไม่พบคลาสที่ต้องจัดตารางใหม่');
       }
@@ -127,17 +160,6 @@ export default function HolidaysPage() {
       toast.error('ไม่สามารถจัดตารางเรียนใหม่ได้');
     } finally {
       setRescheduleAllLoading(false);
-    }
-  };
-
-  const handleDeleteAllHolidays = async () => {
-    try {
-      const count = await deleteAllHolidays(selectedYear);
-      toast.success(`ลบวันหยุดทั้งหมด ${count} วันเรียบร้อยแล้ว`);
-      loadData();
-    } catch (error) {
-      console.error('Error deleting all holidays:', error);
-      toast.error('ไม่สามารถลบวันหยุดทั้งหมดได้');
     }
   };
 
@@ -152,6 +174,10 @@ export default function HolidaysPage() {
     if (selectedBranch === 'national') return holiday.type === 'national';
     return holiday.branches?.includes(selectedBranch);
   });
+  
+  console.log('Current holidays state:', holidays);
+  console.log('Filtered holidays:', filteredHolidays);
+  console.log('Selected branch:', selectedBranch);
 
   // Group holidays by month
   const holidaysByMonth = filteredHolidays.reduce((acc, holiday) => {
@@ -165,6 +191,10 @@ export default function HolidaysPage() {
     'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
     'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
   ];
+
+  // Get current and next year for year selector
+  const currentYear = new Date().getFullYear();
+  const yearOptions = [currentYear - 1, currentYear, currentYear + 1];
 
   if (loading) {
     return (
@@ -187,56 +217,12 @@ export default function HolidaysPage() {
         <div className="flex gap-2">
           <Button 
             variant="outline"
-            onClick={handleRescheduleAllClasses}
+            onClick={() => setRescheduleAllDialogOpen(true)}
             className="border-blue-200 text-blue-600 hover:bg-blue-50"
           >
             <RefreshCw className="h-4 w-4 mr-2" />
             จัดตารางใหม่ทั้งหมด
           </Button>
-          {filteredHolidays.length > 0 && (
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="destructive">
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  ลบทั้งหมด
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <div className="flex items-center gap-3">
-                    <div className="p-3 bg-red-100 rounded-full">
-                      <AlertTriangle className="h-6 w-6 text-red-600" />
-                    </div>
-                    <AlertDialogTitle className="text-xl">
-                      ยืนยันการลบวันหยุดทั้งหมด
-                    </AlertDialogTitle>
-                  </div>
-                  <AlertDialogDescription className="mt-4">
-                    <div className="space-y-2">
-                      <p>คุณแน่ใจหรือไม่ที่จะลบวันหยุดทั้งหมดในปี {selectedYear}?</p>
-                      <p className="font-medium text-red-600">
-                        จะลบวันหยุด {filteredHolidays.length} วัน
-                      </p>
-                      <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mt-4">
-                        <p className="text-sm text-amber-800">
-                          <strong>คำเตือน:</strong> หลังจากลบแล้ว ให้ใช้ปุ่ม "จัดตารางใหม่ทั้งหมด" เพื่อปรับตารางเรียน
-                        </p>
-                      </div>
-                    </div>
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
-                  <AlertDialogAction 
-                    onClick={handleDeleteAllHolidays}
-                    className="bg-red-500 hover:bg-red-600"
-                  >
-                    ยืนยันลบทั้งหมด
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          )}
           <Button 
             onClick={handleAddHoliday}
             className="bg-red-500 hover:bg-red-600"
@@ -257,7 +243,7 @@ export default function HolidaysPage() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {[2024, 2025, 2026].map(year => (
+            {yearOptions.map(year => (
               <SelectItem key={year} value={year.toString()}>
                 {year}
               </SelectItem>
@@ -279,6 +265,17 @@ export default function HolidaysPage() {
             ))}
           </SelectContent>
         </Select>
+
+        {filteredHolidays.length > 0 && (
+          <Button 
+            variant="destructive"
+            onClick={() => setDeleteAllDialogOpen(true)}
+            className="ml-auto"
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            ลบทั้งหมด
+          </Button>
+        )}
       </div>
 
       {/* Summary Cards */}
@@ -364,16 +361,15 @@ export default function HolidaysPage() {
                             </TableCell>
                             <TableCell>{holiday.name}</TableCell>
                             <TableCell>
-                              <Badge className={
-                                holiday.type === 'national' ? 'bg-blue-100 text-blue-700' :
-                                'bg-green-100 text-green-700'
+                              <Badge variant={
+                                holiday.type === 'national' ? 'default' : 'secondary'
                               }>
                                 {holiday.type === 'national' ? 'ทุกสาขา' : 'ประจำสาขา'}
                               </Badge>
                             </TableCell>
                             <TableCell>
                               {holiday.type === 'national' ? (
-                                <Badge variant="secondary">ทุกสาขา</Badge>
+                                <Badge variant="outline">ทุกสาขา</Badge>
                               ) : (
                                 <div className="flex flex-wrap gap-1">
                                   {holiday.branches?.map(branchId => {
@@ -452,12 +448,50 @@ export default function HolidaysPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
-            <Button
+            <AlertDialogAction
               onClick={confirmDeleteHoliday}
-              className="bg-red-500 hover:bg-red-600 text-white"
+              className="bg-red-500 hover:bg-red-600"
             >
               ยืนยันลบ
-            </Button>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete All Holidays Dialog */}
+      <AlertDialog open={deleteAllDialogOpen} onOpenChange={setDeleteAllDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-red-100 rounded-full">
+                <AlertTriangle className="h-6 w-6 text-red-600" />
+              </div>
+              <AlertDialogTitle className="text-xl">
+                ยืนยันการลบวันหยุดทั้งหมด
+              </AlertDialogTitle>
+            </div>
+            <AlertDialogDescription className="mt-4">
+              <div className="space-y-2">
+                <p>คุณแน่ใจหรือไม่ที่จะลบวันหยุดทั้งหมดในปี {selectedYear}?</p>
+                <p className="font-medium text-red-600">
+                  จะลบวันหยุด {filteredHolidays.length} วัน
+                </p>
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mt-4">
+                  <p className="text-sm text-amber-800">
+                    <strong>คำเตือน:</strong> หลังจากลบแล้ว ให้ใช้ปุ่ม &quot;จัดตารางใหม่ทั้งหมด&quot; เพื่อปรับตารางเรียน
+                  </p>
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={confirmDeleteAllHolidays}
+              className="bg-red-500 hover:bg-red-600"
+            >
+              ยืนยันลบทั้งหมด
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

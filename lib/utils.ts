@@ -5,52 +5,73 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-// Format currency in Thai Baht
-export function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('th-TH', {
-    style: 'currency',
-    currency: 'THB',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount);
-}
-
-// Format date to Thai locale - เพิ่ม export
-export function formatDate(date: Date | string, format: 'short' | 'long' = 'short'): string {
+// Format date function
+export function formatDate(date: Date | string, format: 'short' | 'long' | 'time' = 'short'): string {
   const d = typeof date === 'string' ? new Date(date) : date;
   
-  if (format === 'short') {
+  if (isNaN(d.getTime())) {
+    return 'Invalid Date';
+  }
+
+  if (format === 'time') {
     return new Intl.DateTimeFormat('th-TH', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
+      timeZone: 'Asia/Bangkok',
+      hour: '2-digit',
+      minute: '2-digit'
     }).format(d);
   }
-  
-  return new Intl.DateTimeFormat('th-TH', {
-    weekday: 'long',
+
+  const options: Intl.DateTimeFormatOptions = {
+    timeZone: 'Asia/Bangkok',
     day: 'numeric',
-    month: 'long',
+    month: format === 'long' ? 'long' : 'short',
     year: 'numeric',
-  }).format(d);
+    ...(format === 'long' && { weekday: 'long' })
+  };
+
+  return new Intl.DateTimeFormat('th-TH', options).format(d);
 }
 
 // Format time (HH:mm)
 export function formatTime(time: string): string {
   const [hours, minutes] = time.split(':');
-  return `${hours}:${minutes} น.`;
+  return `${hours.padStart(2, '0')}:${minutes.padStart(2, '0')} น.`;
 }
 
 // Get day name in Thai
-export function getDayName(dayNumber: number): string {
+export function getDayName(dayIndex: number): string {
   const days = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
-  return days[dayNumber];
+  return days[dayIndex] || '';
+}
+
+// Get days of week display
+export function getDaysOfWeekDisplay(days: number[]): string {
+  if (days.length === 0) return '';
+  if (days.length === 7) return 'ทุกวัน';
+  
+  const sortedDays = [...days].sort((a, b) => a - b);
+  const dayNames = sortedDays.map(day => getDayName(day));
+  
+  return dayNames.join(', ');
+}
+
+// Format phone number
+export function formatPhoneNumber(phone: string): string {
+  // Remove all non-digits
+  const cleaned = phone.replace(/\D/g, '');
+  
+  // Format as XXX-XXX-XXXX
+  if (cleaned.length === 10) {
+    return `${cleaned.slice(0, 3)}-${cleaned.slice(3, 6)}-${cleaned.slice(6)}`;
+  }
+  
+  return phone;
 }
 
 // Calculate age from birthdate
-export function calculateAge(birthdate: Date | string): number {
-  const birth = typeof birthdate === 'string' ? new Date(birthdate) : birthdate;
+export function calculateAge(birthdate: Date): number {
   const today = new Date();
+  const birth = new Date(birthdate);
   let age = today.getFullYear() - birth.getFullYear();
   const monthDiff = today.getMonth() - birth.getMonth();
   
@@ -61,31 +82,95 @@ export function calculateAge(birthdate: Date | string): number {
   return age;
 }
 
+// Format currency
+export function formatCurrency(amount: number): string {
+  return new Intl.NumberFormat('th-TH', {
+    style: 'currency',
+    currency: 'THB',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
+
 // Generate class code
-export function generateClassCode(branchCode: string, subjectCode: string, date: Date): string {
+export function generateClassCode(subjectCode: string, branchCode: string, date: Date): string {
   const year = date.getFullYear().toString().slice(-2);
-  const month = (date.getMonth() + 1).toString().padStart(2, '0');
-  return `${branchCode}-${subjectCode}-${year}${month}`;
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const random = Math.random().toString(36).substring(2, 5).toUpperCase();
+  
+  return `${branchCode}-${subjectCode}-${year}${month}-${random}`;
 }
 
-// Check if date is holiday
-export function isHoliday(date: Date, holidays: Date[]): boolean {
-  return holidays.some(holiday => 
-    holiday.toDateString() === date.toDateString()
-  );
+// Check if date is in the past
+export function isPastDate(date: Date): boolean {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const checkDate = new Date(date);
+  checkDate.setHours(0, 0, 0, 0);
+  
+  return checkDate < today;
 }
 
-// Get next occurrence of specific day
-export function getNextDayOccurrence(dayOfWeek: number, fromDate: Date = new Date()): Date {
-  const date = new Date(fromDate);
-  const currentDay = date.getDay();
-  const daysUntilTarget = (dayOfWeek - currentDay + 7) % 7;
+// Get date range display
+export function getDateRangeDisplay(startDate: Date, endDate: Date): string {
+  const start = formatDate(startDate, 'short');
+  const end = formatDate(endDate, 'short');
   
-  if (daysUntilTarget === 0) {
-    date.setDate(date.getDate() + 7);
-  } else {
-    date.setDate(date.getDate() + daysUntilTarget);
-  }
+  return `${start} - ${end}`;
+}
+
+// Get status color
+export function getStatusColor(status: string): string {
+  const statusColors: Record<string, string> = {
+    // Class status
+    'draft': 'bg-gray-100 text-gray-700',
+    'published': 'bg-blue-100 text-blue-700',
+    'started': 'bg-green-100 text-green-700',
+    'completed': 'bg-gray-100 text-gray-700',
+    'cancelled': 'bg-red-100 text-red-700',
+    
+    // Enrollment status
+    'active': 'bg-green-100 text-green-700',
+    'dropped': 'bg-red-100 text-red-700',
+    'transferred': 'bg-yellow-100 text-yellow-700',
+    
+    // Payment status
+    'pending': 'bg-yellow-100 text-yellow-700',
+    'partial': 'bg-orange-100 text-orange-700',
+    'paid': 'bg-green-100 text-green-700',
+    
+    // Trial status
+    'confirmed': 'bg-blue-100 text-blue-700',
+    'converted': 'bg-green-100 text-green-700',
+  };
   
-  return date;
+  return statusColors[status] || 'bg-gray-100 text-gray-700';
+}
+
+// Get status text
+export function getStatusText(status: string): string {
+  const statusTexts: Record<string, string> = {
+    // Class status
+    'draft': 'ร่าง',
+    'published': 'เปิดรับสมัคร',
+    'started': 'กำลังเรียน',
+    'completed': 'จบแล้ว',
+    'cancelled': 'ยกเลิก',
+    
+    // Enrollment status
+    'active': 'กำลังเรียน',
+    'dropped': 'ยกเลิก',
+    'transferred': 'ย้ายคลาส',
+    
+    // Payment status
+    'pending': 'รอชำระ',
+    'partial': 'ชำระบางส่วน',
+    'paid': 'ชำระแล้ว',
+    
+    // Trial status
+    'confirmed': 'ยืนยันแล้ว',
+    'converted': 'สมัครเรียน',
+  };
+  
+  return statusTexts[status] || status;
 }

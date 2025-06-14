@@ -8,7 +8,7 @@ import {
   query,
   where,
   orderBy,
-  Timestamp 
+  serverTimestamp
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { Branch } from '@/types/models';
@@ -20,7 +20,7 @@ export async function getBranches(): Promise<Branch[]> {
   try {
     const q = query(
       collection(db, COLLECTION_NAME),
-      orderBy('code', 'asc')
+      orderBy('name', 'asc')
     );
     const querySnapshot = await getDocs(q);
     
@@ -38,6 +38,7 @@ export async function getBranches(): Promise<Branch[]> {
 // Get active branches only
 export async function getActiveBranches(): Promise<Branch[]> {
   try {
+    // Get all branches first
     const querySnapshot = await getDocs(collection(db, COLLECTION_NAME));
     
     const branches = querySnapshot.docs.map(doc => ({
@@ -48,11 +49,12 @@ export async function getActiveBranches(): Promise<Branch[]> {
     
     // Filter active branches in memory
     return branches
-      .filter(branch => branch.isActive)
-      .sort((a, b) => a.code.localeCompare(b.code));
+      .filter(branch => branch.isActive === true)
+      .sort((a, b) => a.name.localeCompare(b.name));
   } catch (error) {
     console.error('Error getting active branches:', error);
-    throw error;
+    // Return empty array instead of throwing
+    return [];
   }
 }
 
@@ -81,7 +83,7 @@ export async function createBranch(branchData: Omit<Branch, 'id' | 'createdAt'>)
   try {
     const docRef = await addDoc(collection(db, COLLECTION_NAME), {
       ...branchData,
-      createdAt: Timestamp.now(),
+      createdAt: serverTimestamp(),
     });
     return docRef.id;
   } catch (error) {
@@ -94,10 +96,15 @@ export async function createBranch(branchData: Omit<Branch, 'id' | 'createdAt'>)
 export async function updateBranch(id: string, branchData: Partial<Branch>): Promise<void> {
   try {
     const docRef = doc(db, COLLECTION_NAME, id);
+    
     // Remove id and createdAt from update data
     const updateData = { ...branchData };
     delete updateData.id;
     delete updateData.createdAt;
+    
+    if (Object.keys(updateData).length === 0) {
+      return; // Nothing to update
+    }
     
     await updateDoc(docRef, updateData);
   } catch (error) {
@@ -106,33 +113,49 @@ export async function updateBranch(id: string, branchData: Partial<Branch>): Pro
   }
 }
 
-// Delete branch (soft delete - just set isActive to false)
-export async function deleteBranch(id: string): Promise<void> {
+// Toggle branch active status
+export async function toggleBranchStatus(id: string, isActive: boolean): Promise<void> {
   try {
     const docRef = doc(db, COLLECTION_NAME, id);
-    await updateDoc(docRef, { isActive: false });
+    await updateDoc(docRef, { isActive });
   } catch (error) {
-    console.error('Error deleting branch:', error);
+    console.error('Error toggling branch status:', error);
     throw error;
   }
 }
 
-// Check if branch code already exists
-export async function checkBranchCodeExists(code: string, excludeId?: string): Promise<boolean> {
+// Get branches by IDs
+export async function getBranchesByIds(ids: string[]): Promise<Branch[]> {
   try {
-    const q = query(
-      collection(db, COLLECTION_NAME),
-      where('code', '==', code.toUpperCase())
-    );
-    const querySnapshot = await getDocs(q);
+    if (ids.length === 0) return [];
     
-    if (excludeId) {
-      return querySnapshot.docs.some(doc => doc.id !== excludeId);
+    const branches: Branch[] = [];
+    
+    // Firestore 'in' query has a limit of 10 items
+    const chunks = [];
+    for (let i = 0; i < ids.length; i += 10) {
+      chunks.push(ids.slice(i, i + 10));
     }
     
-    return !querySnapshot.empty;
+    for (const chunk of chunks) {
+      const q = query(
+        collection(db, COLLECTION_NAME),
+        where('__name__', 'in', chunk)
+      );
+      const querySnapshot = await getDocs(q);
+      
+      querySnapshot.docs.forEach(doc => {
+        branches.push({
+          id: doc.id,
+          ...doc.data(),
+          createdAt: doc.data().createdAt?.toDate() || new Date(),
+        } as Branch);
+      });
+    }
+    
+    return branches;
   } catch (error) {
-    console.error('Error checking branch code:', error);
+    console.error('Error getting branches by IDs:', error);
     throw error;
   }
 }
