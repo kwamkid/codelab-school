@@ -27,8 +27,8 @@ import {
 import { getEnrollmentsByClass } from '@/lib/services/enrollments';
 import { getStudent, getParent } from '@/lib/services/parents';
 import { getTeacher, getActiveTeachers } from '@/lib/services/teachers';
-import { updateClassSchedule } from '@/lib/services/classes';
-import { Enrollment, Student, Parent, Teacher } from '@/types/models';
+import { updateClassSchedule, getClassSchedule } from '@/lib/services/classes';
+import { Enrollment, Student, Parent, Teacher, ClassSchedule } from '@/types/models';
 import { formatDate, calculateAge } from '@/lib/utils';
 import { toast } from 'sonner';
 import { CalendarEvent } from '@/lib/services/dashboard';
@@ -82,6 +82,7 @@ export default function ClassDetailDialog({
   const [availableTeachers, setAvailableTeachers] = useState<Teacher[]>([]);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('info');
+  const [existingSchedule, setExistingSchedule] = useState<ClassSchedule | null>(null);
 
   useEffect(() => {
     console.log('Dialog state:', { open, event });
@@ -92,11 +93,23 @@ export default function ClassDetailDialog({
   }, [open, event]);
 
   const loadData = async () => {
-    if (!event) return;
+    if (!event || !scheduleId) return;
     
-    console.log('Loading data for class:', event.classId);
+    console.log('Loading data for class:', event.classId, 'schedule:', scheduleId);
     setLoading(true);
     try {
+      // Load existing schedule data first
+      const scheduleData = await getClassSchedule(event.classId, scheduleId);
+      if (scheduleData) {
+        console.log('Existing schedule data:', scheduleData);
+        setExistingSchedule(scheduleData);
+        
+        // Set actual teacher if saved
+        if (scheduleData.actualTeacherId) {
+          setActualTeacherId(scheduleData.actualTeacherId);
+        }
+      }
+
       // Load enrollments and students
       console.log('Getting enrollments...');
       const enrollments = await getEnrollmentsByClass(event.classId);
@@ -131,11 +144,23 @@ export default function ClassDetailDialog({
       console.log('Loaded students:', studentsData.length);
       setStudents(studentsData.sort((a, b) => a.name.localeCompare(b.name)));
       
-      // Initialize attendance (all present by default)
+      // Initialize attendance based on existing data or default to present
       const initialAttendance: Record<string, 'present' | 'absent' | 'late'> = {};
-      studentsData.forEach(student => {
-        initialAttendance[student.id] = 'present';
-      });
+      
+      if (scheduleData && scheduleData.attendance && scheduleData.attendance.length > 0) {
+        // Use existing attendance data
+        console.log('Using existing attendance data');
+        scheduleData.attendance.forEach((att: any) => {
+          initialAttendance[att.studentId] = att.status;
+        });
+      } else {
+        // Default all to present
+        console.log('No existing attendance, defaulting to all present');
+        studentsData.forEach(student => {
+          initialAttendance[student.id] = 'present';
+        });
+      }
+      
       setAttendance(initialAttendance);
       
       // Load available teachers for substitute
@@ -215,6 +240,9 @@ export default function ClassDetailDialog({
   const absentCount = Object.values(attendance).filter(status => status === 'absent').length;
   const lateCount = Object.values(attendance).filter(status => status === 'late').length;
 
+  // Check if attendance has been recorded
+  const isAttendanceRecorded = existingSchedule?.status === 'completed';
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
@@ -228,6 +256,11 @@ export default function ClassDetailDialog({
           </DialogTitle>
           <DialogDescription>
             ครั้งที่ {event.extendedProps.sessionNumber} • {formatDate(event.start, 'long')}
+            {isAttendanceRecorded && (
+              <Badge className="ml-2 bg-green-100 text-green-700">
+                เช็คชื่อแล้ว
+              </Badge>
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -273,6 +306,24 @@ export default function ClassDetailDialog({
                   </div>
                 </div>
 
+                {/* Attendance Summary if recorded */}
+                {isAttendanceRecorded && (
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <h4 className="font-medium mb-2">สรุปการเช็คชื่อ</h4>
+                    <div className="grid grid-cols-3 gap-4 text-sm">
+                      <div>
+                        <span className="text-green-600 font-medium">มาเรียน:</span> {presentCount} คน
+                      </div>
+                      <div>
+                        <span className="text-red-600 font-medium">ขาดเรียน:</span> {absentCount} คน
+                      </div>
+                      <div>
+                        <span className="text-yellow-600 font-medium">มาสาย:</span> {lateCount} คน
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Students List */}
                 <div>
                   <h4 className="font-medium mb-3 flex items-center gap-2">
@@ -287,6 +338,17 @@ export default function ClassDetailDialog({
                           <div className="flex-1">
                             <p className="font-medium">{student.nickname} ({student.name})</p>
                             <p className="text-xs text-gray-500">อายุ {calculateAge(student.birthdate)} ปี</p>
+                            {/* แสดงสถานะการเช็คชื่อถ้ามี */}
+                            {isAttendanceRecorded && attendance[student.id] && (
+                              <Badge className={
+                                attendance[student.id] === 'present' ? 'bg-green-100 text-green-700 text-xs mt-1' :
+                                attendance[student.id] === 'absent' ? 'bg-red-100 text-red-700 text-xs mt-1' :
+                                'bg-yellow-100 text-yellow-700 text-xs mt-1'
+                              }>
+                                {attendance[student.id] === 'present' ? 'มาเรียน' :
+                                 attendance[student.id] === 'absent' ? 'ขาดเรียน' : 'มาสาย'}
+                              </Badge>
+                            )}
                             {/* แสดงสถิติการเข้าเรียน */}
                             {student.attendanceHistory && (student.attendanceHistory.absent > 0 || student.attendanceHistory.present > 0) && (
                               <div className="flex items-center gap-3 mt-1 text-xs">
@@ -442,7 +504,7 @@ export default function ClassDetailDialog({
                   ) : (
                     <>
                       <UserCheck className="h-4 w-4 mr-2" />
-                      บันทึกการเช็คชื่อ
+                      {isAttendanceRecorded ? 'อัปเดตการเช็คชื่อ' : 'บันทึกการเช็คชื่อ'}
                     </>
                   )}
                 </Button>

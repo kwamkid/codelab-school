@@ -292,7 +292,7 @@ async function generateScheduleDates(
   return schedules;
 }
 
-// Get class schedules (แก้ไขใหม่)
+// Get class schedules
 export async function getClassSchedules(classId: string): Promise<ClassSchedule[]> {
   try {
     const schedulesRef = collection(db, COLLECTION_NAME, classId, 'schedules');
@@ -312,7 +312,33 @@ export async function getClassSchedules(classId: string): Promise<ClassSchedule[
   }
 }
 
-// Update class schedule (แก้ไขใหม่)
+// Get single class schedule
+export async function getClassSchedule(classId: string, scheduleId: string): Promise<ClassSchedule | null> {
+  try {
+    const docRef = doc(db, COLLECTION_NAME, classId, 'schedules', scheduleId);
+    const docSnap = await getDoc(docRef);
+    
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      console.log('Raw schedule data from Firestore:', data); // Debug log
+      
+      return {
+        id: docSnap.id,
+        ...data,
+        sessionDate: data.sessionDate?.toDate() || new Date(),
+        originalDate: data.originalDate?.toDate(),
+        rescheduledAt: data.rescheduledAt?.toDate(),
+        attendance: data.attendance || [] // Make sure attendance is included
+      } as ClassSchedule;
+    }
+    return null;
+  } catch (error) {
+    console.error('Error getting class schedule:', error);
+    throw error;
+  }
+}
+
+// Update class schedule
 export async function updateClassSchedule(
   classId: string,
   scheduleId: string,
