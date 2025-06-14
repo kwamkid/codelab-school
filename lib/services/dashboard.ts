@@ -8,7 +8,7 @@ import {
   getDoc
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
-import { Class, ClassSchedule, Subject, Teacher, Room } from '@/types/models';
+import { Class, ClassSchedule, Subject, Teacher, Room, Branch } from '@/types/models';
 
 /**
  * Interface สำหรับข้อมูลสถิติบน Dashboard
@@ -102,6 +102,8 @@ export async function getCalendarEvents(
   branchId?: string
 ): Promise<CalendarEvent[]> {
   try {
+    console.log('Getting calendar events for range:', viewStart, 'to', viewEnd);
+    
     // 1. ดึงข้อมูลพื้นฐานทั้งหมดที่ต้องใช้
     const [subjectsSnap, teachersSnap, branchesSnap] = await Promise.all([
       getDocs(collection(db, 'subjects')),
@@ -112,31 +114,26 @@ export async function getCalendarEvents(
     // 2. แปลงข้อมูลเป็น Map
     const subjectMap = new Map(subjectsSnap.docs.map(doc => [doc.id, doc.data() as Subject]));
     const teacherMap = new Map(teachersSnap.docs.map(doc => [doc.id, doc.data() as Teacher]));
-    const branchMap = new Map(branchesSnap.docs.map(doc => [doc.id, { id: doc.id, ...doc.data() }]));
+    const branchMap = new Map(branchesSnap.docs.map(doc => [doc.id, doc.data() as Branch]));
 
     const events: CalendarEvent[] = [];
-    const classesRef = collection(db, 'classes');
     
-    // 3. สร้าง query ตามเงื่อนไข
-    let q;
+    // 3. ดึงคลาสที่ active ทั้งหมด (ไม่ filter ด้วย date range ตรงนี้)
+    let classQuery = query(
+      collection(db, 'classes'),
+      where('status', 'in', ['published', 'started'])
+    );
+    
     if (branchId && branchId !== 'all') {
-      // Filter by specific branch
-      q = query(
-        classesRef,
+      classQuery = query(
+        collection(db, 'classes'),
         where('status', 'in', ['published', 'started']),
-        where('branchId', '==', branchId),
-        where('startDate', '<=', Timestamp.fromDate(viewEnd))
-      );
-    } else {
-      // Show all branches
-      q = query(
-        classesRef,
-        where('status', 'in', ['published', 'started']),
-        where('startDate', '<=', Timestamp.fromDate(viewEnd))
+        where('branchId', '==', branchId)
       );
     }
-
-    const classSnap = await getDocs(q);
+    
+    const classSnap = await getDocs(classQuery);
+    console.log('Found classes:', classSnap.size);
 
     // 4. Process each class
     for (const classDoc of classSnap.docs) {
@@ -146,26 +143,23 @@ export async function getCalendarEvents(
         startDate: classDoc.data().startDate?.toDate() || new Date(),
         endDate: classDoc.data().endDate?.toDate() || new Date(),
       } as Class;
-
-      // Skip if class ended before view start
-      if (classData.endDate < viewStart) {
-        continue;
-      }
       
-      console.log('Processing class:', classData.name, classData.id);
-      
-      // Get schedules for this class
+      // Get schedules for this class in the date range
       const schedulesRef = collection(db, 'classes', classDoc.id, 'schedules');
       const scheduleQuery = query(
         schedulesRef,
         where('sessionDate', '>=', Timestamp.fromDate(viewStart)),
-        where('sessionDate', '<=', Timestamp.fromDate(viewEnd)),
-        where('status', 'in', ['scheduled', 'rescheduled'])
+        where('sessionDate', '<=', Timestamp.fromDate(viewEnd))
       );
       
       const scheduleSnap = await getDocs(scheduleQuery);
-
-      if (scheduleSnap.empty) continue;
+      
+      if (scheduleSnap.empty) {
+        console.log(`No schedules found for class ${classData.name} in date range`);
+        continue;
+      }
+      
+      console.log(`Found ${scheduleSnap.size} schedules for class ${classData.name}`);
 
       // Get related data
       const subject = subjectMap.get(classData.subjectId);
@@ -191,7 +185,15 @@ export async function getCalendarEvents(
           sessionDate: scheduleDoc.data().sessionDate?.toDate() || new Date()
         } as ClassSchedule;
 
-        if (!classData.startTime || !classData.endTime) continue;
+        // Skip cancelled sessions only (show completed for reference)
+        if (scheduleData.status === 'cancelled') {
+          continue;
+        }
+
+        if (!classData.startTime || !classData.endTime) {
+          console.log('Missing time info for class:', classData.name);
+          continue;
+        }
 
         const sessionDate = scheduleData.sessionDate;
         const [startHour, startMinute] = classData.startTime.split(':').map(Number);
@@ -204,7 +206,7 @@ export async function getCalendarEvents(
         endDateTime.setHours(endHour, endMinute, 0, 0);
         
         // Create calendar event
-        events.push({
+        const event: CalendarEvent = {
           id: `${classData.id}-${scheduleDoc.id}`,
           classId: classData.id,
           title: `${classData.name} (${classData.enrolledCount}/${classData.maxStudents})`,
@@ -222,13 +224,17 @@ export async function getCalendarEvents(
             sessionNumber: scheduleData.sessionNumber,
             status: scheduleData.status
           }
-        });
+        };
+        
+        events.push(event);
+        console.log('Added event:', event.title, 'at', event.start);
       }
     }
     
     // Sort events by start time
     events.sort((a, b) => a.start.getTime() - b.start.getTime());
     
+    console.log('Total events returned:', events.length);
     return events;
   } catch (error) {
     console.error("Error getting calendar events:", error);

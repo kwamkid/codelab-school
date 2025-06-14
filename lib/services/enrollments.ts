@@ -3,19 +3,18 @@ import {
   doc, 
   getDocs, 
   getDoc, 
-  addDoc, 
-  updateDoc,
   query,
   where,
   orderBy,
   Timestamp,
   serverTimestamp,
   writeBatch,
-  increment
+  increment,
+  setDoc
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { Enrollment } from '@/types/models';
-import { getClass, updateClass } from './classes';
+import { getClass } from './classes';
 
 const COLLECTION_NAME = 'enrollments';
 
@@ -46,23 +45,28 @@ export async function getEnrollments(): Promise<Enrollment[]> {
 // Get enrollments by class
 export async function getEnrollmentsByClass(classId: string): Promise<Enrollment[]> {
   try {
+    // Simplified query - just filter by classId first
     const q = query(
       collection(db, COLLECTION_NAME),
-      where('classId', '==', classId),
-      where('status', 'in', ['active', 'completed']),
-      orderBy('enrolledAt', 'asc')
+      where('classId', '==', classId)
     );
     const querySnapshot = await getDocs(q);
     
-    return querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      enrolledAt: doc.data().enrolledAt?.toDate() || new Date(),
-      payment: {
-        ...doc.data().payment,
-        paidDate: doc.data().payment?.paidDate?.toDate()
-      }
-    } as Enrollment));
+    // Filter in memory for active and completed status
+    const enrollments = querySnapshot.docs
+      .map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        enrolledAt: doc.data().enrolledAt?.toDate() || new Date(),
+        payment: {
+          ...doc.data().payment,
+          paidDate: doc.data().payment?.paidDate?.toDate()
+        }
+      } as Enrollment))
+      .filter(enrollment => enrollment.status === 'active' || enrollment.status === 'completed')
+      .sort((a, b) => a.enrolledAt.getTime() - b.enrolledAt.getTime());
+    
+    return enrollments;
   } catch (error) {
     console.error('Error getting enrollments by class:', error);
     throw error;
@@ -153,12 +157,17 @@ export async function checkDuplicateEnrollment(
     const q = query(
       collection(db, COLLECTION_NAME),
       where('studentId', '==', studentId),
-      where('classId', '==', classId),
-      where('status', 'in', ['active', 'completed'])
+      where('classId', '==', classId)
     );
     const querySnapshot = await getDocs(q);
     
-    return !querySnapshot.empty;
+    // Filter in memory for active/completed status
+    const activeEnrollments = querySnapshot.docs.filter(doc => {
+      const status = doc.data().status;
+      return status === 'active' || status === 'completed';
+    });
+    
+    return activeEnrollments.length > 0;
   } catch (error) {
     console.error('Error checking duplicate enrollment:', error);
     throw error;
@@ -176,26 +185,25 @@ export async function createEnrollment(
     // 1. Create enrollment document
     const enrollmentRef = doc(collection(db, COLLECTION_NAME));
     
-    // Clean up the data to remove undefined values
-    const cleanedData = {
+    // Build the data object with proper types
+    const dataToSave = {
       ...enrollmentData,
       enrolledAt: serverTimestamp(),
+      payment: {
+        ...enrollmentData.payment,
+        ...(enrollmentData.payment.paidDate && {
+          paidDate: Timestamp.fromDate(new Date(enrollmentData.payment.paidDate))
+        })
+      }
     };
     
-    // Remove undefined values from pricing
-    if (cleanedData.pricing.promotionCode === undefined) {
-      delete cleanedData.pricing.promotionCode;
+    // Remove undefined promotionCode if it exists
+    if (!dataToSave.pricing.promotionCode) {
+      const { promotionCode: _promotionCode, ...pricingWithoutPromo } = dataToSave.pricing;
+      dataToSave.pricing = pricingWithoutPromo;
     }
     
-    // If payment date exists, convert to Timestamp
-    if (enrollmentData.payment.paidDate) {
-      cleanedData.payment = {
-        ...enrollmentData.payment,
-        paidDate: Timestamp.fromDate(enrollmentData.payment.paidDate)
-      };
-    }
-    
-    batch.set(enrollmentRef, cleanedData);
+    batch.set(enrollmentRef, dataToSave);
     
     // 2. Update class enrolled count
     const classRef = doc(db, 'classes', enrollmentData.classId);
@@ -221,20 +229,23 @@ export async function updateEnrollment(
   try {
     const docRef = doc(db, COLLECTION_NAME, id);
     
-    // Build update data
-    const updateData = { ...enrollmentData };
-    delete updateData.id;
-    delete updateData.enrolledAt;
+    // Build update data with proper types
+    const { id: _id, enrolledAt: _enrolledAt, ...dataToUpdate } = enrollmentData;
     
-    // Convert payment date if exists
-    if (updateData.payment?.paidDate instanceof Date) {
-      updateData.payment = {
-        ...updateData.payment,
-        paidDate: Timestamp.fromDate(updateData.payment.paidDate)
+    // Handle payment date conversion separately
+    let finalUpdateData: Partial<Enrollment> = dataToUpdate;
+    
+    if (dataToUpdate.payment?.paidDate) {
+      finalUpdateData = {
+        ...dataToUpdate,
+        payment: {
+          ...dataToUpdate.payment,
+          paidDate: Timestamp.fromDate(new Date(dataToUpdate.payment.paidDate)) as unknown as Date
+        }
       };
     }
     
-    await updateDoc(docRef, updateData);
+    await setDoc(docRef, finalUpdateData, { merge: true });
   } catch (error) {
     console.error('Error updating enrollment:', error);
     throw error;
@@ -364,29 +375,30 @@ export async function transferEnrollment(
     const enrollment = await getEnrollment(enrollmentId);
     if (!enrollment) throw new Error('Enrollment not found');
     
-    // ไม่ต้องเช็คที่นั่งว่างเพราะ admin ตัดสินใจได้
-    
     // Use batch write for atomic operation
     const batch = writeBatch(db);
     
     // 1. Update enrollment - keep status as 'active' and track transfer history
     const enrollmentRef = doc(db, COLLECTION_NAME, enrollmentId);
+    
+    const transferRecord = {
+      fromClassId: enrollment.classId,
+      toClassId: newClassId,
+      transferredAt: new Date(),
+      reason: reason || 'Admin transfer'
+    };
+    
+    const updatedHistory = enrollment.transferHistory 
+      ? [...enrollment.transferHistory, transferRecord]
+      : [transferRecord];
+    
     batch.update(enrollmentRef, {
       classId: newClassId,
-      status: 'active', // Keep as active instead of 'transferred'
-      transferHistory: enrollment.transferHistory 
-        ? [...enrollment.transferHistory, {
-            fromClassId: enrollment.classId,
-            toClassId: newClassId,
-            transferredAt: Timestamp.now(),
-            reason: reason || 'Admin transfer'
-          }]
-        : [{
-            fromClassId: enrollment.classId,
-            toClassId: newClassId,
-            transferredAt: Timestamp.now(),
-            reason: reason || 'Admin transfer'
-          }]
+      status: 'active',
+      transferHistory: updatedHistory.map(record => ({
+        ...record,
+        transferredAt: Timestamp.fromDate(new Date(record.transferredAt))
+      }))
     });
     
     // 2. Decrease old class enrolled count
@@ -415,8 +427,8 @@ export async function getAvailableClassesForTransfer(
   currentClassId: string,
   studentAge: number
 ): Promise<{
-  eligibleClasses: any[];
-  allClasses: any[];
+  eligibleClasses: import('./classes').Class[];
+  allClasses: import('./classes').Class[];
 }> {
   try {
     // Import required functions
@@ -453,7 +465,7 @@ export async function getAvailableClassesForTransfer(
     });
     
     // Add subject info to classes for display
-    const enrichClasses = (classes: any[]) => 
+    const enrichClasses = (classes: import('./classes').Class[]) => 
       classes.map(cls => ({
         ...cls,
         subject: subjectMap.get(cls.subjectId)
@@ -483,12 +495,14 @@ export async function getEnrollmentTransferHistory(
 }>> {
   try {
     const enrollment = await getEnrollment(enrollmentId);
-    if (!enrollment) return [];
+    if (!enrollment || !enrollment.transferHistory) return [];
     
-    // Return transfer history if exists
-    return (enrollment.transferHistory || []).map(transfer => ({
+    // Return transfer history with proper date conversion
+    return enrollment.transferHistory.map(transfer => ({
       ...transfer,
-      transferredAt: transfer.transferredAt?.toDate() || new Date()
+      transferredAt: transfer.transferredAt instanceof Date 
+        ? transfer.transferredAt 
+        : new Date(transfer.transferredAt)
     }));
   } catch (error) {
     console.error('Error getting transfer history:', error);

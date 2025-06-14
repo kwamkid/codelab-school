@@ -5,11 +5,12 @@ import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import { CalendarEvent } from '@/lib/services/dashboard';
+import { DatesSetArg, EventClickArg } from '@fullcalendar/core';
 
 interface DashboardCalendarProps {
   events: CalendarEvent[];
-  onEventClick: (info: any) => void;
-  onDatesSet: (dateInfo: any) => void;
+  onEventClick: (info: EventClickArg) => void;
+  onDatesSet: (dateInfo: DatesSetArg) => void;
   loading?: boolean;
 }
 
@@ -49,8 +50,8 @@ export default function DashboardCalendar({
           day: 'วัน'
         }}
         allDaySlot={false}
-        slotMinTime="08:00:00"
-        slotMaxTime="20:00:00"
+        slotMinTime="08:30:00"
+        slotMaxTime="20:30:00"
         slotDuration="00:30:00"
         slotLabelInterval="01:00:00"
         eventClick={onEventClick}
@@ -71,13 +72,11 @@ export default function DashboardCalendar({
             <div className="p-1 text-xs overflow-hidden">
               <div className="font-semibold truncate">{eventInfo.event.title}</div>
               <div className="truncate opacity-90">
-                {extendedProps.roomName} • {extendedProps.teacherName}
+                ห้อง {extendedProps.roomName}
               </div>
-              {extendedProps.branchName !== 'N/A' && (
-                <div className="truncate opacity-75">
-                  สาขา: {extendedProps.branchName}
-                </div>
-              )}
+              <div className="truncate opacity-75">
+                ครู{extendedProps.teacherName}
+              </div>
             </div>
           );
         }}
