@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { MakeupClass, Student, Class } from '@/types/models';
-import { recordMakeupAttendance, cancelMakeupClass } from '@/lib/services/makeup';
+import { recordMakeupAttendance, cancelMakeupClass, deleteMakeupClass, revertMakeupToScheduled } from '@/lib/services/makeup';
 import {
   Dialog,
   DialogContent,
@@ -25,7 +25,8 @@ import {
   AlertCircle,
   CalendarCheck,
   Save,
-  CalendarDays
+  CalendarDays,
+  Trash2
 } from 'lucide-react';
 import { formatDate, formatTime } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -84,6 +85,8 @@ export default function MakeupDetailDialog({
   const [loading, setLoading] = useState(false);
   const [attendanceNote, setAttendanceNote] = useState('');
   const [cancelReason, setCancelReason] = useState('');
+  const [deleteReason, setDeleteReason] = useState('');
+  const [revertReason, setRevertReason] = useState('');
   const [showEditSchedule, setShowEditSchedule] = useState(false);
   
   const StatusIcon = statusIcons[makeup.status];
@@ -133,6 +136,64 @@ export default function MakeupDetailDialog({
     } catch (error) {
       console.error('Error cancelling makeup:', error);
       toast.error('ไม่สามารถยกเลิกได้');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteReason.trim()) {
+      toast.error('กรุณาระบุเหตุผลในการลบ');
+      return;
+    }
+    
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      toast.error('กรุณาเข้าสู่ระบบ');
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      await deleteMakeupClass(makeup.id, currentUser.uid, deleteReason);
+      toast.success('ลบ Makeup Class เรียบร้อยแล้ว');
+      onUpdated();
+      onOpenChange(false);
+    } catch (error: any) {
+      console.error('Error deleting makeup:', error);
+      if (error.message === 'Cannot delete completed makeup class') {
+        toast.error('ไม่สามารถลบ Makeup ที่เรียนเสร็จแล้วได้');
+      } else {
+        toast.error('ไม่สามารถลบได้');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRevertAttendance = async () => {
+    if (!revertReason.trim()) {
+      toast.error('กรุณาระบุเหตุผลในการยกเลิกการบันทึก');
+      return;
+    }
+    
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      toast.error('กรุณาเข้าสู่ระบบ');
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      // Get user display name or email for logging
+      const userName = currentUser.displayName || currentUser.email || currentUser.uid;
+      
+      await revertMakeupToScheduled(makeup.id, userName, revertReason);
+      toast.success('ยกเลิกการบันทึกเข้าเรียนเรียบร้อยแล้ว');
+      onUpdated();
+    } catch (error) {
+      console.error('Error reverting attendance:', error);
+      toast.error('ไม่สามารถยกเลิกการบันทึกได้');
     } finally {
       setLoading(false);
     }
@@ -240,7 +301,52 @@ export default function MakeupDetailDialog({
           {/* Attendance Result (if completed) */}
           {makeup.attendance && (
             <div className="space-y-3">
-              <h3 className="font-medium text-sm text-gray-700">ผลการเข้าเรียน</h3>
+              <div className="flex items-center justify-between">
+                <h3 className="font-medium text-sm text-gray-700">ผลการเข้าเรียน</h3>
+                {/* Add revert button */}
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-orange-600"
+                    >
+                      <XCircle className="h-3 w-3 mr-1" />
+                      ยกเลิกการบันทึก
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>ยกเลิกการบันทึกเข้าเรียน</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        คุณแน่ใจหรือไม่ที่จะยกเลิกการบันทึกเข้าเรียน? 
+                        สถานะจะเปลี่ยนกลับเป็น "นัดแล้ว"
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <div className="my-4">
+                      <Label htmlFor="revert-reason">เหตุผล *</Label>
+                      <Textarea
+                        id="revert-reason"
+                        value={revertReason}
+                        onChange={(e) => setRevertReason(e.target.value)}
+                        placeholder="เช่น บันทึกผิด, นักเรียนยังไม่ได้มาเรียน..."
+                        rows={3}
+                        className="mt-2"
+                      />
+                    </div>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>ไม่ยกเลิก</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={handleRevertAttendance}
+                        disabled={!revertReason.trim()}
+                        className="bg-orange-500 hover:bg-orange-600"
+                      >
+                        ยืนยันยกเลิกการบันทึก
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
               <div className={`rounded-lg p-4 ${
                 makeup.attendance.status === 'present' ? 'bg-green-50' : 'bg-red-50'
               }`}>
@@ -289,35 +395,132 @@ export default function MakeupDetailDialog({
                 />
               </div>
               <div className="flex gap-2">
-                <Button
-                  onClick={() => handleRecordAttendance('present')}
-                  disabled={loading}
-                  className="flex-1 bg-green-500 hover:bg-green-600"
-                >
-                  <CheckCircle className="h-4 w-4 mr-2" />
-                  เข้าเรียน
-                </Button>
-                <Button
-                  onClick={() => handleRecordAttendance('absent')}
-                  disabled={loading}
-                  variant="destructive"
-                  className="flex-1"
-                >
-                  <XCircle className="h-4 w-4 mr-2" />
-                  ขาดเรียน
-                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      disabled={loading}
+                      className="flex-1 bg-green-500 hover:bg-green-600"
+                    >
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                      เข้าเรียน
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>ยืนยันการบันทึกเข้าเรียน</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        คุณแน่ใจหรือไม่ว่า <strong>{student.nickname}</strong> มาเรียน Makeup Class แล้ว?
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <div className="my-4 bg-green-50 border border-green-200 rounded p-3">
+                      <p className="text-sm text-green-800">
+                        <strong>วันที่:</strong> {makeup.makeupSchedule && formatDate(makeup.makeupSchedule.date, 'long')}<br/>
+                        <strong>เวลา:</strong> {makeup.makeupSchedule?.startTime} - {makeup.makeupSchedule?.endTime} น.
+                      </p>
+                    </div>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => handleRecordAttendance('present')}
+                        className="bg-green-500 hover:bg-green-600"
+                      >
+                        ยืนยันเข้าเรียน
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      disabled={loading}
+                      variant="destructive"
+                      className="flex-1"
+                    >
+                      <XCircle className="h-4 w-4 mr-2" />
+                      ขาดเรียน
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>ยืนยันการบันทึกขาดเรียน</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        คุณแน่ใจหรือไม่ว่า <strong>{student.nickname}</strong> ไม่ได้มาเรียน Makeup Class?
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <div className="my-4 bg-red-50 border border-red-200 rounded p-3">
+                      <p className="text-sm text-red-800">
+                        หากนักเรียนไม่มาเรียน Makeup ที่นัดไว้ จะถือว่าใช้สิทธิ์ Makeup แล้ว
+                      </p>
+                    </div>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => handleRecordAttendance('absent')}
+                        className="bg-red-500 hover:bg-red-600"
+                      >
+                        ยืนยันขาดเรียน
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               </div>
             </div>
           )}
 
-          {/* Cancel button for pending/scheduled */}
+          {/* Delete and Cancel buttons */}
           {(makeup.status === 'pending' || makeup.status === 'scheduled') && (
-            <div className="pt-4 border-t">
+            <div className="pt-4 border-t space-y-2">
+              {/* Delete button */}
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button
                     variant="outline"
                     className="w-full text-red-600 hover:text-red-700"
+                    disabled={loading}
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    ลบ Makeup Class
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>ยืนยันการลบ Makeup Class</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      คุณแน่ใจหรือไม่ที่จะลบ Makeup Class นี้? 
+                      การลบจะทำให้นักเรียนสามารถขอ Makeup ใหม่สำหรับวันนี้ได้
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <div className="my-4">
+                    <Label htmlFor="delete-reason">เหตุผลในการลบ *</Label>
+                    <Textarea
+                      id="delete-reason"
+                      value={deleteReason}
+                      onChange={(e) => setDeleteReason(e.target.value)}
+                      placeholder="เช่น กรอกผิด, ผู้ปกครองขอยกเลิก..."
+                      rows={3}
+                      className="mt-2"
+                    />
+                  </div>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>ไม่ลบ</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={handleDelete}
+                      disabled={!deleteReason.trim()}
+                      className="bg-red-500 hover:bg-red-600"
+                    >
+                      ยืนยันลบ
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+
+              {/* Cancel button */}
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="w-full"
                     disabled={loading}
                   >
                     <XCircle className="h-4 w-4 mr-2" />

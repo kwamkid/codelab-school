@@ -1,0 +1,713 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import { MakeupClass, Student, Class, Teacher, Room, ClassSchedule } from '@/types/models';
+import { getMakeupClass, recordMakeupAttendance, cancelMakeupClass, deleteMakeupClass, revertMakeupToScheduled } from '@/lib/services/makeup';
+import { getClass, getClassSchedule } from '@/lib/services/classes';
+import { getStudentWithParent } from '@/lib/services/parents';
+import { getTeacher } from '@/lib/services/teachers';
+import { getRoom } from '@/lib/services/rooms';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import { 
+  Calendar,
+  Clock,
+  User,
+  MapPin,
+  Phone,
+  CheckCircle,
+  XCircle,
+  AlertCircle,
+  CalendarCheck,
+  Save,
+  CalendarDays,
+  Trash2,
+  ChevronLeft,
+  Edit,
+  BookOpen,
+  History
+} from 'lucide-react';
+import { formatDate, getDayName, formatDateWithDay } from '@/lib/utils';
+import { toast } from 'sonner';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { auth } from '@/lib/firebase/client';
+import Link from 'next/link';
+import EditMakeupScheduleDialog from '@/components/makeup/edit-makeup-schedule-dialog';
+
+const statusColors = {
+  'pending': 'bg-yellow-100 text-yellow-700',
+  'scheduled': 'bg-blue-100 text-blue-700',
+  'completed': 'bg-green-100 text-green-700',
+  'cancelled': 'bg-red-100 text-red-700',
+};
+
+const statusLabels = {
+  'pending': 'รอจัดตาราง',
+  'scheduled': 'นัดแล้ว',
+  'completed': 'เรียนแล้ว',
+  'cancelled': 'ยกเลิก',
+};
+
+const statusIcons = {
+  'pending': AlertCircle,
+  'scheduled': CalendarCheck,
+  'completed': CheckCircle,
+  'cancelled': XCircle,
+};
+
+export default function MakeupDetailPage() {
+  const params = useParams();
+  const router = useRouter();
+  const makeupId = params.id as string;
+  
+  const [makeup, setMakeup] = useState<MakeupClass | null>(null);
+  const [student, setStudent] = useState<(Student & { parentName: string; parentPhone: string }) | null>(null);
+  const [classInfo, setClassInfo] = useState<Class | null>(null);
+  const [originalSchedule, setOriginalSchedule] = useState<ClassSchedule | null>(null);
+  const [makeupTeacher, setMakeupTeacher] = useState<Teacher | null>(null);
+  const [makeupRoom, setMakeupRoom] = useState<Room | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
+  
+  // Form states
+  const [attendanceNote, setAttendanceNote] = useState('');
+  const [cancelReason, setCancelReason] = useState('');
+  const [deleteReason, setDeleteReason] = useState('');
+  const [revertReason, setRevertReason] = useState('');
+  const [showEditSchedule, setShowEditSchedule] = useState(false);
+
+  useEffect(() => {
+    if (makeupId) {
+      loadMakeupDetails();
+    }
+  }, [makeupId]);
+
+  const loadMakeupDetails = async () => {
+    try {
+      // Load makeup data
+      const makeupData = await getMakeupClass(makeupId);
+      if (!makeupData) {
+        toast.error('ไม่พบข้อมูล Makeup Class');
+        router.push('/makeup');
+        return;
+      }
+      setMakeup(makeupData);
+
+      // Load related data
+      const [studentData, classData] = await Promise.all([
+        getStudentWithParent(makeupData.studentId),
+        getClass(makeupData.originalClassId)
+      ]);
+      
+      setStudent(studentData);
+      setClassInfo(classData);
+
+      // Load original schedule
+      if (makeupData.originalScheduleId) {
+        const scheduleData = await getClassSchedule(makeupData.originalClassId, makeupData.originalScheduleId);
+        setOriginalSchedule(scheduleData);
+      }
+
+      // Load makeup teacher and room if scheduled
+      if (makeupData.makeupSchedule) {
+        const [teacherData, roomData] = await Promise.all([
+          getTeacher(makeupData.makeupSchedule.teacherId),
+          getRoom(makeupData.makeupSchedule.branchId, makeupData.makeupSchedule.roomId)
+        ]);
+        setMakeupTeacher(teacherData);
+        setMakeupRoom(roomData);
+      }
+    } catch (error) {
+      console.error('Error loading makeup details:', error);
+      toast.error('ไม่สามารถโหลดข้อมูลได้');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRecordAttendance = async (status: 'present' | 'absent') => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      toast.error('กรุณาเข้าสู่ระบบ');
+      return;
+    }
+    
+    setActionLoading(true);
+    try {
+      await recordMakeupAttendance(makeupId, {
+        status,
+        checkedBy: currentUser.uid,
+        note: attendanceNote
+      });
+      
+      toast.success(status === 'present' ? 'บันทึกการเข้าเรียนเรียบร้อยแล้ว' : 'บันทึกการขาดเรียนเรียบร้อยแล้ว');
+      loadMakeupDetails();
+    } catch (error) {
+      console.error('Error recording attendance:', error);
+      toast.error('ไม่สามารถบันทึกการเข้าเรียนได้');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleCancel = async () => {
+    if (!cancelReason.trim()) {
+      toast.error('กรุณาระบุเหตุผลในการยกเลิก');
+      return;
+    }
+    
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      toast.error('กรุณาเข้าสู่ระบบ');
+      return;
+    }
+    
+    setActionLoading(true);
+    try {
+      await cancelMakeupClass(makeupId, cancelReason, currentUser.uid);
+      toast.success('ยกเลิก Makeup Class เรียบร้อยแล้ว');
+      loadMakeupDetails();
+    } catch (error) {
+      console.error('Error cancelling makeup:', error);
+      toast.error('ไม่สามารถยกเลิกได้');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteReason.trim()) {
+      toast.error('กรุณาระบุเหตุผลในการลบ');
+      return;
+    }
+    
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      toast.error('กรุณาเข้าสู่ระบบ');
+      return;
+    }
+    
+    setActionLoading(true);
+    try {
+      await deleteMakeupClass(makeupId, currentUser.uid, deleteReason);
+      toast.success('ลบ Makeup Class เรียบร้อยแล้ว');
+      router.push('/makeup');
+    } catch (error: any) {
+      console.error('Error deleting makeup:', error);
+      if (error.message === 'Cannot delete completed makeup class') {
+        toast.error('ไม่สามารถลบ Makeup ที่เรียนเสร็จแล้วได้');
+      } else {
+        toast.error('ไม่สามารถลบได้');
+      }
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleRevertAttendance = async () => {
+    if (!revertReason.trim()) {
+      toast.error('กรุณาระบุเหตุผลในการยกเลิกการบันทึก');
+      return;
+    }
+    
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      toast.error('กรุณาเข้าสู่ระบบ');
+      return;
+    }
+    
+    setActionLoading(true);
+    try {
+      const userName = currentUser.displayName || currentUser.email || currentUser.uid;
+      await revertMakeupToScheduled(makeupId, userName, revertReason);
+      toast.success('ยกเลิกการบันทึกเข้าเรียนเรียบร้อยแล้ว');
+      loadMakeupDetails();
+    } catch (error) {
+      console.error('Error reverting attendance:', error);
+      toast.error('ไม่สามารถยกเลิกการบันทึกได้');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  if (loading || !makeup || !student || !classInfo) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-red-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+          <p className="mt-4 text-gray-600">กำลังโหลดข้อมูล...</p>
+        </div>
+      </div>
+    );
+  }
+
+  const StatusIcon = statusIcons[makeup.status];
+
+  return (
+    <div>
+      {/* Header */}
+      <div className="mb-6 flex justify-between items-center">
+        <Link 
+          href="/makeup" 
+          className="inline-flex items-center text-sm text-gray-600 hover:text-gray-900"
+        >
+          <ChevronLeft className="h-4 w-4 mr-1" />
+          กลับไปหน้ารายการ Makeup
+        </Link>
+        
+        <Badge className={statusColors[makeup.status]}>
+          <StatusIcon className="h-3 w-3 mr-1" />
+          {statusLabels[makeup.status]}
+        </Badge>
+      </div>
+
+      {/* Title */}
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-900">รายละเอียด Makeup Class</h1>
+        <p className="text-gray-600 mt-2">ข้อมูลการขอเรียนชดเชยของ {student.nickname}</p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Main Content */}
+        <div className="lg:col-span-2 space-y-6">
+          {/* Original Class Information */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <BookOpen className="h-5 w-5" />
+                ข้อมูลคลาสเดิม
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-gray-500">คลาส</p>
+                  <p className="font-medium">{classInfo.name}</p>
+                  <p className="text-sm text-gray-500">{classInfo.code}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">วันที่ขาด</p>
+                  {originalSchedule ? (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-3 mt-1">
+                      <p className="font-bold text-red-700 text-lg mb-1">
+                        ครั้งที่ {originalSchedule.sessionNumber}
+                      </p>
+                      <p className="font-medium text-red-600">
+                        {getDayName(new Date(originalSchedule.sessionDate).getDay())}, {formatDate(originalSchedule.sessionDate, 'long')}
+                      </p>
+                      <p className="text-sm text-red-500 mt-1">
+                        เวลา {classInfo.startTime} - {classInfo.endTime} น.
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="font-medium">-</p>
+                  )}
+                </div>
+              </div>
+              
+              <div>
+                <p className="text-sm text-gray-500">วันที่ขอ Makeup</p>
+                <p className="font-medium">{formatDate(makeup.requestDate, 'long')}</p>
+              </div>
+              
+              <div>
+                <p className="text-sm text-gray-500">เหตุผลที่ขาด</p>
+                <p className="font-medium">{makeup.reason}</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Makeup Schedule */}
+          {makeup.makeupSchedule && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <CalendarCheck className="h-5 w-5" />
+                    ตารางเรียนชดเชย
+                  </span>
+                  {makeup.status === 'scheduled' && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setShowEditSchedule(true)}
+                    >
+                      <CalendarDays className="h-4 w-4 mr-2" />
+                      เปลี่ยนวันนัด
+                    </Button>
+                  )}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-500">วันที่นัด</p>
+                    <p className="font-medium text-blue-600">
+                      {getDayName(new Date(makeup.makeupSchedule.date).getDay())}, {formatDate(makeup.makeupSchedule.date, 'long')}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">เวลา</p>
+                    <p className="font-medium">{makeup.makeupSchedule.startTime} - {makeup.makeupSchedule.endTime} น.</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">ครูผู้สอน</p>
+                    <p className="font-medium">{makeupTeacher?.nickname || makeupTeacher?.name || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">ห้องเรียน</p>
+                    <p className="font-medium">{makeupRoom?.name || makeup.makeupSchedule.roomId}</p>
+                  </div>
+                </div>
+                
+                {makeup.makeupSchedule.confirmedAt && (
+                  <div className="text-sm text-gray-500 border-t pt-4">
+                    นัดหมายเมื่อ {formatDate(makeup.makeupSchedule.confirmedAt, 'long')}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Attendance Result */}
+          {makeup.attendance && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <History className="h-5 w-5" />
+                    ผลการเข้าเรียน
+                  </span>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-orange-600"
+                      >
+                        <XCircle className="h-4 w-4 mr-2" />
+                        ยกเลิกการบันทึก
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>ยกเลิกการบันทึกเข้าเรียน</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          คุณแน่ใจหรือไม่ที่จะยกเลิกการบันทึกเข้าเรียน? 
+                          สถานะจะเปลี่ยนกลับเป็น "นัดแล้ว"
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <div className="my-4">
+                        <Label htmlFor="revert-reason">เหตุผล *</Label>
+                        <Textarea
+                          id="revert-reason"
+                          value={revertReason}
+                          onChange={(e) => setRevertReason(e.target.value)}
+                          placeholder="เช่น บันทึกผิด, นักเรียนยังไม่ได้มาเรียน..."
+                          rows={3}
+                          className="mt-2"
+                        />
+                      </div>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>ไม่ยกเลิก</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={handleRevertAttendance}
+                          disabled={!revertReason.trim()}
+                          className="bg-orange-500 hover:bg-orange-600"
+                        >
+                          ยืนยันยกเลิกการบันทึก
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className={`rounded-lg p-4 ${
+                  makeup.attendance.status === 'present' ? 'bg-green-50' : 'bg-red-50'
+                }`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    {makeup.attendance.status === 'present' ? (
+                      <CheckCircle className="h-5 w-5 text-green-600" />
+                    ) : (
+                      <XCircle className="h-5 w-5 text-red-600" />
+                    )}
+                    <span className="font-medium text-lg">
+                      {makeup.attendance.status === 'present' ? 'เข้าเรียน' : 'ขาดเรียน'}
+                    </span>
+                  </div>
+                  {makeup.attendance.note && (
+                    <p className="text-sm text-gray-700 mb-2">{makeup.attendance.note}</p>
+                  )}
+                  <p className="text-xs text-gray-500">
+                    บันทึกเมื่อ {formatDate(makeup.attendance.checkedAt, 'long')}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Notes */}
+          {makeup.notes && (
+            <Card>
+              <CardHeader>
+                <CardTitle>หมายเหตุ</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="whitespace-pre-wrap">{makeup.notes}</p>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+
+        {/* Sidebar */}
+        <div className="space-y-6">
+          {/* Student Info */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <User className="h-5 w-5" />
+                ข้อมูลนักเรียน
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div>
+                <p className="text-sm text-gray-500">ชื่อ-นามสกุล</p>
+                <p className="font-medium">{student.name}</p>
+                <p className="text-sm text-gray-500">({student.nickname})</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">ผู้ปกครอง</p>
+                <p className="font-medium">{student.parentName}</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">เบอร์โทร</p>
+                <p className="font-medium">{student.parentPhone}</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Actions for scheduled status */}
+          {makeup.status === 'scheduled' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>บันทึกการเข้าเรียน</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <Label htmlFor="attendance-note">หมายเหตุ (ถ้ามี)</Label>
+                  <Textarea
+                    id="attendance-note"
+                    value={attendanceNote}
+                    onChange={(e) => setAttendanceNote(e.target.value)}
+                    placeholder="เช่น มาสาย 10 นาที, เรียนดีมาก"
+                    rows={3}
+                    className="mt-2"
+                  />
+                </div>
+                
+                <div className="space-y-2">
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        disabled={actionLoading}
+                        className="w-full bg-green-500 hover:bg-green-600"
+                      >
+                        <CheckCircle className="h-4 w-4 mr-2" />
+                        เข้าเรียน
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>ยืนยันการบันทึกเข้าเรียน</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          คุณแน่ใจหรือไม่ว่า <strong>{student.nickname}</strong> มาเรียน Makeup Class แล้ว?
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <div className="my-4 bg-green-50 border border-green-200 rounded p-3">
+                        <p className="text-sm text-green-800">
+                          <strong>วันที่:</strong> {makeup.makeupSchedule && formatDate(makeup.makeupSchedule.date, 'long')}<br/>
+                          <strong>เวลา:</strong> {makeup.makeupSchedule?.startTime} - {makeup.makeupSchedule?.endTime} น.
+                        </p>
+                      </div>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={() => handleRecordAttendance('present')}
+                          className="bg-green-500 hover:bg-green-600"
+                        >
+                          ยืนยันเข้าเรียน
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        disabled={actionLoading}
+                        variant="destructive"
+                        className="w-full"
+                      >
+                        <XCircle className="h-4 w-4 mr-2" />
+                        ขาดเรียน
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>ยืนยันการบันทึกขาดเรียน</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          คุณแน่ใจหรือไม่ว่า <strong>{student.nickname}</strong> ไม่ได้มาเรียน Makeup Class?
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <div className="my-4 bg-red-50 border border-red-200 rounded p-3">
+                        <p className="text-sm text-red-800">
+                          หากนักเรียนไม่มาเรียน Makeup ที่นัดไว้ จะถือว่าใช้สิทธิ์ Makeup แล้ว
+                        </p>
+                      </div>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={() => handleRecordAttendance('absent')}
+                          className="bg-red-500 hover:bg-red-600"
+                        >
+                          ยืนยันขาดเรียน
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Delete and Cancel Actions */}
+          {(makeup.status === 'pending' || makeup.status === 'scheduled') && (
+            <Card>
+              <CardHeader>
+                <CardTitle>การจัดการ</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {/* Delete button */}
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-full text-red-600 hover:text-red-700"
+                      disabled={actionLoading}
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      ลบ Makeup Class
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>ยืนยันการลบ Makeup Class</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        คุณแน่ใจหรือไม่ที่จะลบ Makeup Class นี้? 
+                        การลบจะทำให้นักเรียนสามารถขอ Makeup ใหม่สำหรับวันนี้ได้
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <div className="my-4">
+                      <Label htmlFor="delete-reason">เหตุผลในการลบ *</Label>
+                      <Textarea
+                        id="delete-reason"
+                        value={deleteReason}
+                        onChange={(e) => setDeleteReason(e.target.value)}
+                        placeholder="เช่น กรอกผิด, ผู้ปกครองขอยกเลิก..."
+                        rows={3}
+                        className="mt-2"
+                      />
+                    </div>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>ไม่ลบ</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={handleDelete}
+                        disabled={!deleteReason.trim()}
+                        className="bg-red-500 hover:bg-red-600"
+                      >
+                        ยืนยันลบ
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+
+                {/* Cancel button */}
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      disabled={actionLoading}
+                    >
+                      <XCircle className="h-4 w-4 mr-2" />
+                      ยกเลิก Makeup Class
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>ยืนยันการยกเลิก</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        คุณแน่ใจหรือไม่ที่จะยกเลิก Makeup Class นี้?
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <div className="my-4">
+                      <Label htmlFor="cancel-reason">เหตุผลในการยกเลิก *</Label>
+                      <Textarea
+                        id="cancel-reason"
+                        value={cancelReason}
+                        onChange={(e) => setCancelReason(e.target.value)}
+                        placeholder="กรุณาระบุเหตุผล..."
+                        rows={3}
+                        className="mt-2"
+                      />
+                    </div>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>ไม่ยกเลิก</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={handleCancel}
+                        disabled={!cancelReason.trim()}
+                        className="bg-red-500 hover:bg-red-600"
+                      >
+                        ยืนยันยกเลิก
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      </div>
+
+      {/* Edit Schedule Dialog */}
+      {showEditSchedule && makeup && student && classInfo && (
+        <EditMakeupScheduleDialog
+          open={showEditSchedule}
+          onOpenChange={setShowEditSchedule}
+          makeup={makeup}
+          student={student}
+          classInfo={classInfo}
+          onUpdated={() => {
+            setShowEditSchedule(false);
+            loadMakeupDetails();
+          }}
+        />
+      )}
+    </div>
+  );
+}

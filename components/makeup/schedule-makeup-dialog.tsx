@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Calendar, Clock, User, MapPin, Save, X, AlertCircle } from 'lucide-react';
-import { formatDate } from '@/lib/utils';
+import { formatDate, getDayName } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
   Select,
@@ -228,7 +228,8 @@ export default function ScheduleMakeupDialog({
                 <Alert className="bg-amber-50 border-amber-200">
                   <AlertCircle className="h-4 w-4 text-amber-600" />
                   <AlertDescription className="text-sm">
-                    ขาดเรียนวัน{formatDate(originalSchedule.sessionDate, 'long')} 
+                    ขาดเรียนวัน {getDayName(new Date(originalSchedule.sessionDate).getDay())}, 
+                    {' '}{formatDate(originalSchedule.sessionDate, 'long')} 
                     {' '}เวลา {classInfo.startTime} - {classInfo.endTime} น.
                   </AlertDescription>
                 </Alert>

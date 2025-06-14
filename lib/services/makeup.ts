@@ -164,11 +164,112 @@ export async function getMakeupCount(studentId: string, classId: string): Promis
   }
 }
 
+// Get makeup requests for specific schedules (NEW FUNCTION)
+export async function getMakeupRequestsBySchedules(
+  studentId: string,
+  classId: string,
+  scheduleIds: string[]
+): Promise<Record<string, MakeupClass>> {
+  try {
+    // Query all makeup requests for this student and class
+    const q = query(
+      collection(db, COLLECTION_NAME),
+      where('studentId', '==', studentId),
+      where('originalClassId', '==', classId),
+      where('status', '!=', 'cancelled')
+    );
+    
+    const querySnapshot = await getDocs(q);
+    const makeupBySchedule: Record<string, MakeupClass> = {};
+    
+    querySnapshot.docs.forEach(doc => {
+      const data = doc.data();
+      if (scheduleIds.includes(data.originalScheduleId)) {
+        makeupBySchedule[data.originalScheduleId] = {
+          id: doc.id,
+          ...data,
+          requestDate: data.requestDate?.toDate() || new Date(),
+          createdAt: data.createdAt?.toDate() || new Date(),
+          updatedAt: data.updatedAt?.toDate(),
+          makeupSchedule: data.makeupSchedule ? {
+            ...data.makeupSchedule,
+            date: data.makeupSchedule.date?.toDate() || new Date(),
+            confirmedAt: data.makeupSchedule.confirmedAt?.toDate(),
+          } : undefined,
+          attendance: data.attendance ? {
+            ...data.attendance,
+            checkedAt: data.attendance.checkedAt?.toDate() || new Date(),
+          } : undefined,
+        } as MakeupClass;
+      }
+    });
+    
+    return makeupBySchedule;
+  } catch (error) {
+    console.error('Error getting makeup requests by schedules:', error);
+    return {};
+  }
+}
+
+// Check if makeup already exists for a schedule (NEW FUNCTION)
+export async function checkMakeupExists(
+  studentId: string,
+  classId: string,
+  scheduleId: string
+): Promise<MakeupClass | null> {
+  try {
+    const q = query(
+      collection(db, COLLECTION_NAME),
+      where('studentId', '==', studentId),
+      where('originalClassId', '==', classId),
+      where('originalScheduleId', '==', scheduleId),
+      where('status', '!=', 'cancelled')
+    );
+    
+    const querySnapshot = await getDocs(q);
+    if (querySnapshot.size > 0) {
+      const doc = querySnapshot.docs[0];
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...data,
+        requestDate: data.requestDate?.toDate() || new Date(),
+        createdAt: data.createdAt?.toDate() || new Date(),
+        updatedAt: data.updatedAt?.toDate(),
+        makeupSchedule: data.makeupSchedule ? {
+          ...data.makeupSchedule,
+          date: data.makeupSchedule.date?.toDate() || new Date(),
+          confirmedAt: data.makeupSchedule.confirmedAt?.toDate(),
+        } : undefined,
+        attendance: data.attendance ? {
+          ...data.attendance,
+          checkedAt: data.attendance.checkedAt?.toDate() || new Date(),
+        } : undefined,
+      } as MakeupClass;
+    }
+    return null;
+  } catch (error) {
+    console.error('Error checking makeup exists:', error);
+    return null;
+  }
+}
+
 // Create makeup class request
 export async function createMakeupRequest(
   data: Omit<MakeupClass, 'id' | 'createdAt' | 'updatedAt'>
 ): Promise<string> {
   try {
+    // Check if makeup already exists for this schedule
+    const existingMakeup = await checkMakeupExists(
+      data.studentId,
+      data.originalClassId,
+      data.originalScheduleId
+    );
+    
+    if (existingMakeup) {
+      throw new Error('Makeup request already exists for this schedule');
+    }
+    
     const batch = writeBatch(db);
     
     // 1. Create makeup request
@@ -319,7 +420,155 @@ export async function getUpcomingMakeupClasses(
   }
 }
 
-// Check teacher availability for makeup
+// Update makeup attendance (NEW FUNCTION)
+export async function updateMakeupAttendance(
+  makeupId: string,
+  attendance: {
+    status: 'present' | 'absent';
+    checkedBy: string;
+    note?: string;
+  }
+): Promise<void> {
+  try {
+    const docRef = doc(db, COLLECTION_NAME, makeupId);
+    
+    // Get current makeup data
+    const makeup = await getMakeupClass(makeupId);
+    if (!makeup) {
+      throw new Error('Makeup class not found');
+    }
+    
+    // Only allow updating if already completed
+    if (makeup.status !== 'completed') {
+      throw new Error('Can only update attendance for completed makeup classes');
+    }
+    
+    await updateDoc(docRef, {
+      attendance: {
+        ...attendance,
+        checkedAt: serverTimestamp(),
+      },
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    console.error('Error updating makeup attendance:', error);
+    throw error;
+  }
+}
+
+// Revert makeup to scheduled status (NEW FUNCTION)
+export async function revertMakeupToScheduled(
+  makeupId: string,
+  revertedBy: string,
+  reason: string
+): Promise<void> {
+  try {
+    const docRef = doc(db, COLLECTION_NAME, makeupId);
+    
+    // Get current makeup data
+    const makeup = await getMakeupClass(makeupId);
+    if (!makeup) {
+      throw new Error('Makeup class not found');
+    }
+    
+    // Only allow reverting if completed
+    if (makeup.status !== 'completed') {
+      throw new Error('Can only revert completed makeup classes');
+    }
+    
+    const batch = writeBatch(db);
+    
+    // Update makeup status back to scheduled
+    batch.update(docRef, {
+      status: 'scheduled',
+      attendance: null,
+      updatedAt: serverTimestamp(),
+      notes: `${makeup.notes || ''}\n[${new Date().toLocaleDateString('th-TH')}] ยกเลิกการบันทึกเข้าเรียน: ${reason} (โดย ${revertedBy})`
+    });
+    
+    // Create revert log
+    const logRef = doc(collection(db, 'auditLogs'));
+    batch.set(logRef, {
+      type: 'makeup_attendance_reverted',
+      documentId: makeupId,
+      performedBy: revertedBy,
+      performedAt: serverTimestamp(),
+      reason,
+      previousData: {
+        status: makeup.status,
+        attendance: makeup.attendance
+      }
+    });
+    
+    await batch.commit();
+  } catch (error) {
+    console.error('Error reverting makeup status:', error);
+    throw error;
+  }
+}
+export async function deleteMakeupClass(
+  makeupId: string,
+  deletedBy: string,
+  reason?: string
+): Promise<void> {
+  try {
+    // Get makeup details first
+    const makeup = await getMakeupClass(makeupId);
+    if (!makeup) {
+      throw new Error('Makeup class not found');
+    }
+
+    // Only allow deletion of pending or scheduled status
+    if (makeup.status === 'completed') {
+      throw new Error('Cannot delete completed makeup class');
+    }
+
+    const batch = writeBatch(db);
+
+    // 1. Delete the makeup document
+    const makeupRef = doc(db, COLLECTION_NAME, makeupId);
+    batch.delete(makeupRef);
+
+    // 2. Update original schedule attendance if needed
+    if (makeup.originalScheduleId && makeup.originalClassId) {
+      const scheduleData = await getClassSchedule(makeup.originalClassId, makeup.originalScheduleId);
+      if (scheduleData && scheduleData.attendance) {
+        // Remove or update the attendance record
+        const updatedAttendance = scheduleData.attendance.filter(
+          a => a.studentId !== makeup.studentId
+        );
+        
+        // Update the schedule
+        const scheduleRef = doc(db, 'classes', makeup.originalClassId, 'schedules', makeup.originalScheduleId);
+        batch.update(scheduleRef, {
+          attendance: updatedAttendance
+        });
+      }
+    }
+
+    // 3. Create deletion log (optional - in a separate collection)
+    const logRef = doc(collection(db, 'deletionLogs'));
+    batch.set(logRef, {
+      type: 'makeup_class',
+      documentId: makeupId,
+      deletedBy,
+      deletedAt: serverTimestamp(),
+      reason: reason || 'No reason provided',
+      originalData: {
+        studentId: makeup.studentId,
+        classId: makeup.originalClassId,
+        scheduleId: makeup.originalScheduleId,
+        status: makeup.status,
+        requestDate: makeup.requestDate
+      }
+    });
+
+    await batch.commit();
+  } catch (error) {
+    console.error('Error deleting makeup class:', error);
+    throw error;
+  }
+}
 export async function checkTeacherAvailability(
   teacherId: string,
   date: Date,

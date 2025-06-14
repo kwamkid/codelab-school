@@ -394,3 +394,41 @@ export async function getAllStudentsWithParents(): Promise<(Student & {
     return [];
   }
 }
+
+// Get single student with parent info
+export async function getStudentWithParent(studentId: string): Promise<(Student & { 
+  parentName: string; 
+  parentPhone: string;
+  lineDisplayName?: string;
+}) | null> {
+  try {
+    // First, find which parent has this student
+    const parentsSnapshot = await getDocs(collection(db, COLLECTION_NAME));
+    
+    for (const parentDoc of parentsSnapshot.docs) {
+      const studentDoc = await getDoc(
+        doc(db, COLLECTION_NAME, parentDoc.id, 'students', studentId)
+      );
+      
+      if (studentDoc.exists()) {
+        const parentData = parentDoc.data() as Parent;
+        const studentData = studentDoc.data() as Student;
+        
+        return {
+          id: studentDoc.id,
+          ...studentData,
+          parentId: parentDoc.id,
+          parentName: parentData.displayName,
+          parentPhone: parentData.phone,
+          lineDisplayName: parentData.displayName,
+          birthdate: studentData.birthdate?.toDate() || new Date(),
+        };
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error getting student with parent:', error);
+    return null;
+  }
+}

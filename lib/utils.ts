@@ -26,10 +26,24 @@ export function formatDate(date: Date | string, format: 'short' | 'long' | 'time
     day: 'numeric',
     month: format === 'long' ? 'long' : 'short',
     year: 'numeric',
-    ...(format === 'long' && { weekday: 'long' })
+    // ลบ weekday ออกจาก format long
   };
 
   return new Intl.DateTimeFormat('th-TH', options).format(d);
+}
+
+// Format date with day name (แยก function สำหรับกรณีที่ต้องการแสดงวัน)
+export function formatDateWithDay(date: Date | string): string {
+  const d = typeof date === 'string' ? new Date(date) : date;
+  
+  if (isNaN(d.getTime())) {
+    return 'Invalid Date';
+  }
+
+  const dayName = getDayName(d.getDay());
+  const dateStr = formatDate(d, 'long');
+  
+  return `${dayName}, ${dateStr}`;
 }
 
 // Format time (HH:mm)

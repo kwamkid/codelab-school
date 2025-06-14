@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Student, Class, ClassSchedule, Teacher, Room, Enrollment } from '@/types/models';
-import { createMakeupRequest, scheduleMakeupClass } from '@/lib/services/makeup';
+import { createMakeupRequest, scheduleMakeupClass, getMakeupRequestsBySchedules } from '@/lib/services/makeup';
 import { getClassSchedules } from '@/lib/services/classes';
 import { getEnrollmentsByStudent } from '@/lib/services/enrollments';
 import { getActiveTeachers } from '@/lib/services/teachers';
@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Calendar, Save, X, User, AlertCircle, CalendarPlus } from 'lucide-react';
+import { Calendar, Save, X, User, AlertCircle, CalendarPlus, CheckCircle, Clock, XCircle } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
@@ -33,6 +33,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import StudentSearchSelect from '@/components/ui/student-search-select';
+import { Badge } from "@/components/ui/badge";
 
 interface CreateMakeupDialogProps {
   open: boolean;
@@ -57,6 +58,7 @@ export default function CreateMakeupDialog({
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [scheduleNow, setScheduleNow] = useState(false);
+  const [existingMakeups, setExistingMakeups] = useState<Record<string, any>>({});
   
   const [formData, setFormData] = useState({
     studentId: '',
@@ -137,7 +139,7 @@ export default function CreateMakeupDialog({
   };
 
   const loadClassSchedules = async () => {
-    if (!formData.classId) return;
+    if (!formData.classId || !formData.studentId) return;
     
     setLoadingSchedules(true);
     try {
@@ -153,6 +155,15 @@ export default function CreateMakeupDialog({
       });
       
       setSchedules(availableSchedules);
+      
+      // Load existing makeup requests for these schedules
+      const scheduleIds = availableSchedules.map(s => s.id);
+      const makeupRequests = await getMakeupRequestsBySchedules(
+        formData.studentId,
+        formData.classId,
+        scheduleIds
+      );
+      setExistingMakeups(makeupRequests);
     } catch (error) {
       console.error('Error loading schedules:', error);
       toast.error('ไม่สามารถโหลดตารางเรียนได้');
@@ -184,6 +195,12 @@ export default function CreateMakeupDialog({
     // Validate
     if (!formData.studentId || !formData.classId || !formData.scheduleId || !formData.reason.trim()) {
       toast.error('กรุณากรอกข้อมูลให้ครบถ้วน');
+      return;
+    }
+
+    // Check if already has makeup for this schedule
+    if (existingMakeups[formData.scheduleId]) {
+      toast.error('มีการขอ Makeup สำหรับวันนี้แล้ว');
       return;
     }
 
@@ -258,9 +275,14 @@ export default function CreateMakeupDialog({
         makeupRoomId: ''
       });
       setScheduleNow(false);
-    } catch (error) {
+      setExistingMakeups({});
+    } catch (error: any) {
       console.error('Error creating makeup request:', error);
-      toast.error('ไม่สามารถสร้าง Makeup Request ได้');
+      if (error.message === 'Makeup request already exists for this schedule') {
+        toast.error('มีการขอ Makeup สำหรับวันนี้แล้ว');
+      } else {
+        toast.error('ไม่สามารถสร้าง Makeup Request ได้');
+      }
     } finally {
       setLoading(false);
     }
@@ -270,6 +292,35 @@ export default function CreateMakeupDialog({
     const schedule = schedules.find(s => s.id === scheduleId);
     if (!schedule) return '';
     return `ครั้งที่ ${schedule.sessionNumber} - ${formatDate(schedule.sessionDate, 'long')}`;
+  };
+
+  const getMakeupStatusBadge = (makeup: any) => {
+    const statusColors = {
+      'pending': 'bg-yellow-100 text-yellow-700',
+      'scheduled': 'bg-blue-100 text-blue-700',
+      'completed': 'bg-green-100 text-green-700',
+    };
+
+    const statusLabels = {
+      'pending': 'รอจัดตาราง',
+      'scheduled': 'นัดแล้ว',
+      'completed': 'เรียนแล้ว',
+    };
+
+    const statusIcons = {
+      'pending': Clock,
+      'scheduled': CalendarPlus,
+      'completed': CheckCircle,
+    };
+
+    const Icon = statusIcons[makeup.status as keyof typeof statusIcons];
+
+    return (
+      <Badge className={statusColors[makeup.status as keyof typeof statusColors]}>
+        <Icon className="h-3 w-3 mr-1" />
+        {statusLabels[makeup.status as keyof typeof statusLabels]}
+      </Badge>
+    );
   };
 
   return (
@@ -342,7 +393,7 @@ export default function CreateMakeupDialog({
               </Select>
             </div>
 
-            {/* Schedule Selection */}
+            {/* Schedule Selection with Makeup Status */}
             <div className="space-y-2">
               <Label>วันที่จะขาด *</Label>
               <Select
@@ -363,14 +414,36 @@ export default function CreateMakeupDialog({
                       ไม่มีตารางเรียนที่สามารถขอ Makeup ได้
                     </div>
                   ) : (
-                    schedules.map(schedule => (
-                      <SelectItem key={schedule.id} value={schedule.id}>
-                        {getScheduleInfo(schedule.id)}
-                      </SelectItem>
-                    ))
+                    schedules.map(schedule => {
+                      const existingMakeup = existingMakeups[schedule.id];
+                      const isDisabled = !!existingMakeup;
+                      
+                      return (
+                        <SelectItem 
+                          key={schedule.id} 
+                          value={schedule.id}
+                          disabled={isDisabled}
+                        >
+                          <div className="flex items-center justify-between w-full gap-2">
+                            <span className={isDisabled ? 'text-gray-400' : ''}>
+                              {getScheduleInfo(schedule.id)}
+                            </span>
+                            {existingMakeup && getMakeupStatusBadge(existingMakeup)}
+                          </div>
+                        </SelectItem>
+                      );
+                    })
                   )}
                 </SelectContent>
               </Select>
+              {formData.scheduleId && existingMakeups[formData.scheduleId] && (
+                <Alert className="bg-amber-50 border-amber-200">
+                  <AlertCircle className="h-4 w-4 text-amber-600" />
+                  <AlertDescription className="text-sm text-amber-800">
+                    มีการขอ Makeup สำหรับวันนี้แล้ว
+                  </AlertDescription>
+                </Alert>
+              )}
             </div>
 
             {/* Request Type */}
@@ -532,6 +605,7 @@ export default function CreateMakeupDialog({
               !formData.classId || 
               !formData.scheduleId || 
               !formData.reason.trim() ||
+              (formData.scheduleId && !!existingMakeups[formData.scheduleId]) ||
               (scheduleNow && (!formData.makeupDate || !formData.makeupTeacherId || !formData.makeupRoomId))
             }
             className="bg-red-500 hover:bg-red-600"

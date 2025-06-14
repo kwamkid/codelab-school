@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Calendar, Clock, Info, Save, X } from 'lucide-react';
+import { Calendar, Clock, Info, Save, X, CheckCircle } from 'lucide-react';
 import { Student } from '@/types/models';
 import { formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -23,9 +23,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { createMakeupRequest, getMakeupCount } from '@/lib/services/makeup';
+import { createMakeupRequest, getMakeupCount, checkMakeupExists } from '@/lib/services/makeup';
 import { auth } from '@/lib/firebase/client';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 
 interface MakeupClassDialogProps {
   open: boolean;
@@ -56,7 +57,9 @@ export default function MakeupClassDialog({
 }: MakeupClassDialogProps) {
   const [loading, setLoading] = useState(false);
   const [checkingCount, setCheckingCount] = useState(true);
+  const [checkingExisting, setCheckingExisting] = useState(true);
   const [makeupCount, setMakeupCount] = useState(0);
+  const [existingMakeup, setExistingMakeup] = useState<any>(null);
   const [formData, setFormData] = useState({
     type: 'ad-hoc' as 'scheduled' | 'ad-hoc',
     reason: ''
@@ -65,8 +68,9 @@ export default function MakeupClassDialog({
   useEffect(() => {
     if (open) {
       checkMakeupCount();
+      checkExistingMakeup();
     }
-  }, [open, student.id, classInfo.id]);
+  }, [open, student.id, classInfo.id, scheduleId]);
 
   const checkMakeupCount = async () => {
     setCheckingCount(true);
@@ -77,6 +81,18 @@ export default function MakeupClassDialog({
       console.error('Error checking makeup count:', error);
     } finally {
       setCheckingCount(false);
+    }
+  };
+
+  const checkExistingMakeup = async () => {
+    setCheckingExisting(true);
+    try {
+      const existing = await checkMakeupExists(student.id, classInfo.id, scheduleId);
+      setExistingMakeup(existing);
+    } catch (error) {
+      console.error('Error checking existing makeup:', error);
+    } finally {
+      setCheckingExisting(false);
     }
   };
 
@@ -115,13 +131,97 @@ export default function MakeupClassDialog({
         type: 'ad-hoc',
         reason: ''
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating makeup request:', error);
-      toast.error('ไม่สามารถบันทึกข้อมูลได้');
+      if (error.message === 'Makeup request already exists for this schedule') {
+        toast.error('มีการขอ Makeup สำหรับวันนี้แล้ว');
+      } else {
+        toast.error('ไม่สามารถบันทึกข้อมูลได้');
+      }
     } finally {
       setLoading(false);
     }
   };
+
+  const getMakeupStatusBadge = (makeup: any) => {
+    const statusColors = {
+      'pending': 'bg-yellow-100 text-yellow-700',
+      'scheduled': 'bg-blue-100 text-blue-700',
+      'completed': 'bg-green-100 text-green-700',
+    };
+
+    const statusLabels = {
+      'pending': 'รอจัดตาราง',
+      'scheduled': 'นัดแล้ว',
+      'completed': 'เรียนแล้ว',
+    };
+
+    return (
+      <Badge className={statusColors[makeup.status as keyof typeof statusColors]}>
+        {statusLabels[makeup.status as keyof typeof statusLabels]}
+      </Badge>
+    );
+  };
+
+  // ถ้ามี makeup อยู่แล้ว ให้แสดงข้อมูลแทนฟอร์ม
+  if (!checkingExisting && existingMakeup) {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>ข้อมูล Makeup Class</DialogTitle>
+            <DialogDescription>
+              มีการขอ Makeup Class สำหรับวันนี้แล้ว
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {/* Student Info */}
+            <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+              <p className="text-sm font-medium">ข้อมูลการขาดเรียน</p>
+              <div className="text-sm text-gray-600 space-y-1">
+                <p>นักเรียน: {student.name} ({student.nickname})</p>
+                <p>คลาส: {classInfo.name}</p>
+                <p>ครั้งที่: {sessionNumber} - {formatDate(sessionDate, 'long')}</p>
+              </div>
+            </div>
+
+            {/* Existing Makeup Info */}
+            <div className="bg-blue-50 rounded-lg p-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-blue-900">สถานะ Makeup</p>
+                {getMakeupStatusBadge(existingMakeup)}
+              </div>
+              <div className="text-sm text-blue-700 space-y-1">
+                <p>วันที่ขอ: {formatDate(existingMakeup.requestDate, 'long')}</p>
+                <p>เหตุผล: {existingMakeup.reason}</p>
+                {existingMakeup.makeupSchedule && (
+                  <>
+                    <p className="pt-2 font-medium">ตารางเรียนชดเชย:</p>
+                    <p>วันที่: {formatDate(existingMakeup.makeupSchedule.date, 'long')}</p>
+                    <p>เวลา: {existingMakeup.makeupSchedule.startTime} - {existingMakeup.makeupSchedule.endTime} น.</p>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <Alert className="border-green-200 bg-green-50">
+              <CheckCircle className="h-4 w-4 text-green-600" />
+              <AlertDescription className="text-green-800">
+                มีการบันทึกการขอ Makeup Class สำหรับวันนี้เรียบร้อยแล้ว
+              </AlertDescription>
+            </Alert>
+          </div>
+
+          <div className="flex justify-end pt-4 border-t">
+            <Button onClick={() => onOpenChange(false)}>
+              ปิด
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -226,7 +326,7 @@ export default function MakeupClassDialog({
           </Button>
           <Button 
             onClick={handleSubmit}
-            disabled={loading || !formData.reason.trim()}
+            disabled={loading || checkingExisting || !formData.reason.trim()}
             className="bg-blue-500 hover:bg-blue-600"
           >
             {loading ? (

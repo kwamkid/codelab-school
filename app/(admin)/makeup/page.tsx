@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { MakeupClass, Student, Class, Branch, ClassSchedule } from '@/types/models';
-import { getMakeupClasses } from '@/lib/services/makeup';
+import { getMakeupClasses, deleteMakeupClass } from '@/lib/services/makeup';
 import { getClasses, getClassSchedule } from '@/lib/services/classes';
 import { getActiveBranches } from '@/lib/services/branches';
 import { getAllStudentsWithParents } from '@/lib/services/parents';
@@ -23,7 +23,8 @@ import {
   Eye,
   CalendarCheck,
   MoreVertical,
-  CalendarDays
+  CalendarDays,
+  Trash2
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatDate, formatTime } from '@/lib/utils';
@@ -50,10 +51,22 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import Link from 'next/link';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { useRouter } from 'next/navigation';
 import ScheduleMakeupDialog from '@/components/makeup/schedule-makeup-dialog';
-import MakeupDetailDialog from '@/components/makeup/makeup-detail-dialog';
 import CreateMakeupDialog from '@/components/makeup/create-makeup-dialog';
+import { auth } from '@/lib/firebase/client';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 
 type StudentWithParent = Student & { parentName: string; parentPhone: string };
 
@@ -78,7 +91,10 @@ const statusIcons = {
   'cancelled': XCircle,
 };
 
+import Link from 'next/link';
+
 export default function MakeupPage() {
+  const router = useRouter();
   const [makeupClasses, setMakeupClasses] = useState<MakeupClass[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -95,8 +111,12 @@ export default function MakeupPage() {
   // Dialogs
   const [selectedMakeup, setSelectedMakeup] = useState<MakeupClass | null>(null);
   const [showScheduleDialog, setShowScheduleDialog] = useState(false);
-  const [showDetailDialog, setShowDetailDialog] = useState(false);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  
+  // Delete dialog
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [deleteReason, setDeleteReason] = useState('');
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -201,8 +221,43 @@ export default function MakeupPage() {
   };
 
   const handleViewDetail = (makeup: MakeupClass) => {
+    router.push(`/makeup/${makeup.id}`);
+  };
+
+  const handleQuickDelete = (makeup: MakeupClass) => {
     setSelectedMakeup(makeup);
-    setShowDetailDialog(true);
+    setDeleteReason('');
+    setShowDeleteDialog(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!selectedMakeup || !deleteReason.trim()) {
+      toast.error('กรุณาระบุเหตุผลในการลบ');
+      return;
+    }
+
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      toast.error('กรุณาเข้าสู่ระบบ');
+      return;
+    }
+
+    setDeletingId(selectedMakeup.id);
+    try {
+      await deleteMakeupClass(selectedMakeup.id, currentUser.uid, deleteReason);
+      toast.success('ลบ Makeup Class เรียบร้อยแล้ว');
+      setShowDeleteDialog(false);
+      loadData();
+    } catch (error: any) {
+      console.error('Error deleting makeup:', error);
+      if (error.message === 'Cannot delete completed makeup class') {
+        toast.error('ไม่สามารถลบ Makeup ที่เรียนเสร็จแล้วได้');
+      } else {
+        toast.error('ไม่สามารถลบได้');
+      }
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   if (loading) {
@@ -471,11 +526,11 @@ export default function MakeupPage() {
                                 <>
                                   <DropdownMenuSeparator />
                                   <DropdownMenuItem 
-                                    onClick={() => handleViewDetail(makeup)}
+                                    onClick={() => handleQuickDelete(makeup)}
                                     className="text-red-600"
                                   >
-                                    <XCircle className="h-4 w-4 mr-2" />
-                                    ยกเลิก
+                                    <Trash2 className="h-4 w-4 mr-2" />
+                                    ลบ
                                   </DropdownMenuItem>
                                 </>
                               )}
@@ -492,6 +547,49 @@ export default function MakeupPage() {
         </CardContent>
       </Card>
 
+      {/* Delete Dialog */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>ยืนยันการลบ Makeup Class</AlertDialogTitle>
+            <AlertDialogDescription>
+              คุณแน่ใจหรือไม่ที่จะลบ Makeup Class นี้? 
+              การลบจะทำให้นักเรียนสามารถขอ Makeup ใหม่สำหรับวันนี้ได้
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {selectedMakeup && (
+            <div className="my-4 space-y-3">
+              <div className="bg-gray-50 rounded p-3 text-sm">
+                <p><strong>นักเรียน:</strong> {getStudentInfo(selectedMakeup.studentId)?.name}</p>
+                <p><strong>คลาส:</strong> {getClassInfo(selectedMakeup.originalClassId)?.name}</p>
+                <p><strong>สถานะ:</strong> {statusLabels[selectedMakeup.status]}</p>
+              </div>
+              <div>
+                <Label htmlFor="delete-reason">เหตุผลในการลบ *</Label>
+                <Textarea
+                  id="delete-reason"
+                  value={deleteReason}
+                  onChange={(e) => setDeleteReason(e.target.value)}
+                  placeholder="เช่น กรอกผิด, ผู้ปกครองขอยกเลิก..."
+                  rows={3}
+                  className="mt-2"
+                />
+              </div>
+            </div>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel>ไม่ลบ</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              disabled={!deleteReason.trim() || deletingId === selectedMakeup?.id}
+              className="bg-red-500 hover:bg-red-600"
+            >
+              {deletingId === selectedMakeup?.id ? 'กำลังลบ...' : 'ยืนยันลบ'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Schedule Makeup Dialog */}
       {selectedMakeup && (
         <ScheduleMakeupDialog
@@ -504,21 +602,6 @@ export default function MakeupPage() {
             setShowScheduleDialog(false);
             loadData();
             toast.success('จัดตาราง Makeup Class เรียบร้อยแล้ว');
-          }}
-        />
-      )}
-
-      {/* Makeup Detail Dialog */}
-      {selectedMakeup && (
-        <MakeupDetailDialog
-          open={showDetailDialog}
-          onOpenChange={setShowDetailDialog}
-          makeup={selectedMakeup}
-          student={getStudentInfo(selectedMakeup.studentId)!}
-          classInfo={getClassInfo(selectedMakeup.originalClassId)!}
-          onUpdated={() => {
-            setShowDetailDialog(false);
-            loadData();
           }}
         />
       )}
