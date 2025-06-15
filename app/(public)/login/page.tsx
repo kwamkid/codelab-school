@@ -69,22 +69,26 @@ export default function LoginPage() {
         <CardHeader className="space-y-4">
           <div className="flex justify-center">
             {settings?.logoUrl ? (
-              <div className="relative w-[230px] h-[60px]">
+              <div className="relative w-[200px] h-[50px]">
                 <Image 
                   src={settings.logoUrl} 
                   alt={settings.schoolName || 'School Logo'} 
-                  width={230}
-                  height={60}
+                  width={200}
+                  height={50}
                   className="object-contain"
                   priority
                   unoptimized // สำหรับ external URL
                 />
               </div>
             ) : (
-              <div className="w-[230px] h-[60px] bg-red-500 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-xl">
-                  {settings?.schoolName || 'CodeLab'}
-                </span>
+              <div className="relative w-[200px] h-[50px]">
+                <Image 
+                  src="/logo.svg" 
+                  alt="CodeLab Logo" 
+                  fill
+                  className="object-contain"
+                  priority
+                />
               </div>
             )}
           </div>

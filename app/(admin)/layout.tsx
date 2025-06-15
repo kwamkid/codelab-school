@@ -189,23 +189,23 @@ export default function AdminLayout({
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <div className="flex items-center justify-between p-4 border-b">
+        <div className="flex items-center justify-between p-6 border-b">
           <div className="flex items-center gap-3">
             {/* Logo */}
             {settings?.logoUrl ? (
-              <div className="relative w-[230px] h-[60px]">
+              <div className="relative w-[180px] h-[45px]">
                 <Image 
                   src={settings.logoUrl} 
                   alt={settings.schoolName || 'School Logo'} 
-                  width={230}
-                  height={60}
+                  width={180}
+                  height={45}
                   className="object-contain object-left"
                   priority
                   unoptimized // สำหรับ external URL
                 />
               </div>
             ) : (
-              <div className="relative h-[60px]" style={{ width: '230px' }}>
+              <div className="relative h-[45px]" style={{ width: '180px' }}>
                 <Image 
                   src="/logo.svg" 
                   alt="CodeLab Logo" 

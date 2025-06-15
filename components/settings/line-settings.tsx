@@ -30,7 +30,9 @@ import {
   XCircle,
   Copy,
   ExternalLink,
-  Info
+  Info,
+  Send,
+  User
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { 
@@ -52,6 +54,10 @@ export default function LineSettingsComponent() {
   const [testing, setTesting] = useState(false);
   const [settings, setSettings] = useState<LineSettings | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  
+  // Test notification states
+  const [testUserId, setTestUserId] = useState('');
+  const [sendingTest, setSendingTest] = useState(false);
   
   // Load settings on mount
   useEffect(() => {
@@ -138,6 +144,71 @@ export default function LineSettingsComponent() {
     }
   };
   
+  // ทดสอบส่งข้อความแจ้งเตือน
+  const handleTestNotification = async () => {
+    if (!testUserId.trim()) {
+      toast.error('กรุณาระบุ LINE User ID');
+      return;
+    }
+    
+    setSendingTest(true);
+    
+    try {
+      // ตรวจสอบว่ามี Access Token หรือไม่
+      if (!settings?.messagingChannelAccessToken) {
+        toast.error('กรุณาตั้งค่า Channel Access Token ก่อน');
+        setSendingTest(false);
+        return;
+      }
+      
+      // สร้างข้อความทดสอบ
+      const testMessage = settings?.notificationTemplates?.classReminder || 
+        'แจ้งเตือน: น้อง{studentName} มีคลาส {subjectName} พรุ่งนี้\n📅 {date}\n⏰ {time}\n📍 {location}\n\nอย่าลืมมาเรียนนะคะ 😊';
+      
+      // แทนที่ variables ด้วยข้อมูลตัวอย่าง
+      const formattedMessage = testMessage
+        .replace('{studentName}', 'น้องทดสอบ')
+        .replace('{subjectName}', 'Scratch Programming')
+        .replace('{date}', new Date(Date.now() + 86400000).toLocaleDateString('th-TH', { 
+          weekday: 'long', 
+          year: 'numeric', 
+          month: 'long', 
+          day: 'numeric' 
+        }))
+        .replace('{time}', '10:00-11:30')
+        .replace('{location}', 'สาขาสุขุมวิท ห้อง A');
+      
+      console.log('Sending test message to:', testUserId);
+      console.log('Message:', formattedMessage);
+      
+      const response = await fetch('/api/line/send-message', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: testUserId,
+          message: `[ทดสอบระบบ]\n\n${formattedMessage}`
+        })
+      });
+      
+      const result = await response.json();
+      console.log('Send result:', result);
+      
+      if (result.success) {
+        toast.success('ส่งข้อความทดสอบสำเร็จ! กรุณาตรวจสอบ LINE');
+      } else {
+        toast.error(result.message || 'ไม่สามารถส่งข้อความได้');
+        console.error('Send failed:', result);
+      }
+    } catch (error) {
+      console.error('Error sending test message:', error);
+      toast.error('เกิดข้อผิดพลาดในการส่งข้อความทดสอบ');
+    } finally {
+      setSendingTest(false);
+    }
+  };
+  
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     toast.success('คัดลอกแล้ว');
@@ -177,7 +248,7 @@ export default function LineSettingsComponent() {
   return (
     <div className="space-y-6">
       <Tabs defaultValue="channels" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="channels">
             <Key className="h-4 w-4 mr-2" />
             Channels
@@ -193,6 +264,10 @@ export default function LineSettingsComponent() {
           <TabsTrigger value="settings">
             <Bot className="h-4 w-4 mr-2" />
             ตั้งค่า
+          </TabsTrigger>
+          <TabsTrigger value="test">
+            <TestTube className="h-4 w-4 mr-2" />
+            ทดสอบ
           </TabsTrigger>
         </TabsList>
         
@@ -304,19 +379,29 @@ export default function LineSettingsComponent() {
                   <Bot className="h-5 w-5" />
                   LINE Messaging API Channel
                 </span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => handleTestConnection('messaging')}
-                  disabled={testing}
-                >
-                  {testing ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <TestTube className="h-4 w-4" />
-                  )}
-                  <span className="ml-2">ทดสอบ</span>
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => window.open('/webhook-logs', '_blank')}
+                  >
+                    <User className="h-4 w-4" />
+                    <span className="ml-2">ดู User ID</span>
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleTestConnection('messaging')}
+                    disabled={testing}
+                  >
+                    {testing ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <TestTube className="h-4 w-4" />
+                    )}
+                    <span className="ml-2">ทดสอบ</span>
+                  </Button>
+                </div>
               </CardTitle>
               <CardDescription>
                 ใช้สำหรับส่งข้อความแจ้งเตือน และ Chatbot
@@ -479,7 +564,7 @@ export default function LineSettingsComponent() {
                 <Info className="h-4 w-4" />
                 <AlertDescription>
                   <div className="space-y-2">
-                    <p>สร้าง LIFF App ได้ที่ LINE Login Channel > LIFF tab</p>
+                    <p>สร้าง LIFF App ได้ที่ LINE Login Channel = LIFF tab</p>
                     <p className="text-sm">
                       <strong>Size:</strong> Full | 
                       <strong> Scope:</strong> profile, openid | 
@@ -958,6 +1043,119 @@ export default function LineSettingsComponent() {
                   </a>
                 </AlertDescription>
               </Alert>
+            </CardContent>
+          </Card>
+        </TabsContent>
+        
+        {/* Test Tab */}
+        <TabsContent value="test" className="space-y-6">
+          {/* Test Class Reminder */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Send className="h-5 w-5" />
+                ทดสอบส่งข้อความแจ้งเตือนเรียน
+              </CardTitle>
+              <CardDescription>
+                ทดสอบส่งข้อความแจ้งเตือนก่อนเรียนไปยัง LINE User ID ที่ระบุ
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Alert>
+                <Info className="h-4 w-4" />
+                <AlertDescription>
+                  <strong>วิธีหา LINE User ID ของคุณ:</strong>
+                  <ol className="list-decimal list-inside mt-2 space-y-1">
+                    <li>เพิ่ม LINE Official Account เป็นเพื่อน</li>
+                    <li>ส่งข้อความอะไรก็ได้ไปที่ Official Account</li>
+                    <li>ดู User ID จาก webhook logs ใน LINE Developers Console</li>
+                  </ol>
+                </AlertDescription>
+              </Alert>
+              
+              <div className="space-y-2">
+                <Label htmlFor="testUserId">LINE User ID ของคุณ</Label>
+                <Input
+                  id="testUserId"
+                  value={testUserId}
+                  onChange={(e) => setTestUserId(e.target.value)}
+                  placeholder="U1234567890abcdef..."
+                  disabled={sendingTest}
+                />
+                <p className="text-sm text-gray-500">
+                  ใส่ User ID ของคุณเพื่อทดสอบส่งข้อความ
+                </p>
+              </div>
+              
+              {/* Preview */}
+              <div className="space-y-2">
+                <Label>ตัวอย่างข้อความที่จะส่ง</Label>
+                <div className="p-4 bg-gray-50 rounded-lg">
+                  <pre className="text-sm whitespace-pre-wrap">
+                    {`[ทดสอบระบบ]\n\n${
+                      (settings.notificationTemplates?.classReminder || 
+                      'แจ้งเตือน: น้อง{studentName} มีคลาส {subjectName} พรุ่งนี้\n📅 {date}\n⏰ {time}\n📍 {location}\n\nอย่าลืมมาเรียนนะคะ 😊')
+                      .replace('{studentName}', 'น้องทดสอบ')
+                      .replace('{subjectName}', 'Scratch Programming')
+                      .replace('{date}', new Date(Date.now() + 86400000).toLocaleDateString('th-TH', { 
+                        weekday: 'long', 
+                        year: 'numeric', 
+                        month: 'long', 
+                        day: 'numeric' 
+                      }))
+                      .replace('{time}', '10:00-11:30')
+                      .replace('{location}', 'สาขาสุขุมวิท ห้อง A')
+                    }`}
+                  </pre>
+                </div>
+              </div>
+              
+              <Button
+                onClick={handleTestNotification}
+                disabled={sendingTest || !testUserId.trim()}
+                className="w-full"
+              >
+                {sendingTest ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    กำลังส่งข้อความทดสอบ...
+                  </>
+                ) : (
+                  <>
+                    <Send className="h-4 w-4 mr-2" />
+                    ส่งข้อความทดสอบ
+                  </>
+                )}
+              </Button>
+            </CardContent>
+          </Card>
+          
+          {/* Other Test Options */}
+          <Card>
+            <CardHeader>
+              <CardTitle>ทดสอบอื่นๆ</CardTitle>
+              <CardDescription>
+                ทดสอบฟีเจอร์อื่นๆ ของ LINE Integration
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Button 
+                variant="outline" 
+                className="w-full"
+                onClick={() => window.open('/test-line-message', '_blank')}
+              >
+                <MessageSquare className="h-4 w-4 mr-2" />
+                ไปหน้าทดสอบส่งข้อความแบบเต็ม
+              </Button>
+              
+              <Button 
+                variant="outline" 
+                className="w-full"
+                onClick={() => window.open('https://developers.line.biz/console/', '_blank')}
+              >
+                <ExternalLink className="h-4 w-4 mr-2" />
+                เปิด LINE Developers Console
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>

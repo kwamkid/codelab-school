@@ -13,7 +13,7 @@ export interface GeneralSettings {
   // ข้อมูลโรงเรียน
   schoolName: string;
   schoolNameEn?: string;
-  logoUrl?: string; // เปลี่ยนจาก logo เป็น logoUrl
+  logoUrl?: string; // URL ของ logo (external URL)
   
   // ที่อยู่
   address: {
@@ -84,52 +84,6 @@ export async function updateGeneralSettings(
   }
 }
 
-// Upload logo
-export async function uploadLogo(file: File): Promise<string> {
-  try {
-    // Validate file type (including SVG)
-    const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/svg+xml'];
-    if (!validTypes.includes(file.type)) {
-      throw new Error('ไฟล์ต้องเป็น JPG, PNG หรือ SVG เท่านั้น');
-    }
-    
-    if (file.size > 5 * 1024 * 1024) { // 5MB limit
-      throw new Error('ขนาดไฟล์ต้องไม่เกิน 5MB');
-    }
-    
-    // Upload to Firebase Storage
-    const timestamp = Date.now();
-    const fileName = `settings/logo_${timestamp}_${file.name}`;
-    const storageRef = ref(storage, fileName);
-    
-    await uploadBytes(storageRef, file);
-    const downloadURL = await getDownloadURL(storageRef);
-    
-    return downloadURL;
-  } catch (error) {
-    console.error('Error uploading logo:', error);
-    throw error;
-  }
-}
-
-// Delete old logo
-export async function deleteOldLogo(logoUrl: string): Promise<void> {
-  try {
-    if (!logoUrl || !logoUrl.includes('firebase')) return;
-    
-    // Extract file path from URL
-    const urlParts = logoUrl.split('/');
-    const fileName = urlParts[urlParts.length - 1].split('?')[0];
-    const filePath = `settings/${decodeURIComponent(fileName)}`;
-    
-    const storageRef = ref(storage, filePath);
-    await deleteObject(storageRef);
-  } catch (error) {
-    console.error('Error deleting old logo:', error);
-    // Don't throw error as this is cleanup
-  }
-}
-
 // Get default settings
 export function getDefaultSettings(): GeneralSettings {
   return {
@@ -191,6 +145,15 @@ export function validateSettings(settings: Partial<GeneralSettings>): {
     }
     if (!settings.address.subDistrict) {
       errors.subDistrict = 'กรุณาระบุแขวง/ตำบล';
+    }
+  }
+  
+  // Validate logo URL if provided
+  if (settings.logoUrl && settings.logoUrl.trim()) {
+    try {
+      new URL(settings.logoUrl);
+    } catch {
+      errors.logoUrl = 'URL ของ logo ไม่ถูกต้อง';
     }
   }
   
