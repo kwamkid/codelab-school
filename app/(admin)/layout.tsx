@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
+import { getGeneralSettings } from '@/lib/services/settings';
 import {
   LayoutDashboard,
   Building2,
@@ -21,8 +22,7 @@ import {
   BookOpen,
   CalendarCheck,
   Home,
-  CalendarDays  // เพิ่ม icon สำหรับ Makeup Class
-
+  CalendarDays
 } from 'lucide-react';
 import Image from 'next/image';
 
@@ -58,7 +58,7 @@ const navigation: NavigationItem[] = [
     icon: Calendar,
     children: [
       { name: 'คลาสเรียน', href: '/classes', icon: Calendar },
-      { name: 'Makeup Class', href: '/makeup', icon: CalendarDays },  // เพิ่ม Makeup Class
+      { name: 'Makeup Class', href: '/makeup', icon: CalendarDays },
     ]
   },
   { name: 'ลงทะเบียน', href: '/enrollments', icon: UserCheck },
@@ -137,12 +137,26 @@ export default function AdminLayout({
   const router = useRouter();
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [settings, setSettings] = useState<any>(null);
 
   useEffect(() => {
     if (!loading && !user) {
       router.push('/login');
     }
   }, [user, loading, router]);
+
+  // Load settings
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const data = await getGeneralSettings();
+        setSettings(data);
+      } catch (error) {
+        console.error('Error loading settings:', error);
+      }
+    };
+    loadSettings();
+  }, []);
 
   if (loading) {
     return (
@@ -178,14 +192,28 @@ export default function AdminLayout({
         <div className="flex items-center justify-between p-4 border-b">
           <div className="flex items-center gap-3">
             {/* Logo */}
-            <div className="relative h-10" style={{ width: '180px' }}>
-              <Image 
-                src="/logo.svg" 
-                alt="CodeLab Logo" 
-                fill
-                className="object-contain object-left"
-              />
-            </div>
+            {settings?.logoUrl ? (
+              <div className="relative w-[230px] h-[60px]">
+                <Image 
+                  src={settings.logoUrl} 
+                  alt={settings.schoolName || 'School Logo'} 
+                  width={230}
+                  height={60}
+                  className="object-contain object-left"
+                  priority
+                  unoptimized // สำหรับ external URL
+                />
+              </div>
+            ) : (
+              <div className="relative h-[60px]" style={{ width: '230px' }}>
+                <Image 
+                  src="/logo.svg" 
+                  alt="CodeLab Logo" 
+                  fill
+                  className="object-contain object-left"
+                />
+              </div>
+            )}
           </div>
           <button
             onClick={() => setSidebarOpen(false)}

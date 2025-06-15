@@ -1,47 +1,62 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { toast } from 'sonner';
-import { Loader2 } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { AlertCircle, Loader2 } from 'lucide-react';
+import { getGeneralSettings } from '@/lib/services/settings';
+import Image from 'next/image';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { signIn } = useAuth();
+  const [settings, setSettings] = useState<any>(null);
+  const { signIn, user } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (user) {
+      router.push('/dashboard');
+    }
+  }, [user, router]);
+
+  // Load settings
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const data = await getGeneralSettings();
+        setSettings(data);
+      } catch (error) {
+        console.error('Error loading settings:', error);
+      }
+    };
+    loadSettings();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!email || !password) {
-      toast.error('กรุณากรอกอีเมลและรหัสผ่าน');
-      return;
-    }
-
+    setError('');
     setIsLoading(true);
-    
+
     try {
       await signIn(email, password);
-      toast.success('เข้าสู่ระบบสำเร็จ');
-    } catch (error) {
-      console.error('Login error:', error);
-      
-      // Handle specific Firebase auth errors
-      const firebaseError = error as { code?: string };
-      
-      if (firebaseError.code === 'auth/user-not-found') {
-        toast.error('ไม่พบผู้ใช้งานนี้');
-      } else if (firebaseError.code === 'auth/wrong-password') {
-        toast.error('รหัสผ่านไม่ถูกต้อง');
-      } else if (firebaseError.code === 'auth/invalid-email') {
-        toast.error('รูปแบบอีเมลไม่ถูกต้อง');
+    } catch (err: any) {
+      console.error('Login error:', err);
+      if (err.code === 'auth/user-not-found') {
+        setError('ไม่พบผู้ใช้งานนี้ในระบบ');
+      } else if (err.code === 'auth/wrong-password') {
+        setError('รหัสผ่านไม่ถูกต้อง');
+      } else if (err.code === 'auth/invalid-email') {
+        setError('รูปแบบอีเมลไม่ถูกต้อง');
       } else {
-        toast.error('เข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่');
+        setError('เกิดข้อผิดพลาดในการเข้าสู่ระบบ กรุณาลองใหม่อีกครั้ง');
       }
     } finally {
       setIsLoading(false);
@@ -49,34 +64,56 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-red-50 to-orange-50 p-4">
       <Card className="w-full max-w-md">
-        <CardHeader className="space-y-1">
-          <div className="flex items-center justify-center mb-4">
-            <div className="text-6xl font-bold text-red-500">
-              {/* Logo placeholder - คุณสามารถใส่ SVG logo จริงตรงนี้ */}
-              CODELAB
-            </div>
+        <CardHeader className="space-y-4">
+          <div className="flex justify-center">
+            {settings?.logoUrl ? (
+              <div className="relative w-[230px] h-[60px]">
+                <Image 
+                  src={settings.logoUrl} 
+                  alt={settings.schoolName || 'School Logo'} 
+                  width={230}
+                  height={60}
+                  className="object-contain"
+                  priority
+                  unoptimized // สำหรับ external URL
+                />
+              </div>
+            ) : (
+              <div className="w-[230px] h-[60px] bg-red-500 rounded-lg flex items-center justify-center">
+                <span className="text-white font-bold text-xl">
+                  {settings?.schoolName || 'CodeLab'}
+                </span>
+              </div>
+            )}
           </div>
-          <CardTitle className="text-2xl font-bold text-center">
-            ระบบจัดการโรงเรียน
-          </CardTitle>
-          <CardDescription className="text-center">
-            สำหรับผู้ดูแลระบบเท่านั้น
-          </CardDescription>
+          <div className="text-center">
+            <CardTitle className="text-2xl font-bold">เข้าสู่ระบบ</CardTitle>
+            <CardDescription>
+              ระบบจัดการโรงเรียนสอนพิเศษ
+            </CardDescription>
+          </div>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
+            {error && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+            
             <div className="space-y-2">
               <Label htmlFor="email">อีเมล</Label>
               <Input
                 id="email"
                 type="email"
-                placeholder="admin@codelab.school"
+                placeholder="admin@codelabschool.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                disabled={isLoading}
                 required
+                disabled={isLoading}
               />
             </div>
             
@@ -88,14 +125,14 @@ export default function LoginPage() {
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                disabled={isLoading}
                 required
+                disabled={isLoading}
               />
             </div>
-
-            <Button
-              type="submit"
-              className="w-full bg-red-500 hover:bg-red-600 text-white"
+            
+            <Button 
+              type="submit" 
+              className="w-full bg-red-500 hover:bg-red-600"
               disabled={isLoading}
             >
               {isLoading ? (
@@ -108,10 +145,9 @@ export default function LoginPage() {
               )}
             </Button>
           </form>
-
-          <div className="mt-6 text-center text-sm text-gray-600">
-            <p>สำหรับผู้ดูแลระบบเท่านั้น</p>
-            <p className="mt-2">ผู้ปกครองกรุณาใช้ LINE Login</p>
+          
+          <div className="mt-4 text-center text-sm text-gray-600">
+            ลืมรหัสผ่าน? <a href="#" className="text-red-600 hover:underline">ติดต่อผู้ดูแลระบบ</a>
           </div>
         </CardContent>
       </Card>
