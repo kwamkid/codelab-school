@@ -44,6 +44,7 @@ import {
 } from '@/lib/services/line-settings';
 import { auth } from '@/lib/firebase/client';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import LineWebhookTest from './line-webhook-test';
 
 export default function LineSettingsComponent() {
   const [loading, setLoading] = useState(true);
@@ -255,6 +256,28 @@ export default function LineSettingsComponent() {
                 </div>
               </div>
               
+              {/* Callback URL */}
+              <div className="space-y-2">
+                <Label>Callback URL (สำหรับ LINE Login)</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={`${typeof window !== 'undefined' ? window.location.origin : ''}/api/auth/callback/line`}
+                    readOnly
+                    className="font-mono text-sm"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => copyToClipboard(`${window.location.origin}/api/auth/callback/line`)}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+                <p className="text-sm text-gray-500">
+                  คัดลอก URL นี้ไปใส่ใน Callback URL ของ LINE Login Channel
+                </p>
+              </div>
+              
               <Alert>
                 <Info className="h-4 w-4" />
                 <AlertDescription>
@@ -384,29 +407,11 @@ export default function LineSettingsComponent() {
                 </p>
               </div>
               
-              <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                <div className="flex items-center gap-3">
-                  <div>
-                    <p className="font-medium">สถานะ Webhook</p>
-                    <p className="text-sm text-gray-500">
-                      {settings.webhookVerified ? 'เชื่อมต่อแล้ว' : 'ยังไม่ได้เชื่อมต่อ'}
-                    </p>
-                  </div>
-                </div>
-                <Badge variant={settings.webhookVerified ? 'default' : 'secondary'}>
-                  {settings.webhookVerified ? (
-                    <>
-                      <CheckCircle className="h-3 w-3 mr-1" />
-                      Verified
-                    </>
-                  ) : (
-                    <>
-                      <XCircle className="h-3 w-3 mr-1" />
-                      Not Verified
-                    </>
-                  )}
-                </Badge>
-              </div>
+              <LineWebhookTest 
+                webhookUrl={settings.webhookUrl || ''}
+                webhookVerified={settings.webhookVerified}
+                accessToken={settings.messagingChannelAccessToken}
+              />
             </CardContent>
           </Card>
           
@@ -448,6 +453,42 @@ export default function LineSettingsComponent() {
                 </div>
               </div>
               
+              {/* LIFF Endpoint URL */}
+              <div className="space-y-2">
+                <Label>LIFF Endpoint URL</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={`${typeof window !== 'undefined' ? window.location.origin : ''}/liff`}
+                    readOnly
+                    className="font-mono text-sm"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => copyToClipboard(`${window.location.origin}/liff`)}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
+                <p className="text-sm text-gray-500">
+                  ใช้ URL นี้เป็น Endpoint URL เมื่อสร้าง LIFF App
+                </p>
+              </div>
+              
+              <Alert>
+                <Info className="h-4 w-4" />
+                <AlertDescription>
+                  <div className="space-y-2">
+                    <p>สร้าง LIFF App ได้ที่ LINE Login Channel > LIFF tab</p>
+                    <p className="text-sm">
+                      <strong>Size:</strong> Full | 
+                      <strong> Scope:</strong> profile, openid | 
+                      <strong> Bot link:</strong> On (เลือก Messaging API channel)
+                    </p>
+                  </div>
+                </AlertDescription>
+              </Alert>
+              
               {/* LIFF URLs */}
               {settings.liffId && (
                 <div className="space-y-3 p-4 bg-gray-50 rounded-lg">
@@ -456,7 +497,7 @@ export default function LineSettingsComponent() {
                     <div className="flex items-center justify-between">
                       <span className="text-gray-600">ดูตารางเรียน:</span>
                       <div className="flex items-center gap-2">
-                        <code className="bg-white px-2 py-1 rounded">
+                        <code className="bg-white px-2 py-1 rounded text-xs">
                           https://liff.line.me/{settings.liffId}/schedule
                         </code>
                         <Button
@@ -471,13 +512,58 @@ export default function LineSettingsComponent() {
                     <div className="flex items-center justify-between">
                       <span className="text-gray-600">จองทดลองเรียน:</span>
                       <div className="flex items-center gap-2">
-                        <code className="bg-white px-2 py-1 rounded">
+                        <code className="bg-white px-2 py-1 rounded text-xs">
                           https://liff.line.me/{settings.liffId}/trial
                         </code>
                         <Button
                           size="sm"
                           variant="ghost"
                           onClick={() => copyToClipboard(`https://liff.line.me/${settings.liffId}/trial`)}
+                        >
+                          <Copy className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-600">ชำระเงิน:</span>
+                      <div className="flex items-center gap-2">
+                        <code className="bg-white px-2 py-1 rounded text-xs">
+                          https://liff.line.me/{settings.liffId}/payment
+                        </code>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => copyToClipboard(`https://liff.line.me/${settings.liffId}/payment`)}
+                        >
+                          <Copy className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-600">โปรไฟล์:</span>
+                      <div className="flex items-center gap-2">
+                        <code className="bg-white px-2 py-1 rounded text-xs">
+                          https://liff.line.me/{settings.liffId}/profile
+                        </code>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => copyToClipboard(`https://liff.line.me/${settings.liffId}/profile`)}
+                        >
+                          <Copy className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-600">Makeup Class:</span>
+                      <div className="flex items-center gap-2">
+                        <code className="bg-white px-2 py-1 rounded text-xs">
+                          https://liff.line.me/{settings.liffId}/makeup
+                        </code>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => copyToClipboard(`https://liff.line.me/${settings.liffId}/makeup`)}
                         >
                           <Copy className="h-3 w-3" />
                         </Button>

@@ -1,31 +1,24 @@
+// app/liff/page.tsx
+
 'use client';
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/hooks/useAuth';
+import { Loader2 } from 'lucide-react';
 
-export default function Home() {
+export default function LiffPage() {
   const router = useRouter();
-  const { user, loading } = useAuth();
-
+  
   useEffect(() => {
-    if (!loading) {
-      if (user) {
-        // ถ้า login แล้ว ไปหน้า dashboard
-        router.push('/dashboard');
-      } else {
-        // ถ้ายังไม่ login ไปหน้า login
-        router.push('/login');
-      }
-    }
-  }, [user, loading, router]);
-
-  // แสดง loading ระหว่างรอ redirect
+    // Default redirect to schedule page
+    router.push('/liff/schedule');
+  }, [router]);
+  
   return (
     <div className="min-h-screen flex items-center justify-center">
       <div className="text-center">
-        <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
-        <p className="mt-4 text-gray-600">กำลังโหลด...</p>
+        <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
+        <p className="text-gray-600">กำลังโหลด...</p>
       </div>
     </div>
   );

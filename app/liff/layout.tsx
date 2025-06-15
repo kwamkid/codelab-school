@@ -13,7 +13,7 @@ export default function LiffLayout({
 }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isInLine, setIsInLine] = useState(false);
-  const [isRegistered, setIsRegistered] = useState<boolean | null>(null);
+  const [profile, setProfile] = useState<any>(null);
   const router = useRouter();
   const pathname = usePathname();
 
@@ -45,18 +45,6 @@ export default function LiffLayout({
         const profile = await liff.getProfile();
         setProfile(profile);
         sessionStorage.setItem('lineProfile', JSON.stringify(profile));
-        
-        // Check if registered
-        // TODO: Call API to check registration
-        // const response = await fetch(`/api/parents/check?lineUserId=${profile.userId}`);
-        // const data = await response.json();
-        // setIsRegistered(data.isRegistered);
-        
-        // For now, check pathname
-        if (pathname !== '/liff/register' && pathname !== '/liff/trial') {
-          // Assume need registration if not on register or trial page
-          setIsRegistered(false); // Change to true when API is ready
-        }
       } else if (isInLine) {
         // If in LINE but not logged in, do login
         liff.login();
@@ -79,12 +67,6 @@ export default function LiffLayout({
         </div>
       </div>
     );
-  }
-  
-  // Check registration (only for non-register pages)
-  if (isRegistered === false && pathname !== '/liff/register' && pathname !== '/liff/trial') {
-    router.push('/liff/register');
-    return null;
   }
 
   if (!isInLine) {

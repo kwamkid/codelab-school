@@ -188,7 +188,7 @@ export function validateLineSettings(settings: Partial<LineSettings>): {
   }
   
   // Validate Access Token format
-  if (settings.messagingChannelAccessToken && !settings.messagingChannelAccessToken.includes('+')) {
+  if (settings.messagingChannelAccessToken && settings.messagingChannelAccessToken.length < 100) {
     errors.messagingChannelAccessToken = 'Access Token ไม่ถูกต้อง';
   }
   
@@ -286,7 +286,7 @@ export function getRichMenuTemplates(): RichMenuTemplate[] {
   ];
 }
 
-// Test LINE Channel
+// Test LINE Channel (Client-side version without SDK)
 export async function testLineChannel(
   channelId: string,
   channelSecret: string,
@@ -297,9 +297,6 @@ export async function testLineChannel(
   error?: string;
 }> {
   try {
-    // For testing, we'll just validate the format
-    // In production, you would call LINE API to verify
-    
     if (!channelId || !channelSecret) {
       return {
         success: false,
@@ -321,22 +318,39 @@ export async function testLineChannel(
       };
     }
     
-    if (accessToken && !accessToken.includes('+')) {
-      return {
-        success: false,
-        message: 'Access Token รูปแบบไม่ถูกต้อง'
-      };
+    // For Messaging API test
+    if (accessToken) {
+      // Call API route to test on server-side
+      const response = await fetch('/api/line/test-connection', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          type: 'messaging',
+          accessToken
+        })
+      });
+      
+      const result = await response.json();
+      return result;
     }
     
-    // In real implementation, call LINE API here
-    // const response = await fetch('https://api.line.me/v2/bot/info', {
-    //   headers: { 'Authorization': `Bearer ${accessToken}` }
-    // });
+    // For LINE Login test
+    const response = await fetch('/api/line/test-connection', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        type: 'login',
+        channelId,
+        channelSecret
+      })
+    });
     
-    return {
-      success: true,
-      message: 'เชื่อมต่อสำเร็จ!'
-    };
+    const result = await response.json();
+    return result;
     
   } catch (error) {
     console.error('Error testing LINE channel:', error);
