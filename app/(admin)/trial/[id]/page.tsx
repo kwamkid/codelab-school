@@ -28,7 +28,8 @@ import {
   AlertCircle,
   PhoneCall,
   CalendarCheck,
-  UserPlus
+  UserPlus,
+  MoreVertical
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { TrialBooking, TrialSession, Subject, Teacher, Branch, Room } from '@/types/models';
@@ -42,9 +43,24 @@ import { getTeachers } from '@/lib/services/teachers';
 import { getBranches, getRoomsByBranch } from '@/lib/services/branches';
 import { formatDate } from '@/lib/utils';
 import TrialSessionDialog from '@/components/trial/trial-session-dialog';
-import TrialSessionCard from '@/components/trial/trial-session-card';
 import ContactHistorySection from '@/components/trial/contact-history-section';
 import ConvertToStudentDialog from '@/components/trial/convert-to-student-dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 const statusConfig = {
   new: { label: 'ใหม่', color: 'bg-blue-100 text-blue-700', icon: AlertCircle },
@@ -300,21 +316,112 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
                   )}
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {sessions.map((session) => (
-                    <TrialSessionCard
-                      key={session.id}
-                      session={session}
-                      subjects={subjects}
-                      teachers={teachers}
-                      branches={branches}
-                      onUpdate={handleSessionUpdated}
-                      onConvert={(session) => {
-                        setSelectedSession(session);
-                        setConvertModalOpen(true);
-                      }}
-                    />
-                  ))}
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>นักเรียน</TableHead>
+                        <TableHead>วิชา</TableHead>
+                        <TableHead>วันที่</TableHead>
+                        <TableHead>เวลา</TableHead>
+                        <TableHead>ครู</TableHead>
+                        <TableHead>สาขา/ห้อง</TableHead>
+                        <TableHead className="text-center">สถานะ</TableHead>
+                        <TableHead className="text-right">จัดการ</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {sessions.map((session) => {
+                        const subject = subjects.find(s => s.id === session.subjectId);
+                        const teacher = teachers.find(t => t.id === session.teacherId);
+                        const branch = branches.find(b => b.id === session.branchId);
+                        const isPast = new Date(session.scheduledDate) < new Date();
+                        
+                        return (
+                          <TableRow key={session.id} className={session.status === 'cancelled' ? 'opacity-60' : ''}>
+                            <TableCell>
+                              <div className="font-medium">{session.studentName}</div>
+                              {session.converted && (
+                                <Badge className="mt-1 bg-emerald-100 text-emerald-700" variant="outline">
+                                  <UserPlus className="h-3 w-3 mr-1" />
+                                  ลงทะเบียนแล้ว
+                                </Badge>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <Badge style={{ backgroundColor: subject?.color || '#EF4444' }}>
+                                {subject?.name}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>{formatDate(session.scheduledDate)}</TableCell>
+                            <TableCell>{session.startTime} - {session.endTime}</TableCell>
+                            <TableCell>ครู{teacher?.nickname || teacher?.name}</TableCell>
+                            <TableCell>{branch?.name} (ห้อง {session.roomId})</TableCell>
+                            <TableCell className="text-center">
+                              <Badge className={
+                                session.status === 'scheduled' ? 'bg-purple-100 text-purple-700' :
+                                session.status === 'attended' ? 'bg-green-100 text-green-700' :
+                                session.status === 'absent' ? 'bg-red-100 text-red-700' :
+                                'bg-gray-100 text-gray-700'
+                              }>
+                                {session.status === 'scheduled' ? 'นัดหมายแล้ว' :
+                                 session.status === 'attended' ? 'เข้าเรียนแล้ว' :
+                                 session.status === 'absent' ? 'ไม่มาเรียน' :
+                                 'ยกเลิก'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="sm">
+                                    <MoreVertical className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuLabel>จัดการ</DropdownMenuLabel>
+                                  <DropdownMenuSeparator />
+                                  
+                                  {session.status === 'scheduled' && isPast && (
+                                    <DropdownMenuItem>
+                                      <CheckCircle className="h-4 w-4 mr-2" />
+                                      บันทึกการเข้าเรียน
+                                    </DropdownMenuItem>
+                                  )}
+                                  
+                                  {session.status === 'attended' && !session.converted && (
+                                    <DropdownMenuItem 
+                                      onClick={() => {
+                                        setSelectedSession(session);
+                                        setConvertModalOpen(true);
+                                      }}
+                                      className="text-green-600"
+                                    >
+                                      <UserPlus className="h-4 w-4 mr-2" />
+                                      แปลงเป็นนักเรียน
+                                    </DropdownMenuItem>
+                                  )}
+                                  
+                                  {session.status === 'scheduled' && !isPast && (
+                                    <>
+                                      <DropdownMenuItem>
+                                        <Edit className="h-4 w-4 mr-2" />
+                                        แก้ไขนัดหมาย
+                                      </DropdownMenuItem>
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuItem className="text-red-600">
+                                        <XCircle className="h-4 w-4 mr-2" />
+                                        ยกเลิกนัดหมาย
+                                      </DropdownMenuItem>
+                                    </>
+                                  )}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
                 </div>
               )}
             </CardContent>

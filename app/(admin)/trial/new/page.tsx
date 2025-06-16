@@ -150,20 +150,43 @@ export default function CreateTrialBookingPage() {
     setLoading(true);
     
     try {
-      const bookingData = {
+      const bookingData: any = {
         source: 'walkin' as const,
         parentName: parentName.trim(),
         parentPhone: parentPhone.replace(/[-\s]/g, ''),
-        parentEmail: parentEmail.trim() || undefined,
         students: students.map(s => ({
           name: s.name.trim(),
-          schoolName: s.schoolName.trim() || undefined,
-          gradeLevel: s.gradeLevel.trim() || undefined,
           subjectInterests: s.subjectInterests
         })),
-        status: 'new' as const,
-        contactNote: contactNote.trim() || undefined
+        status: 'new' as const
       };
+      
+      // Add optional fields only if they have values
+      if (parentEmail.trim()) {
+        bookingData.parentEmail = parentEmail.trim();
+      }
+      
+      if (contactNote.trim()) {
+        bookingData.contactNote = contactNote.trim();
+      }
+      
+      // Add optional student fields
+      bookingData.students = students.map(s => {
+        const studentData: any = {
+          name: s.name.trim(),
+          subjectInterests: s.subjectInterests
+        };
+        
+        if (s.schoolName.trim()) {
+          studentData.schoolName = s.schoolName.trim();
+        }
+        
+        if (s.gradeLevel.trim()) {
+          studentData.gradeLevel = s.gradeLevel.trim();
+        }
+        
+        return studentData;
+      });
       
       const bookingId = await createTrialBooking(bookingData);
       toast.success('บันทึกการจองทดลองเรียนสำเร็จ');
