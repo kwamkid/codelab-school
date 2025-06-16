@@ -36,11 +36,13 @@ import { TrialBooking, TrialSession, Subject, Teacher, Branch, Room } from '@/ty
 import { 
   getTrialBooking, 
   getTrialSessionsByBooking,
-  updateBookingStatus
+  updateBookingStatus,
+  updateTrialSession
 } from '@/lib/services/trial-bookings';
 import { getSubjects } from '@/lib/services/subjects';
 import { getTeachers } from '@/lib/services/teachers';
-import { getBranches, getRoomsByBranch } from '@/lib/services/branches';
+import { getBranches } from '@/lib/services/branches';
+import { getRoomsByBranch } from '@/lib/services/rooms';
 import { formatDate } from '@/lib/utils';
 import TrialSessionDialog from '@/components/trial/trial-session-dialog';
 import ContactHistorySection from '@/components/trial/contact-history-section';
@@ -85,6 +87,7 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
+  const [rooms, setRooms] = useState<Record<string, Room[]>>({});
   const [loading, setLoading] = useState(true);
   
   // Modal states
@@ -121,6 +124,20 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
       // Load sessions
       const sessionsData = await getTrialSessionsByBooking(resolvedParams.id);
       setSessions(sessionsData);
+      
+      // Load rooms for all branches
+      const roomsData: Record<string, Room[]> = {};
+      for (const branch of branchesData) {
+        const branchRooms = await getRoomsByBranch(branch.id);
+        console.log(`Rooms for branch ${branch.id}:`, branchRooms);
+        roomsData[branch.id] = branchRooms;
+      }
+      setRooms(roomsData);
+      
+      // Debug: Log session room IDs
+      sessionsData.forEach(session => {
+        console.log(`Session ${session.id} - Branch: ${session.branchId}, Room ID: ${session.roomId}`);
+      });
     } catch (error) {
       console.error('Error loading data:', error);
       toast.error('เกิดข้อผิดพลาดในการโหลดข้อมูล');
@@ -226,52 +243,81 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column - Booking Info */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Parent & Students Info - Compact Layout */}
+          {/* Parent Info */}
           <Card>
-            <CardHeader className="pb-4">
-              <CardTitle>ข้อมูลการจอง</CardTitle>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <User className="h-5 w-5 text-gray-400" />
+                ข้อมูลผู้ปกครอง
+              </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Parent Info - Inline */}
-              <div className="flex flex-wrap items-center gap-4 pb-4 border-b">
-                <div className="flex items-center gap-2">
-                  <User className="h-4 w-4 text-gray-400" />
+            <CardContent>
+              <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-600">ชื่อ-นามสกุล</span>
                   <span className="font-medium">{booking.parentName}</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Phone className="h-4 w-4 text-gray-400" />
-                  <span className="text-sm">{booking.parentPhone}</span>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-600">เบอร์โทรศัพท์</span>
+                  <span className="font-medium">{booking.parentPhone}</span>
                 </div>
                 {booking.parentEmail && (
-                  <div className="flex items-center gap-2">
-                    <Mail className="h-4 w-4 text-gray-400" />
-                    <span className="text-sm">{booking.parentEmail}</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600">อีเมล</span>
+                    <span className="font-medium">{booking.parentEmail}</span>
                   </div>
                 )}
               </div>
+            </CardContent>
+          </Card>
 
-              {/* Students - Compact */}
-              <div className="space-y-3">
-                <h4 className="text-sm font-medium text-gray-700">นักเรียน ({booking.students.length} คน)</h4>
+          {/* Students Info */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <GraduationCap className="h-5 w-5 text-gray-400" />
+                นักเรียน ({booking.students.length} คน)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {booking.students.map((student, idx) => (
-                  <div key={idx} className="pl-4 border-l-2 border-gray-200 space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-sm">{student.name}</span>
-                      {student.schoolName && (
-                        <span className="text-xs text-gray-500">
-                          - {student.schoolName} {student.gradeLevel && `(${student.gradeLevel})`}
-                        </span>
-                      )}
+                  <div key={idx} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
+                    <div className="flex items-start justify-between mb-2">
+                      <div>
+                        <h4 className="font-medium text-base">{student.name}</h4>
+                        {student.schoolName && (
+                          <p className="text-sm text-gray-600">
+                            <School className="inline h-3 w-3 mr-1" />
+                            {student.schoolName}
+                            {student.gradeLevel && ` (${student.gradeLevel})`}
+                          </p>
+                        )}
+                      </div>
+                      <Badge variant="outline" className="text-xs">
+                        คนที่ {idx + 1}
+                      </Badge>
                     </div>
-                    <div className="flex flex-wrap gap-1">
-                      {student.subjectInterests.map(subjectId => {
-                        const subject = subjects.find(s => s.id === subjectId);
-                        return subject ? (
-                          <Badge key={subjectId} variant="outline" className="text-xs h-5">
-                            {subject.name}
-                          </Badge>
-                        ) : null;
-                      })}
+                    <div className="space-y-1">
+                      <p className="text-xs text-gray-500">วิชาที่สนใจ:</p>
+                      <div className="flex flex-wrap gap-1">
+                        {student.subjectInterests.map(subjectId => {
+                          const subject = subjects.find(s => s.id === subjectId);
+                          return subject ? (
+                            <Badge 
+                              key={subjectId} 
+                              className="text-xs"
+                              style={{ 
+                                backgroundColor: `${subject.color}20`,
+                                color: subject.color,
+                                borderColor: subject.color
+                              }}
+                            >
+                              {subject.name}
+                            </Badge>
+                          ) : null;
+                        })}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -319,11 +365,9 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
                       <TableRow>
                         <TableHead>นักเรียน</TableHead>
                         <TableHead>วิชา</TableHead>
-                        <TableHead>วันที่</TableHead>
-                        <TableHead>เวลา</TableHead>
-                        <TableHead>ครู</TableHead>
-                        <TableHead>สาขา/ห้อง</TableHead>
-                        <TableHead className="text-center">สถานะ</TableHead>
+                        <TableHead>วันที่และเวลา</TableHead>
+                        <TableHead>สาขา/ครู/ห้อง</TableHead>
+                        <TableHead className="text-center">การเข้าเรียน</TableHead>
                         <TableHead className="text-right">จัดการ</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -332,6 +376,8 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
                         const subject = subjects.find(s => s.id === session.subjectId);
                         const teacher = teachers.find(t => t.id === session.teacherId);
                         const branch = branches.find(b => b.id === session.branchId);
+                        const room = rooms[session.branchId]?.find(r => r.id === session.roomId);
+                        console.log(`Looking for room ${session.roomId} in branch ${session.branchId}:`, room);
                         const isPast = new Date(session.scheduledDate) < new Date();
                         
                         return (
@@ -350,22 +396,105 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
                                 {subject?.name}
                               </Badge>
                             </TableCell>
-                            <TableCell>{formatDate(session.scheduledDate)}</TableCell>
-                            <TableCell>{session.startTime} - {session.endTime}</TableCell>
-                            <TableCell>ครู{teacher?.nickname || teacher?.name}</TableCell>
-                            <TableCell>{branch?.name} (ห้อง {session.roomId})</TableCell>
+                            <TableCell>
+                              <div>
+                                <div className="font-medium">{formatDate(session.scheduledDate)}</div>
+                                <div className="text-sm text-gray-600">
+                                  {session.startTime} - {session.endTime}
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div>
+                                <div className="font-medium">{branch?.name}</div>
+                                <div className="text-sm text-gray-600">
+                                  ครู{teacher?.nickname || teacher?.name}
+                                </div>
+                                <div className="text-sm text-gray-600">
+                                  ห้อง {session.roomName || room?.name || session.roomId}
+                                </div>
+                              </div>
+                            </TableCell>
                             <TableCell className="text-center">
-                              <Badge className={
-                                session.status === 'scheduled' ? 'bg-purple-100 text-purple-700' :
-                                session.status === 'attended' ? 'bg-green-100 text-green-700' :
-                                session.status === 'absent' ? 'bg-red-100 text-red-700' :
-                                'bg-gray-100 text-gray-700'
-                              }>
-                                {session.status === 'scheduled' ? 'นัดหมายแล้ว' :
-                                 session.status === 'attended' ? 'เข้าเรียนแล้ว' :
-                                 session.status === 'absent' ? 'ไม่มาเรียน' :
-                                 'ยกเลิก'}
-                              </Badge>
+                              {session.status === 'scheduled' ? (
+                                <div className="flex gap-2 justify-center">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="bg-green-50 hover:bg-green-100 text-green-700 border-green-300"
+                                    onClick={async () => {
+                                      try {
+                                        await updateTrialSession(session.id, {
+                                          status: 'attended',
+                                          attended: true
+                                        });
+                                        
+                                        // Check if all sessions are completed
+                                        const updatedSessions = sessions.map(s => 
+                                          s.id === session.id ? { ...s, status: 'attended' as const } : s
+                                        );
+                                        const allCompleted = updatedSessions.every(s => 
+                                          s.status === 'attended' || s.status === 'absent' || s.status === 'cancelled'
+                                        );
+                                        
+                                        if (allCompleted) {
+                                          await updateBookingStatus(booking.id, 'completed');
+                                        }
+                                        
+                                        toast.success('บันทึกการเข้าเรียนสำเร็จ');
+                                        loadData();
+                                      } catch (error) {
+                                        toast.error('เกิดข้อผิดพลาดในการบันทึก');
+                                      }
+                                    }}
+                                  >
+                                    <CheckCircle className="h-4 w-4 mr-1" />
+                                    มาเรียน
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="bg-red-50 hover:bg-red-100 text-red-700 border-red-300"
+                                    onClick={async () => {
+                                      try {
+                                        await updateTrialSession(session.id, {
+                                          status: 'absent',
+                                          attended: false
+                                        });
+                                        
+                                        const updatedSessions = sessions.map(s => 
+                                          s.id === session.id ? { ...s, status: 'absent' as const } : s
+                                        );
+                                        const allCompleted = updatedSessions.every(s => 
+                                          s.status === 'attended' || s.status === 'absent' || s.status === 'cancelled'
+                                        );
+                                        
+                                        if (allCompleted) {
+                                          await updateBookingStatus(booking.id, 'completed');
+                                        }
+                                        
+                                        toast.success('บันทึกว่าไม่มาเรียน');
+                                        loadData();
+                                      } catch (error) {
+                                        toast.error('เกิดข้อผิดพลาดในการบันทึก');
+                                      }
+                                    }}
+                                  >
+                                    <XCircle className="h-4 w-4 mr-1" />
+                                    ไม่มา
+                                  </Button>
+                                </div>
+                              ) : (
+                                <Badge className={
+                                  session.status === 'attended' ? 'bg-green-100 text-green-700' :
+                                  session.status === 'absent' ? 'bg-red-100 text-red-700' :
+                                  'bg-gray-100 text-gray-700'
+                                }>
+                                  {session.status === 'attended' ? 'เข้าเรียนแล้ว' :
+                                   session.status === 'absent' ? 'ไม่มาเรียน' :
+                                   'ยกเลิก'}
+                                </Badge>
+                              )}
                             </TableCell>
                             <TableCell className="text-right">
                               <DropdownMenu>
@@ -379,9 +508,36 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
                                   <DropdownMenuSeparator />
                                   
                                   {session.status === 'scheduled' && isPast && (
-                                    <DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={async () => {
+                                        try {
+                                          // Update session status
+                                          await updateTrialSession(session.id, {
+                                            status: 'attended',
+                                            attended: true
+                                          });
+                                          
+                                          // Check if all sessions are completed
+                                          const allSessions = sessions.filter(s => s.id !== session.id);
+                                          const allAttended = allSessions.every(s => 
+                                            s.status === 'attended' || s.status === 'absent' || s.status === 'cancelled'
+                                          );
+                                          
+                                          if (allAttended) {
+                                            // Update booking status to completed
+                                            await updateBookingStatus(booking.id, 'completed');
+                                          }
+                                          
+                                          toast.success('บันทึกการเข้าเรียนสำเร็จ');
+                                          loadData();
+                                        } catch (error) {
+                                          console.error('Error updating attendance:', error);
+                                          toast.error('เกิดข้อผิดพลาดในการบันทึก');
+                                        }
+                                      }}
+                                    >
                                       <CheckCircle className="h-4 w-4 mr-2" />
-                                      บันทึกการเข้าเรียน
+                                      บันทึกว่าเข้าเรียนแล้ว
                                     </DropdownMenuItem>
                                   )}
                                   
@@ -453,6 +609,16 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
                         กรุณานัดหมายทดลองเรียนให้กับนักเรียน
                       </AlertDescription>
                     </Alert>
+                  )}
+                  {sessions.length > 0 && (
+                    <Button
+                      onClick={() => handleStatusUpdate('scheduled')}
+                      className="w-full mb-2"
+                      variant="outline"
+                    >
+                      <CalendarCheck className="h-4 w-4 mr-2" />
+                      เปลี่ยนสถานะเป็นนัดหมายแล้ว
+                    </Button>
                   )}
                   <button
                     onClick={() => handleStatusUpdate('new')}

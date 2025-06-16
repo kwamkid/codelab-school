@@ -323,42 +323,112 @@ export async function checkTrialRoomAvailability(
 ): Promise<{
   available: boolean;
   conflicts?: Array<{
-    type: 'class' | 'trial';
+    type: 'class' | 'trial' | 'makeup';
     name: string;
     startTime: string;
     endTime: string;
   }>;
 }> {
   try {
+    console.log('Checking room availability for:', { branchId, roomId, date, startTime, endTime });
+    
     const conflicts: Array<{
-      type: 'class' | 'trial';
+      type: 'class' | 'trial' | 'makeup';
       name: string;
       startTime: string;
       endTime: string;
     }> = [];
     
-    // Check regular classes
-    const { checkRoomAvailability } = await import('./classes');
-    const classAvailability = await checkRoomAvailability(
-      branchId,
-      roomId,
-      [date.getDay()],
-      startTime,
-      endTime,
-      date,
-      date
+    // 1. Check regular classes on that day
+    const dayOfWeek = date.getDay();
+    const { getClasses } = await import('./classes');
+    const classes = await getClasses();
+    
+    // Create date without time for comparison
+    const dateOnly = new Date(date);
+    dateOnly.setHours(0, 0, 0, 0);
+    
+    // Filter classes for the same branch, room, and day
+    const relevantClasses = classes.filter(cls => 
+      cls.branchId === branchId &&
+      cls.roomId === roomId &&
+      cls.daysOfWeek.includes(dayOfWeek) &&
+      (cls.status === 'published' || cls.status === 'started') &&
+      new Date(cls.startDate) <= dateOnly &&
+      new Date(cls.endDate) >= dateOnly
     );
     
-    if (!classAvailability.available && classAvailability.conflicts) {
-      conflicts.push(...classAvailability.conflicts.map(c => ({
-        type: 'class' as const,
-        name: c.className,
-        startTime: c.startTime,
-        endTime: c.endTime,
-      })));
+    console.log(`Found ${relevantClasses.length} relevant classes`);
+    
+    // Check time conflicts for each class
+    for (const cls of relevantClasses) {
+      // Check if the class has a session on this specific date
+      const schedulesRef = collection(db, 'classes', cls.id, 'schedules');
+      
+      // Create start and end of day for query
+      const startOfDay = new Date(date);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(date);
+      endOfDay.setHours(23, 59, 59, 999);
+      
+      const scheduleQuery = query(
+        schedulesRef,
+        where('sessionDate', '>=', Timestamp.fromDate(startOfDay)),
+        where('sessionDate', '<=', Timestamp.fromDate(endOfDay)),
+        where('status', '!=', 'cancelled')
+      );
+      const scheduleSnapshot = await getDocs(scheduleQuery);
+      
+      console.log(`Class ${cls.name} has ${scheduleSnapshot.size} sessions on this date`);
+      
+      if (!scheduleSnapshot.empty) {
+        // Check time overlap
+        if (startTime < cls.endTime && endTime > cls.startTime) {
+          console.log(`Time conflict with class ${cls.name}: ${cls.startTime}-${cls.endTime} vs ${startTime}-${endTime}`);
+          conflicts.push({
+            type: 'class',
+            name: cls.name,
+            startTime: cls.startTime,
+            endTime: cls.endTime,
+          });
+        }
+      }
     }
     
-    // Check other trial sessions
+    // 2. Check makeup classes
+    const { getMakeupClasses } = await import('./makeup');
+    const makeupClasses = await getMakeupClasses();
+    
+    // Filter makeup classes for the same branch, room, and date
+    const relevantMakeups = makeupClasses.filter(makeup => 
+      makeup.status === 'scheduled' &&
+      makeup.makeupSchedule &&
+      makeup.makeupSchedule.branchId === branchId &&
+      makeup.makeupSchedule.roomId === roomId &&
+      new Date(makeup.makeupSchedule.date).toDateString() === date.toDateString()
+    );
+    
+    console.log(`Found ${relevantMakeups.length} relevant makeup classes`);
+    
+    // Check time conflicts for makeup classes
+    for (const makeup of relevantMakeups) {
+      if (makeup.makeupSchedule) {
+        // Check time overlap
+        if (startTime < makeup.makeupSchedule.endTime && endTime > makeup.makeupSchedule.startTime) {
+          const { getStudent } = await import('./parents');
+          const student = await getStudent(makeup.parentId, makeup.studentId);
+          console.log(`Time conflict with makeup class for ${student?.name}`);
+          conflicts.push({
+            type: 'makeup',
+            name: `${student?.nickname || student?.name || 'Unknown'}`,
+            startTime: makeup.makeupSchedule.startTime,
+            endTime: makeup.makeupSchedule.endTime,
+          });
+        }
+      }
+    }
+    
+    // 3. Check other trial sessions
     const q = query(
       collection(db, SESSIONS_COLLECTION),
       where('branchId', '==', branchId),
@@ -368,6 +438,7 @@ export async function checkTrialRoomAvailability(
     );
     
     const querySnapshot = await getDocs(q);
+    console.log(`Found ${querySnapshot.size} trial sessions`);
     
     for (const doc of querySnapshot.docs) {
       if (doc.id === excludeSessionId) continue;
@@ -375,6 +446,7 @@ export async function checkTrialRoomAvailability(
       const session = doc.data() as TrialSession;
       // Check time overlap
       if (startTime < session.endTime && endTime > session.startTime) {
+        console.log(`Time conflict with trial session for ${session.studentName}`);
         conflicts.push({
           type: 'trial',
           name: session.studentName,
@@ -384,6 +456,7 @@ export async function checkTrialRoomAvailability(
       }
     }
     
+    console.log(`Total conflicts found: ${conflicts.length}`);
     return {
       available: conflicts.length === 0,
       conflicts: conflicts.length > 0 ? conflicts : undefined,

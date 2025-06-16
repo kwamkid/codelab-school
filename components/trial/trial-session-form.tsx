@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { 
@@ -19,7 +20,9 @@ import {
   User,
   GraduationCap,
   AlertCircle,
-  Loader2
+  Loader2,
+  CheckCircle,
+  XCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Subject, Teacher, Branch, Room } from '@/types/models';
@@ -123,9 +126,14 @@ export default function TrialSessionForm({
       );
 
       if (!result.available && result.conflicts) {
-        const conflictMessages = result.conflicts.map(c => 
-          `${c.type === 'class' ? 'คลาส' : 'ทดลองเรียน'} ${c.name} (${c.startTime}-${c.endTime})`
-        );
+        const conflictMessages = result.conflicts.map(c => {
+          let typeLabel = '';
+          if (c.type === 'class') typeLabel = 'คลาส';
+          else if (c.type === 'makeup') typeLabel = 'Makeup';
+          else typeLabel = 'ทดลองเรียน';
+          
+          return `${typeLabel} ${c.name} (${c.startTime}-${c.endTime})`;
+        });
         setAvailabilityError(`ห้องไม่ว่าง: ${conflictMessages.join(', ')}`);
       }
     } catch (error) {
@@ -171,6 +179,9 @@ export default function TrialSessionForm({
     setLoading(true);
 
     try {
+      // Get room name for storing in session
+      const selectedRoomData = rooms.find(r => r.id === selectedRoom);
+      
       await createTrialSession({
         bookingId,
         studentName: selectedStudent,
@@ -181,6 +192,7 @@ export default function TrialSessionForm({
         teacherId: selectedTeacher,
         branchId: selectedBranch,
         roomId: selectedRoom,
+        roomName: selectedRoomData?.name || selectedRoom, // Store room name
         status: 'scheduled'
       });
 
@@ -200,9 +212,15 @@ export default function TrialSessionForm({
     const student = students.find(s => s.name === selectedStudent);
     if (!student) return [];
     
-    return subjects.filter(subject => 
+    // Get student's interested subjects first, then other subjects
+    const interestedSubjects = subjects.filter(subject => 
       student.subjectInterests.includes(subject.id)
     );
+    const otherSubjects = subjects.filter(subject => 
+      !student.subjectInterests.includes(subject.id)
+    );
+    
+    return [...interestedSubjects, ...otherSubjects];
   };
 
   // Filter teachers based on selected subject
@@ -247,15 +265,47 @@ export default function TrialSessionForm({
               <SelectValue placeholder="เลือกวิชา" />
             </SelectTrigger>
             <SelectContent>
-              {getAvailableSubjects().map((subject) => (
-                <SelectItem key={subject.id} value={subject.id}>
-                  <div className="flex items-center gap-2">
-                    <GraduationCap className="h-4 w-4" />
-                    <span>{subject.name}</span>
-                    <span className="text-gray-500">({subject.level})</span>
-                  </div>
-                </SelectItem>
-              ))}
+              {getAvailableSubjects().map((subject, index) => {
+                const student = students.find(s => s.name === selectedStudent);
+                const isInterested = student?.subjectInterests.includes(subject.id);
+                
+                return (
+                  <React.Fragment key={subject.id}>
+                    {index === 0 && isInterested && (
+                      <div className="px-2 py-1.5 text-xs font-medium text-gray-500">
+                        วิชาที่สนใจ
+                      </div>
+                    )}
+                    {index > 0 && isInterested && !getAvailableSubjects()[index - 1]?.id && (
+                      <div className="px-2 py-1.5 text-xs font-medium text-gray-500">
+                        วิชาที่สนใจ
+                      </div>
+                    )}
+                    {student?.subjectInterests.length > 0 && 
+                     index === student.subjectInterests.length && 
+                     !isInterested && (
+                      <div className="my-1 border-t" />
+                    )}
+                    {index === student?.subjectInterests.length && !isInterested && (
+                      <div className="px-2 py-1.5 text-xs font-medium text-gray-500">
+                        วิชาอื่น ๆ
+                      </div>
+                    )}
+                    <SelectItem value={subject.id}>
+                      <div className="flex items-center gap-2">
+                        <GraduationCap className="h-4 w-4" />
+                        <span>{subject.name}</span>
+                        <span className="text-gray-500">({subject.level})</span>
+                        {isInterested && (
+                          <Badge className="ml-2 bg-green-100 text-green-700 text-xs">
+                            สนใจ
+                          </Badge>
+                        )}
+                      </div>
+                    </SelectItem>
+                  </React.Fragment>
+                );
+              })}
             </SelectContent>
           </Select>
         </div>
@@ -367,19 +417,65 @@ export default function TrialSessionForm({
               <Select 
                 value={selectedRoom} 
                 onValueChange={setSelectedRoom}
-                disabled={!selectedBranch}
+                disabled={!selectedBranch || rooms.length === 0}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder={selectedBranch ? "เลือกห้อง" : "เลือกสาขาก่อน"} />
+                  <SelectValue placeholder={
+                    !selectedBranch ? "เลือกสาขาก่อน" : 
+                    rooms.length === 0 ? "ไม่มีห้อง" : 
+                    "เลือกห้อง"
+                  } />
                 </SelectTrigger>
                 <SelectContent>
-                  {rooms.map((room) => (
-                    <SelectItem key={room.id} value={room.id}>
-                      <span>{room.name} (จุ {room.capacity} คน)</span>
-                    </SelectItem>
-                  ))}
+                  {rooms.map((room) => {
+                    // Check availability for each room
+                    const isChecking = checkingAvailability && selectedRoom === room.id;
+                    const hasConflict = availabilityError && selectedRoom === room.id;
+                    
+                    return (
+                      <SelectItem key={room.id} value={room.id}>
+                        <div className="flex items-center gap-2 w-full">
+                          <span>{room.name} (จุ {room.capacity} คน)</span>
+                          {selectedDate && startTime && endTime && (
+                            <>
+                              {isChecking && (
+                                <Loader2 className="h-3 w-3 animate-spin text-gray-500 ml-auto" />
+                              )}
+                              {!isChecking && selectedRoom === room.id && (
+                                hasConflict ? (
+                                  <XCircle className="h-3 w-3 text-red-500 ml-auto" />
+                                ) : (
+                                  <CheckCircle className="h-3 w-3 text-green-500 ml-auto" />
+                                )
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
+              {selectedDate && startTime && endTime && selectedRoom && (
+                <p className="text-xs text-gray-500">
+                  {checkingAvailability ? (
+                    <span className="flex items-center gap-1">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      กำลังตรวจสอบห้องว่าง...
+                    </span>
+                  ) : availabilityError ? (
+                    <span className="flex items-center gap-1 text-red-600">
+                      <XCircle className="h-3 w-3" />
+                      ห้องไม่ว่าง
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1 text-green-600">
+                      <CheckCircle className="h-3 w-3" />
+                      ห้องว่าง
+                    </span>
+                  )}
+                </p>
+              )}
             </div>
           </div>
 

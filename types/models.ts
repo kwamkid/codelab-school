@@ -231,6 +231,7 @@ export interface TrialSession {
   teacherId: string;
   branchId: string;
   roomId: string;
+  roomName?: string; // เพิ่ม field เก็บชื่อห้อง
   
   status: 'scheduled' | 'attended' | 'absent' | 'cancelled';
   
