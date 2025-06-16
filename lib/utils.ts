@@ -6,7 +6,7 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 // Format date function
-export function formatDate(date: Date | string, format: 'short' | 'long' | 'time' = 'short'): string {
+export function formatDate(date: Date | string, format: 'short' | 'long' | 'full' | 'time' = 'short'): string {
   const d = typeof date === 'string' ? new Date(date) : date;
   
   if (isNaN(d.getTime())) {
@@ -24,10 +24,15 @@ export function formatDate(date: Date | string, format: 'short' | 'long' | 'time
   const options: Intl.DateTimeFormatOptions = {
     timeZone: 'Asia/Bangkok',
     day: 'numeric',
-    month: format === 'long' ? 'long' : 'short',
+    month: format === 'long' || format === 'full' ? 'long' : 'short',
     year: 'numeric',
-    // ลบ weekday ออกจาก format long
   };
+
+  // Add time for 'full' format
+  if (format === 'full') {
+    options.hour = '2-digit';
+    options.minute = '2-digit';
+  }
 
   return new Intl.DateTimeFormat('th-TH', options).format(d);
 }

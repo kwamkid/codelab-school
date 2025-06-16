@@ -118,14 +118,20 @@ export async function updateTrialBooking(
     const docRef = doc(db, BOOKINGS_COLLECTION, id);
     
     // Remove fields that shouldn't be updated
-    const updateData = { ...data };
+    const updateData: any = { ...data };
     delete updateData.id;
     delete updateData.createdAt;
+    delete updateData.updatedAt;
     
-    await updateDoc(docRef, {
-      ...updateData,
-      updatedAt: serverTimestamp(),
-    });
+    // Convert Date objects to Timestamps
+    if (updateData.contactedAt instanceof Date) {
+      updateData.contactedAt = Timestamp.fromDate(updateData.contactedAt);
+    }
+    
+    // Add server timestamp for updatedAt
+    updateData.updatedAt = serverTimestamp();
+    
+    await updateDoc(docRef, updateData);
   } catch (error) {
     console.error('Error updating trial booking:', error);
     throw error;

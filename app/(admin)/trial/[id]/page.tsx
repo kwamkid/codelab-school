@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { use, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -77,7 +77,8 @@ const sourceConfig = {
   phone: { label: 'โทรศัพท์', color: 'bg-purple-100 text-purple-700' }
 };
 
-export default function TrialBookingDetailPage({ params }: { params: { id: string } }) {
+export default function TrialBookingDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const resolvedParams = use(params);
   const router = useRouter();
   const [booking, setBooking] = useState<TrialBooking | null>(null);
   const [sessions, setSessions] = useState<TrialSession[]>([]);
@@ -94,13 +95,13 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
 
   useEffect(() => {
     loadData();
-  }, [params.id]);
+  }, [resolvedParams.id]);
 
   const loadData = async () => {
     try {
       setLoading(true);
       const [bookingData, subjectsData, teachersData, branchesData] = await Promise.all([
-        getTrialBooking(params.id),
+        getTrialBooking(resolvedParams.id),
         getSubjects(),
         getTeachers(),
         getBranches()
@@ -118,7 +119,7 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
       setBranches(branchesData.filter(b => b.isActive));
       
       // Load sessions
-      const sessionsData = await getTrialSessionsByBooking(params.id);
+      const sessionsData = await getTrialSessionsByBooking(resolvedParams.id);
       setSessions(sessionsData);
     } catch (error) {
       console.error('Error loading data:', error);
@@ -225,70 +226,66 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column - Booking Info */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Parent Information */}
+          {/* Parent & Students Info - Compact Layout */}
           <Card>
-            <CardHeader>
-              <CardTitle>ข้อมูลผู้ปกครอง</CardTitle>
+            <CardHeader className="pb-4">
+              <CardTitle>ข้อมูลการจอง</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex items-center gap-2">
-                <User className="h-4 w-4 text-gray-400" />
-                <span className="font-medium">{booking.parentName}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Phone className="h-4 w-4 text-gray-400" />
-                <span>{booking.parentPhone}</span>
-              </div>
-              {booking.parentEmail && (
+            <CardContent className="space-y-4">
+              {/* Parent Info - Inline */}
+              <div className="flex flex-wrap items-center gap-4 pb-4 border-b">
                 <div className="flex items-center gap-2">
-                  <Mail className="h-4 w-4 text-gray-400" />
-                  <span>{booking.parentEmail}</span>
+                  <User className="h-4 w-4 text-gray-400" />
+                  <span className="font-medium">{booking.parentName}</span>
                 </div>
-              )}
-            </CardContent>
-          </Card>
+                <div className="flex items-center gap-2">
+                  <Phone className="h-4 w-4 text-gray-400" />
+                  <span className="text-sm">{booking.parentPhone}</span>
+                </div>
+                {booking.parentEmail && (
+                  <div className="flex items-center gap-2">
+                    <Mail className="h-4 w-4 text-gray-400" />
+                    <span className="text-sm">{booking.parentEmail}</span>
+                  </div>
+                )}
+              </div>
 
-          {/* Students */}
-          <Card>
-            <CardHeader>
-              <CardTitle>นักเรียน ({booking.students.length} คน)</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {booking.students.map((student, idx) => (
-                <div key={idx} className="p-4 bg-gray-50 rounded-lg space-y-2">
-                  <div className="font-medium">{student.name}</div>
-                  {student.schoolName && (
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <School className="h-3 w-3" />
-                      {student.schoolName}
-                      {student.gradeLevel && ` (${student.gradeLevel})`}
+              {/* Students - Compact */}
+              <div className="space-y-3">
+                <h4 className="text-sm font-medium text-gray-700">นักเรียน ({booking.students.length} คน)</h4>
+                {booking.students.map((student, idx) => (
+                  <div key={idx} className="pl-4 border-l-2 border-gray-200 space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-sm">{student.name}</span>
+                      {student.schoolName && (
+                        <span className="text-xs text-gray-500">
+                          - {student.schoolName} {student.gradeLevel && `(${student.gradeLevel})`}
+                        </span>
+                      )}
                     </div>
-                  )}
-                  <div className="text-sm">
-                    <span className="text-gray-500">วิชาที่สนใจ:</span>
-                    <div className="flex flex-wrap gap-1 mt-1">
+                    <div className="flex flex-wrap gap-1">
                       {student.subjectInterests.map(subjectId => {
                         const subject = subjects.find(s => s.id === subjectId);
                         return subject ? (
-                          <Badge key={subjectId} variant="outline" className="text-xs">
+                          <Badge key={subjectId} variant="outline" className="text-xs h-5">
                             {subject.name}
                           </Badge>
                         ) : null;
                       })}
                     </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </CardContent>
           </Card>
 
           {/* Trial Sessions */}
           <Card>
-            <CardHeader>
+            <CardHeader className="pb-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle>การทดลองเรียน</CardTitle>
-                  <CardDescription>
+                  <CardTitle className="text-lg">การทดลองเรียน</CardTitle>
+                  <CardDescription className="text-xs">
                     จัดการนัดหมายทดลองเรียนสำหรับแต่ละนักเรียน
                   </CardDescription>
                 </div>
@@ -432,8 +429,8 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
         <div className="space-y-6">
           {/* Quick Actions */}
           <Card>
-            <CardHeader>
-              <CardTitle>การดำเนินการ</CardTitle>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">การดำเนินการ</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
               {booking.status === 'new' && (
@@ -447,13 +444,23 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
                 </Button>
               )}
               
-              {booking.status === 'contacted' && sessions.length === 0 && (
-                <Alert>
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>
-                    กรุณานัดหมายทดลองเรียนให้กับนักเรียน
-                  </AlertDescription>
-                </Alert>
+              {booking.status === 'contacted' && (
+                <>
+                  {sessions.length === 0 && (
+                    <Alert className="mb-2">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription>
+                        กรุณานัดหมายทดลองเรียนให้กับนักเรียน
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                  <button
+                    onClick={() => handleStatusUpdate('new')}
+                    className="text-xs text-gray-500 hover:text-gray-700 underline w-full text-center"
+                  >
+                    กลับสถานะเป็นยังไม่ได้ติดต่อ
+                  </button>
+                </>
               )}
               
               {sessions.some(s => s.status === 'attended' && !s.converted) && (

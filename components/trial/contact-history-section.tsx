@@ -39,19 +39,15 @@ export default function ContactHistorySection({ booking, onUpdate }: ContactHist
 
   // Build contact history from booking data
   const getContactHistory = (): ContactHistoryEntry[] => {
-    const history: ContactHistoryEntry[] = [];
+    // If no contact note, return empty
+    if (!booking.contactNote) return [];
     
-    // Add initial contact if exists
-    if (booking.contactedAt) {
-      history.push({
-        date: booking.contactedAt,
-        type: 'contacted',
-        note: booking.contactNote || 'ติดต่อผู้ปกครองแล้ว',
-      });
-    }
-    
-    // Sort by date descending
-    return history.sort((a, b) => b.date.getTime() - a.date.getTime());
+    // Return single entry with the full note
+    return [{
+      date: booking.contactedAt || booking.createdAt,
+      type: 'contacted',
+      note: booking.contactNote,
+    }];
   };
 
   const handleAddNote = async () => {
@@ -168,63 +164,18 @@ export default function ContactHistorySection({ booking, onUpdate }: ContactHist
           </div>
         ) : (
           <div className="space-y-3">
-            {contactHistory.map((entry, index) => (
-              <div key={index} className="relative pl-8">
-                {/* Timeline line */}
-                {index < contactHistory.length - 1 && (
-                  <div className="absolute left-3 top-8 bottom-0 w-0.5 bg-gray-200" />
-                )}
-                
-                {/* Timeline dot */}
-                <div className="absolute left-0 top-2">
-                  {entry.type === 'contacted' ? (
-                    <div className="w-6 h-6 bg-yellow-100 rounded-full flex items-center justify-center">
-                      <PhoneCall className="h-3 w-3 text-yellow-600" />
-                    </div>
-                  ) : (
-                    <div className="w-6 h-6 bg-gray-100 rounded-full flex items-center justify-center">
-                      <MessageSquare className="h-3 w-3 text-gray-600" />
-                    </div>
-                  )}
-                </div>
-
-                {/* Content */}
-                <div className="bg-white border rounded-lg p-3">
-                  <div className="flex items-start justify-between mb-1">
-                    <div className="flex items-center gap-2">
-                      <Clock className="h-3 w-3 text-gray-400" />
-                      <span className="text-xs text-gray-500">
-                        {formatDate(entry.date, 'long')}
-                      </span>
-                    </div>
-                    {entry.type === 'contacted' && (
-                      <Badge variant="outline" className="text-xs">
-                        ติดต่อครั้งแรก
-                      </Badge>
-                    )}
-                  </div>
-                  <p className="text-sm text-gray-700 whitespace-pre-wrap">
-                    {entry.note}
-                  </p>
-                  {entry.by && (
-                    <div className="flex items-center gap-1 mt-1">
-                      <User className="h-3 w-3 text-gray-400" />
-                      <span className="text-xs text-gray-500">โดย {entry.by}</span>
-                    </div>
-                  )}
-                </div>
+            <div className="bg-gray-50 rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <PhoneCall className="h-4 w-4 text-yellow-600" />
+                <span className="text-sm font-medium text-gray-700">บันทึกการติดต่อ</span>
+                <span className="text-xs text-gray-500">
+                  ({formatDate(contactHistory[0].date, 'long')})
+                </span>
               </div>
-            ))}
-          </div>
-        )}
-
-        {/* Multi-line notes display */}
-        {booking.contactNote && booking.contactNote.includes('\n') && (
-          <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-            <h4 className="text-sm font-medium mb-2">บันทึกทั้งหมด</h4>
-            <p className="text-sm text-gray-700 whitespace-pre-wrap">
-              {booking.contactNote}
-            </p>
+              <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                {contactHistory[0].note}
+              </p>
+            </div>
           </div>
         )}
       </CardContent>
