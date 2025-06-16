@@ -37,7 +37,8 @@ import {
   getTrialBooking, 
   getTrialSessionsByBooking,
   updateBookingStatus,
-  updateTrialSession
+  updateTrialSession,
+  cancelTrialSession
 } from '@/lib/services/trial-bookings';
 import { getSubjects } from '@/lib/services/subjects';
 import { getTeachers } from '@/lib/services/teachers';
@@ -47,6 +48,7 @@ import { formatDate } from '@/lib/utils';
 import TrialSessionDialog from '@/components/trial/trial-session-dialog';
 import ContactHistorySection from '@/components/trial/contact-history-section';
 import ConvertToStudentDialog from '@/components/trial/convert-to-student-dialog';
+import RescheduleTrialDialog from '@/components/trial/reschedule-trial-dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -93,6 +95,7 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
   // Modal states
   const [sessionModalOpen, setSessionModalOpen] = useState(false);
   const [convertModalOpen, setConvertModalOpen] = useState(false);
+  const [rescheduleModalOpen, setRescheduleModalOpen] = useState(false);
   const [selectedSession, setSelectedSession] = useState<TrialSession | null>(null);
   const [selectedStudent, setSelectedStudent] = useState<string>('');
 
@@ -129,15 +132,9 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
       const roomsData: Record<string, Room[]> = {};
       for (const branch of branchesData) {
         const branchRooms = await getRoomsByBranch(branch.id);
-        console.log(`Rooms for branch ${branch.id}:`, branchRooms);
         roomsData[branch.id] = branchRooms;
       }
       setRooms(roomsData);
-      
-      // Debug: Log session room IDs
-      sessionsData.forEach(session => {
-        console.log(`Session ${session.id} - Branch: ${session.branchId}, Room ID: ${session.roomId}`);
-      });
     } catch (error) {
       console.error('Error loading data:', error);
       toast.error('เกิดข้อผิดพลาดในการโหลดข้อมูล');
@@ -172,6 +169,12 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
   const handleConversionSuccess = () => {
     loadData();
     setConvertModalOpen(false);
+    setSelectedSession(null);
+  };
+
+  const handleRescheduleSuccess = () => {
+    loadData();
+    setRescheduleModalOpen(false);
     setSelectedSession(null);
   };
 
@@ -377,7 +380,6 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
                         const teacher = teachers.find(t => t.id === session.teacherId);
                         const branch = branches.find(b => b.id === session.branchId);
                         const room = rooms[session.branchId]?.find(r => r.id === session.roomId);
-                        console.log(`Looking for room ${session.roomId} in branch ${session.branchId}:`, room);
                         const isPast = new Date(session.scheduledDate) < new Date();
                         
                         return (
@@ -416,7 +418,7 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
                               </div>
                             </TableCell>
                             <TableCell className="text-center">
-                              {session.status === 'scheduled' ? (
+                              {session.status === 'scheduled' && isPast ? (
                                 <div className="flex gap-2 justify-center">
                                   <Button
                                     size="sm"
@@ -484,6 +486,10 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
                                     ไม่มา
                                   </Button>
                                 </div>
+                              ) : session.status === 'scheduled' && !isPast ? (
+                                <Badge className="bg-purple-100 text-purple-700">
+                                  รอถึงวัน
+                                </Badge>
                               ) : (
                                 <Badge className={
                                   session.status === 'attended' ? 'bg-green-100 text-green-700' :
@@ -499,32 +505,34 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
                             <TableCell className="text-right">
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="sm">
+                                  <Button 
+                                    variant="ghost" 
+                                    size="sm"
+                                    className="h-8 w-8 p-0"
+                                  >
+                                    <span className="sr-only">Open menu</span>
                                     <MoreVertical className="h-4 w-4" />
                                   </Button>
                                 </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
+                                <DropdownMenuContent align="end" className="w-56 z-50">
                                   <DropdownMenuLabel>จัดการ</DropdownMenuLabel>
                                   <DropdownMenuSeparator />
                                   
                                   {session.status === 'scheduled' && isPast && (
                                     <DropdownMenuItem
-                                      onClick={async () => {
+                                      onSelect={async () => {
                                         try {
-                                          // Update session status
                                           await updateTrialSession(session.id, {
                                             status: 'attended',
                                             attended: true
                                           });
                                           
-                                          // Check if all sessions are completed
                                           const allSessions = sessions.filter(s => s.id !== session.id);
                                           const allAttended = allSessions.every(s => 
                                             s.status === 'attended' || s.status === 'absent' || s.status === 'cancelled'
                                           );
                                           
                                           if (allAttended) {
-                                            // Update booking status to completed
                                             await updateBookingStatus(booking.id, 'completed');
                                           }
                                           
@@ -543,11 +551,11 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
                                   
                                   {session.status === 'attended' && !session.converted && (
                                     <DropdownMenuItem 
-                                      onClick={() => {
+                                      onSelect={() => {
                                         setSelectedSession(session);
                                         setConvertModalOpen(true);
                                       }}
-                                      className="text-green-600"
+                                      className="text-green-600 focus:text-green-600"
                                     >
                                       <UserPlus className="h-4 w-4 mr-2" />
                                       แปลงเป็นนักเรียน
@@ -556,12 +564,30 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
                                   
                                   {session.status === 'scheduled' && !isPast && (
                                     <>
-                                      <DropdownMenuItem>
+                                      <DropdownMenuItem
+                                        onSelect={() => {
+                                          setSelectedSession(session);
+                                          setRescheduleModalOpen(true);
+                                        }}
+                                      >
                                         <Edit className="h-4 w-4 mr-2" />
-                                        แก้ไขนัดหมาย
+                                        เปลี่ยนวันนัดหมาย
                                       </DropdownMenuItem>
                                       <DropdownMenuSeparator />
-                                      <DropdownMenuItem className="text-red-600">
+                                      <DropdownMenuItem 
+                                        className="text-red-600 focus:text-red-600"
+                                        onSelect={async () => {
+                                          if (confirm('ยืนยันการยกเลิกนัดหมาย?')) {
+                                            try {
+                                              await cancelTrialSession(session.id, 'ยกเลิกโดย Admin');
+                                              toast.success('ยกเลิกนัดหมายสำเร็จ');
+                                              loadData();
+                                            } catch (error) {
+                                              toast.error('เกิดข้อผิดพลาดในการยกเลิก');
+                                            }
+                                          }
+                                        }}
+                                      >
                                         <XCircle className="h-4 w-4 mr-2" />
                                         ยกเลิกนัดหมาย
                                       </DropdownMenuItem>
@@ -672,6 +698,18 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
           booking={booking}
           session={selectedSession}
           onSuccess={handleConversionSuccess}
+        />
+      )}
+
+      {rescheduleModalOpen && selectedSession && (
+        <RescheduleTrialDialog
+          isOpen={rescheduleModalOpen}
+          onClose={() => {
+            setRescheduleModalOpen(false);
+            setSelectedSession(null);
+          }}
+          session={selectedSession}
+          onSuccess={handleRescheduleSuccess}
         />
       )}
     </div>

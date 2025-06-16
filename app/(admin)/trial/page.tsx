@@ -8,6 +8,24 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { 
   TestTube, 
   Plus, 
@@ -15,21 +33,21 @@ import {
   Mail,
   Users,
   Calendar,
-  Clock,
   Search,
-  Filter,
   ChevronRight,
   AlertCircle,
   Check,
   X,
   UserPlus,
   PhoneCall,
-  CalendarCheck
+  CalendarCheck,
+  Trash2,
+  Eye
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { TrialBooking } from '@/types/models';
-import { getTrialBookings, getTrialBookingStats } from '@/lib/services/trial-bookings';
+import { getTrialBookings, getTrialBookingStats, deleteTrialBooking } from '@/lib/services/trial-bookings';
 import { formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -56,6 +74,9 @@ export default function TrialBookingsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [stats, setStats] = useState<any>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [bookingToDelete, setBookingToDelete] = useState<TrialBooking | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     loadBookings();
@@ -127,6 +148,30 @@ export default function TrialBookingsPage() {
         {config.label}
       </Badge>
     );
+  };
+
+  const handleDeleteClick = (booking: TrialBooking) => {
+    setBookingToDelete(booking);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!bookingToDelete) return;
+
+    setDeleting(true);
+    try {
+      await deleteTrialBooking(bookingToDelete.id);
+      toast.success('ลบข้อมูลการจองเรียบร้อย');
+      loadBookings();
+      loadStats();
+    } catch (error) {
+      console.error('Error deleting booking:', error);
+      toast.error('ไม่สามารถลบข้อมูลได้');
+    } finally {
+      setDeleting(false);
+      setDeleteDialogOpen(false);
+      setBookingToDelete(null);
+    }
   };
 
   return (
@@ -235,110 +280,137 @@ export default function TrialBookingsPage() {
         </TabsList>
 
         <TabsContent value={selectedStatus} className="mt-6">
-          {loading ? (
-            <div className="text-center py-12">
-              <div className="inline-flex items-center gap-2 text-gray-500">
-                <Clock className="h-5 w-5 animate-spin" />
-                กำลังโหลด...
-              </div>
-            </div>
-          ) : filteredBookings.length === 0 ? (
-            <Card>
-              <CardContent className="text-center py-12">
-                <TestTube className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                <p className="text-gray-500">
-                  {searchTerm ? 'ไม่พบข้อมูลที่ค้นหา' : 'ยังไม่มีการจองทดลองเรียน'}
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="space-y-4">
-              {filteredBookings.map((booking) => (
-                <Card key={booking.id} className="hover:shadow-md transition-shadow">
-                  <CardContent className="p-6">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1 space-y-3">
-                        {/* Header */}
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <h3 className="font-semibold text-lg">{booking.parentName}</h3>
-                            <div className="flex items-center gap-4 mt-1 text-sm text-gray-600">
-                              <span className="flex items-center gap-1">
+          <Card>
+            <CardContent className="p-0">
+              {loading ? (
+                <div className="text-center py-12">
+                  <div className="inline-flex items-center gap-2 text-gray-500">
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600"></div>
+                    กำลังโหลด...
+                  </div>
+                </div>
+              ) : filteredBookings.length === 0 ? (
+                <div className="text-center py-12">
+                  <TestTube className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                  <p className="text-gray-500">
+                    {searchTerm ? 'ไม่พบข้อมูลที่ค้นหา' : 'ยังไม่มีการจองทดลองเรียน'}
+                  </p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>วันที่จอง</TableHead>
+                        <TableHead>ช่องทาง</TableHead>
+                        <TableHead>ผู้ปกครอง</TableHead>
+                        <TableHead>นักเรียน</TableHead>
+                        <TableHead>สถานะ</TableHead>
+                        <TableHead className="text-center">จัดการ</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredBookings.map((booking) => (
+                        <TableRow key={booking.id}>
+                          <TableCell className="text-sm">
+                            <div className="flex items-center gap-1">
+                              <Calendar className="h-3 w-3 text-gray-400" />
+                              {formatDate(booking.createdAt)}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {getSourceBadge(booking.source)}
+                          </TableCell>
+                          <TableCell>
+                            <div>
+                              <div className="font-medium">{booking.parentName}</div>
+                              <div className="text-sm text-gray-600 flex items-center gap-2 mt-1">
                                 <Phone className="h-3 w-3" />
                                 {booking.parentPhone}
-                              </span>
+                              </div>
                               {booking.parentEmail && (
-                                <span className="flex items-center gap-1">
+                                <div className="text-sm text-gray-600 flex items-center gap-2 mt-1">
                                   <Mail className="h-3 w-3" />
                                   {booking.parentEmail}
-                                </span>
+                                </div>
                               )}
                             </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {getSourceBadge(booking.source)}
+                          </TableCell>
+                          <TableCell>
+                            <div className="space-y-2">
+                              {booking.students.map((student, idx) => (
+                                <div key={idx} className="text-sm">
+                                  <div className="font-medium">{student.name}</div>
+                                  {student.schoolName && (
+                                    <div className="text-gray-600">
+                                      {student.schoolName}
+                                      {student.gradeLevel && ` (${student.gradeLevel})`}
+                                    </div>
+                                  )}
+                                  <div className="text-gray-500">
+                                    สนใจ {student.subjectInterests.length} วิชา
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </TableCell>
+                          <TableCell>
                             {getStatusBadge(booking.status)}
-                          </div>
-                        </div>
-
-                        {/* Students */}
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-1 text-sm font-medium">
-                            <Users className="h-4 w-4" />
-                            นักเรียน ({booking.students.length} คน)
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                            {booking.students.map((student, idx) => (
-                              <div key={idx} className="bg-gray-50 rounded-lg p-3 text-sm">
-                                <div className="font-medium">{student.name}</div>
-                                {student.schoolName && (
-                                  <div className="text-gray-600">
-                                    {student.schoolName} {student.gradeLevel && `(${student.gradeLevel})`}
-                                  </div>
-                                )}
-                                {student.subjectInterests.length > 0 && (
-                                  <div className="mt-1">
-                                    <span className="text-gray-500">สนใจ:</span>{' '}
-                                    <span className="text-red-600">
-                                      {student.subjectInterests.length} วิชา
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Footer */}
-                        <div className="flex items-center justify-between pt-2">
-                          <div className="flex items-center gap-4 text-sm text-gray-500">
-                            <span className="flex items-center gap-1">
-                              <Calendar className="h-3 w-3" />
-                              {formatDate(booking.createdAt)}
-                            </span>
-                            {booking.contactedAt && (
-                              <span className="flex items-center gap-1">
-                                <PhoneCall className="h-3 w-3" />
-                                ติดต่อเมื่อ {formatDate(booking.contactedAt)}
-                              </span>
-                            )}
-                          </div>
-                          <Link href={`/trial/${booking.id}`}>
-                            <Button variant="outline" size="sm">
-                              ดูรายละเอียด
-                              <ChevronRight className="h-4 w-4 ml-1" />
-                            </Button>
-                          </Link>
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center justify-center gap-2">
+                              <Link href={`/trial/${booking.id}`}>
+                                <Button variant="outline" size="sm">
+                                  <Eye className="h-4 w-4" />
+                                  <span className="ml-2 hidden sm:inline">ดูรายละเอียด</span>
+                                </Button>
+                              </Link>
+                              {(booking.status === 'new' || booking.status === 'cancelled') && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleDeleteClick(booking)}
+                                  className="text-red-600 hover:text-red-700"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>ยืนยันการลบข้อมูล</AlertDialogTitle>
+            <AlertDialogDescription>
+              คุณต้องการลบข้อมูลการจองของ {bookingToDelete?.parentName} ใช่หรือไม่?
+              <br />
+              การดำเนินการนี้ไม่สามารถย้อนกลับได้
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>ยกเลิก</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteConfirm}
+              disabled={deleting}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {deleting ? 'กำลังลบ...' : 'ลบข้อมูล'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

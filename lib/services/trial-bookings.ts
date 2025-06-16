@@ -619,6 +619,42 @@ export async function getUpcomingTrialSessions(
   }
 }
 
+// Delete trial booking (only for new or cancelled bookings)
+export async function deleteTrialBooking(id: string): Promise<void> {
+  try {
+    // Get booking to check status
+    const booking = await getTrialBooking(id);
+    if (!booking) {
+      throw new Error('Booking not found');
+    }
+    
+    // Only allow deletion for new or cancelled bookings
+    if (booking.status !== 'new' && booking.status !== 'cancelled') {
+      throw new Error('Can only delete new or cancelled bookings');
+    }
+    
+    // Delete all associated trial sessions first
+    const sessions = await getTrialSessionsByBooking(id);
+    const batch = writeBatch(db);
+    
+    // Delete all sessions
+    for (const session of sessions) {
+      const sessionRef = doc(db, SESSIONS_COLLECTION, session.id);
+      batch.delete(sessionRef);
+    }
+    
+    // Delete the booking
+    const bookingRef = doc(db, BOOKINGS_COLLECTION, id);
+    batch.delete(bookingRef);
+    
+    // Commit the batch
+    await batch.commit();
+  } catch (error) {
+    console.error('Error deleting trial booking:', error);
+    throw error;
+  }
+}
+
 // Get trial booking stats
 export async function getTrialBookingStats(): Promise<{
   total: number;
@@ -663,3 +699,4 @@ export async function getTrialBookingStats(): Promise<{
     };
   }
 }
+
