@@ -1,3 +1,5 @@
+// components/dashboard/dashboard-calendar.tsx
+
 'use client';
 
 import { useEffect, useRef } from 'react';
@@ -220,6 +222,8 @@ export default function DashboardCalendar({
         }}
         events={events.map(event => ({
           ...event,
+          // Add text color from the event
+          textColor: event.textColor,
           // Add tooltip content
           title: event.extendedProps.type === 'makeup' 
             ? `[Makeup] ${event.extendedProps.studentNickname} - ${event.extendedProps.originalClassName}`
@@ -444,7 +448,7 @@ export default function DashboardCalendar({
           border-top-style: dotted;
         }
         
-        /* Regular class styles - Gray background */
+        /* Regular class styles - Gray background (default) */
         .dashboard-calendar .class-event {
           background-color: #E5E7EB !important;
           border-color: #D1D5DB !important;
@@ -453,6 +457,13 @@ export default function DashboardCalendar({
         
         .dashboard-calendar .class-event:hover {
           background-color: #D1D5DB !important;
+        }
+        
+        /* Completed class styles - Green (จากสีที่ส่งมาจาก backend) */
+        .dashboard-calendar .fc-event[style*="rgb(209, 250, 229)"] {
+          background-color: #D1FAE5 !important;
+          border-color: #A7F3D0 !important;
+          color: #065F46 !important;
         }
         
         /* Makeup event styles - Purple */
@@ -475,11 +486,6 @@ export default function DashboardCalendar({
         
         .dashboard-calendar .trial-event:hover {
           background-color: #FDBA74 !important;
-        }
-        
-        /* Completed class styles - Green */
-        .dashboard-calendar .fc-event[style*="rgb(209, 250, 229)"] {
-          opacity: 0.85;
         }
         
         /* Ensure calendar takes full height without scroll */
@@ -626,6 +632,14 @@ export default function DashboardCalendar({
           padding-bottom: 4px;
           border-bottom: 1px solid rgba(255, 255, 255, 0.2);
         }
+        
+        /* Force text color for completed events */
+        .dashboard-calendar .fc-event[style*="rgb(209, 250, 229)"] .fc-event-title,
+        .dashboard-calendar .fc-event[style*="rgb(209, 250, 229)"] .fc-event-time,
+        .dashboard-calendar .fc-event[style*="rgb(209, 250, 229)"] * {
+          color: #065F46 !important;
+        }
+        
         @media (max-width: 640px) {
           .dashboard-calendar .fc-toolbar {
             flex-direction: column;

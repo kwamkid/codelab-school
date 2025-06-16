@@ -77,6 +77,9 @@ export async function getCalendarEvents(
     );
 
     const events: CalendarEvent[] = [];
+    
+    // Get current date/time for comparison
+    const now = new Date();
 
     // 1. Process regular class schedules
     for (const cls of classes) {
@@ -120,16 +123,32 @@ export async function getCalendarEvents(
         const eventEnd = new Date(sessionDate);
         eventEnd.setHours(endHour, endMinute, 0, 0);
 
-        // Determine color based on status - using neutral color for regular classes
+        // Determine status and color
         let backgroundColor = '#E5E7EB'; // Gray-200 for regular classes
         let borderColor = '#D1D5DB'; // Gray-300 border
+        let effectiveStatus = schedule.status;
         
-        if (schedule.status === 'completed') {
+        // Check if the session has passed (ended)
+        if (eventEnd < now) {
+          // Past sessions should be marked as completed
+          // Unless they're already marked as cancelled or rescheduled
+          if (schedule.status === 'scheduled') {
+            effectiveStatus = 'completed';
+          }
+        }
+        
+        // Apply colors based on effective status
+        if (effectiveStatus === 'completed') {
           backgroundColor = '#D1FAE5'; // Green-100 for completed
           borderColor = '#A7F3D0'; // Green-200 border
-        } else if (schedule.status === 'rescheduled') {
+        } else if (effectiveStatus === 'rescheduled') {
           backgroundColor = '#FEF3C7'; // Amber-100 for rescheduled
           borderColor = '#FDE68A'; // Amber-200 border
+        } else if (schedule.attendance && schedule.attendance.length > 0) {
+          // If there's attendance data, mark as completed even if in future
+          backgroundColor = '#D1FAE5'; // Green-100 for completed
+          borderColor = '#A7F3D0'; // Green-200 border
+          effectiveStatus = 'completed';
         }
 
         // Get room name
@@ -144,7 +163,7 @@ export async function getCalendarEvents(
           end: eventEnd,
           backgroundColor,
           borderColor,
-          textColor: '#374151', // Gray-700 text
+          textColor: effectiveStatus === 'completed' ? '#065F46' : '#374151', // Green-800 for completed, Gray-700 for others
           extendedProps: {
             type: 'class',
             branchId: cls.branchId,
@@ -155,7 +174,7 @@ export async function getCalendarEvents(
             enrolled: cls.enrolledCount,
             maxStudents: cls.maxStudents,
             sessionNumber: schedule.sessionNumber,
-            status: schedule.status
+            status: effectiveStatus // Use effective status instead of schedule status
           }
         });
       });
@@ -196,9 +215,17 @@ export async function getCalendarEvents(
       const eventEnd = new Date(makeupDate);
       eventEnd.setHours(endHour, endMinute, 0, 0);
       
-      // Purple color for makeup classes
-      const backgroundColor = '#E9D5FF'; // Purple-100
-      const borderColor = '#D8B4FE'; // Purple-200
+      // Determine color based on time and attendance
+      let backgroundColor = '#E9D5FF'; // Purple-100 default
+      let borderColor = '#D8B4FE'; // Purple-200 default
+      let textColor = '#6B21A8'; // Purple-800 default
+      
+      // Check if makeup has passed or has attendance
+      if (eventEnd < now || makeup.attendance) {
+        backgroundColor = '#D1FAE5'; // Green-100 for completed
+        borderColor = '#A7F3D0'; // Green-200 border
+        textColor = '#065F46'; // Green-800 text
+      }
       
       events.push({
         id: `makeup-${makeup.id}`,
@@ -208,7 +235,7 @@ export async function getCalendarEvents(
         end: eventEnd,
         backgroundColor,
         borderColor,
-        textColor: '#6B21A8', // Purple-800 text
+        textColor,
         extendedProps: {
           type: 'makeup',
           branchId: makeup.makeupSchedule.branchId,
@@ -254,9 +281,17 @@ export async function getCalendarEvents(
       const eventEnd = new Date(trialDate);
       eventEnd.setHours(endHour, endMinute, 0, 0);
       
-      // Orange color for trial classes
-      const backgroundColor = '#FED7AA'; // Orange-200
-      const borderColor = '#FDBA74'; // Orange-300
+      // Determine color based on time and attendance
+      let backgroundColor = '#FED7AA'; // Orange-200 default
+      let borderColor = '#FDBA74'; // Orange-300 default
+      let textColor = '#9A3412'; // Orange-900 default
+      
+      // Check if trial has passed or has been attended
+      if (eventEnd < now || trial.attended) {
+        backgroundColor = '#D1FAE5'; // Green-100 for completed
+        borderColor = '#A7F3D0'; // Green-200 border
+        textColor = '#065F46'; // Green-800 text
+      }
       
       events.push({
         id: `trial-${trial.id}`,
@@ -266,7 +301,7 @@ export async function getCalendarEvents(
         end: eventEnd,
         backgroundColor,
         borderColor,
-        textColor: '#9A3412', // Orange-900 text
+        textColor,
         extendedProps: {
           type: 'trial',
           branchId: trial.branchId,

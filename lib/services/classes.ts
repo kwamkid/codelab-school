@@ -1,3 +1,5 @@
+// lib/services/classes.ts
+
 import { 
   collection, 
   doc, 
@@ -10,11 +12,13 @@ import {
   orderBy,
   Timestamp,
   serverTimestamp,
-  writeBatch
+  writeBatch,
+  DocumentData,
+  deleteDoc
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
-import { Class, ClassSchedule, RoomAvailabilityResult } from '@/types/models';
-import { getHolidaysForBranch } from './holidays';
+import { Class, ClassSchedule, Room } from '@/types/models';
+import { getRoomsByBranch } from './rooms';
 
 const COLLECTION_NAME = 'classes';
 
@@ -23,7 +27,7 @@ export async function getClasses(): Promise<Class[]> {
   try {
     const q = query(
       collection(db, COLLECTION_NAME),
-      orderBy('startDate', 'desc')
+      orderBy('createdAt', 'desc')
     );
     const querySnapshot = await getDocs(q);
     
@@ -36,65 +40,6 @@ export async function getClasses(): Promise<Class[]> {
     } as Class));
   } catch (error) {
     console.error('Error getting classes:', error);
-    throw error;
-  }
-}
-
-// Fix enrolled count (for data correction)
-export async function fixEnrolledCount(classId: string, correctCount: number): Promise<void> {
-  try {
-    const docRef = doc(db, COLLECTION_NAME, classId);
-    await updateDoc(docRef, {
-      enrolledCount: Math.max(0, correctCount) // Ensure it's never negative
-    });
-  } catch (error) {
-    console.error('Error fixing enrolled count:', error);
-    throw error;
-  }
-}
-
-// Get classes by branch
-export async function getClassesByBranch(branchId: string): Promise<Class[]> {
-  try {
-    const q = query(
-      collection(db, COLLECTION_NAME),
-      where('branchId', '==', branchId),
-      orderBy('startDate', 'desc')
-    );
-    const querySnapshot = await getDocs(q);
-    
-    return querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      startDate: doc.data().startDate?.toDate() || new Date(),
-      endDate: doc.data().endDate?.toDate() || new Date(),
-      createdAt: doc.data().createdAt?.toDate() || new Date(),
-    } as Class));
-  } catch (error) {
-    console.error('Error getting classes by branch:', error);
-    throw error;
-  }
-}
-
-// Get classes by teacher
-export async function getClassesByTeacher(teacherId: string): Promise<Class[]> {
-  try {
-    const q = query(
-      collection(db, COLLECTION_NAME),
-      where('teacherId', '==', teacherId),
-      orderBy('startDate', 'desc')
-    );
-    const querySnapshot = await getDocs(q);
-    
-    return querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      startDate: doc.data().startDate?.toDate() || new Date(),
-      endDate: doc.data().endDate?.toDate() || new Date(),
-      createdAt: doc.data().createdAt?.toDate() || new Date(),
-    } as Class));
-  } catch (error) {
-    console.error('Error getting classes by teacher:', error);
     throw error;
   }
 }
@@ -121,32 +66,111 @@ export async function getClass(id: string): Promise<Class | null> {
   }
 }
 
-// Create new class
-export async function createClass(classData: Omit<Class, 'id' | 'createdAt'>): Promise<string> {
+// Get classes by subject
+export async function getClassesBySubject(subjectId: string): Promise<Class[]> {
   try {
-    // ตรวจสอบว่าวันเริ่มต้นผ่านมาแล้วหรือยัง
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const startDate = new Date(classData.startDate);
-    startDate.setHours(0, 0, 0, 0);
+    const q = query(
+      collection(db, COLLECTION_NAME),
+      where('subjectId', '==', subjectId),
+      orderBy('startDate', 'desc')
+    );
+    const querySnapshot = await getDocs(q);
     
-    // ถ้าวันเริ่มต้นผ่านมาแล้ว ให้เปลี่ยนสถานะเป็น started
-    let status = classData.status;
-    if (startDate <= today && (status === 'draft' || status === 'published')) {
-      status = 'started';
-    }
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      startDate: doc.data().startDate?.toDate() || new Date(),
+      endDate: doc.data().endDate?.toDate() || new Date(),
+      createdAt: doc.data().createdAt?.toDate() || new Date(),
+    } as Class));
+  } catch (error) {
+    console.error('Error getting classes by subject:', error);
+    return [];
+  }
+}
+
+// Get classes by teacher
+export async function getClassesByTeacher(teacherId: string): Promise<Class[]> {
+  try {
+    const q = query(
+      collection(db, COLLECTION_NAME),
+      where('teacherId', '==', teacherId),
+      orderBy('startDate', 'desc')
+    );
+    const querySnapshot = await getDocs(q);
     
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      startDate: doc.data().startDate?.toDate() || new Date(),
+      endDate: doc.data().endDate?.toDate() || new Date(),
+      createdAt: doc.data().createdAt?.toDate() || new Date(),
+    } as Class));
+  } catch (error) {
+    console.error('Error getting classes by teacher:', error);
+    return [];
+  }
+}
+
+// Get classes by branch
+export async function getClassesByBranch(branchId: string): Promise<Class[]> {
+  try {
+    const q = query(
+      collection(db, COLLECTION_NAME),
+      where('branchId', '==', branchId),
+      orderBy('startDate', 'desc')
+    );
+    const querySnapshot = await getDocs(q);
+    
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      startDate: doc.data().startDate?.toDate() || new Date(),
+      endDate: doc.data().endDate?.toDate() || new Date(),
+      createdAt: doc.data().createdAt?.toDate() || new Date(),
+    } as Class));
+  } catch (error) {
+    console.error('Error getting classes by branch:', error);
+    return [];
+  }
+}
+
+// Create new class with schedules
+export async function createClass(
+  classData: Omit<Class, 'id' | 'createdAt' | 'enrolledCount'>,
+  holidayDates: Date[]
+): Promise<string> {
+  try {
+    // Add class document
     const docRef = await addDoc(collection(db, COLLECTION_NAME), {
       ...classData,
-      status,
       startDate: Timestamp.fromDate(classData.startDate),
       endDate: Timestamp.fromDate(classData.endDate),
+      enrolledCount: 0,
       createdAt: serverTimestamp(),
     });
-    
-    // Generate schedules for the class
-    await generateClassSchedules(docRef.id, classData);
-    
+
+    // Generate schedules
+    const schedules = generateSchedules(
+      classData.startDate,
+      classData.endDate,
+      classData.daysOfWeek,
+      classData.totalSessions,
+      holidayDates
+    );
+
+    // Add schedules as subcollection
+    const batch = writeBatch(db);
+    schedules.forEach((schedule, index) => {
+      const scheduleRef = doc(collection(db, COLLECTION_NAME, docRef.id, 'schedules'));
+      batch.set(scheduleRef, {
+        sessionDate: Timestamp.fromDate(schedule),
+        sessionNumber: index + 1,
+        status: 'scheduled',
+      });
+    });
+
+    await batch.commit();
     return docRef.id;
   } catch (error) {
     console.error('Error creating class:', error);
@@ -155,65 +179,51 @@ export async function createClass(classData: Omit<Class, 'id' | 'createdAt'>): P
 }
 
 // Update class
-export async function updateClass(id: string, classData: Partial<Class>): Promise<void> {
+export async function updateClass(
+  id: string,
+  classData: Partial<Class>
+): Promise<void> {
   try {
     const docRef = doc(db, COLLECTION_NAME, id);
     
-    // Remove fields that shouldn't be updated
-    const dataToUpdate = { ...classData };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    delete (dataToUpdate as any).id;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    delete (dataToUpdate as any).createdAt;
-    
-    // Convert dates to Firestore timestamps
-    if (dataToUpdate.startDate instanceof Date) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (dataToUpdate as any).startDate = Timestamp.fromDate(dataToUpdate.startDate);
+    // Convert dates to Timestamps
+    const updateData: Partial<DocumentData> = { ...classData };
+    if (classData.startDate) {
+      updateData.startDate = Timestamp.fromDate(classData.startDate);
     }
-    if (dataToUpdate.endDate instanceof Date) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (dataToUpdate as any).endDate = Timestamp.fromDate(dataToUpdate.endDate);
+    if (classData.endDate) {
+      updateData.endDate = Timestamp.fromDate(classData.endDate);
     }
     
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await updateDoc(docRef, dataToUpdate as any);
+    await updateDoc(docRef, updateData);
   } catch (error) {
     console.error('Error updating class:', error);
     throw error;
   }
 }
 
-// Delete class (hard delete - only for classes with no students)
+// Delete class
 export async function deleteClass(id: string): Promise<void> {
   try {
-    // Check if class has enrolled students
-    const classData = await getClass(id);
-    if (!classData) {
-      throw new Error('Class not found');
-    }
-    
-    // Allow deletion if enrolledCount is 0 or negative (to fix data issues)
-    // Only prevent deletion if there are actual enrolled students (> 0)
-    if (classData.enrolledCount > 0) {
+    // First, check if there are enrolled students
+    const classDoc = await getClass(id);
+    if (classDoc && classDoc.enrolledCount > 0) {
       throw new Error('Cannot delete class with enrolled students');
     }
-    
-    // Use batch to delete class and all its schedules
-    const batch = writeBatch(db);
-    
+
     // Delete all schedules
     const schedulesRef = collection(db, COLLECTION_NAME, id, 'schedules');
     const schedulesSnapshot = await getDocs(schedulesRef);
+    
+    const batch = writeBatch(db);
     schedulesSnapshot.docs.forEach(doc => {
       batch.delete(doc.ref);
     });
     
-    // Delete the class document
+    // Delete the class
     const classRef = doc(db, COLLECTION_NAME, id);
     batch.delete(classRef);
     
-    // Commit the batch
     await batch.commit();
   } catch (error) {
     console.error('Error deleting class:', error);
@@ -221,68 +231,142 @@ export async function deleteClass(id: string): Promise<void> {
   }
 }
 
-// Generate class schedules
-async function generateClassSchedules(
-  classId: string, 
-  classData: Omit<Class, 'id' | 'createdAt'>
-): Promise<void> {
+// Get class schedules
+export async function getClassSchedules(classId: string): Promise<ClassSchedule[]> {
   try {
     const schedulesRef = collection(db, COLLECTION_NAME, classId, 'schedules');
-    const schedules = await generateScheduleDates(
-      classData.startDate,
-      classData.daysOfWeek,
-      classData.totalSessions,
-      classData.branchId
-    );
+    const q = query(schedulesRef, orderBy('sessionDate', 'asc'));
+    const querySnapshot = await getDocs(q);
     
-    // Create schedule documents
-    for (let i = 0; i < schedules.length; i++) {
-      const scheduleData: Omit<ClassSchedule, 'id'> = {
-        classId,
-        sessionDate: schedules[i],
-        sessionNumber: i + 1,
-        status: 'scheduled',
-      };
-      
-      await addDoc(schedulesRef, {
-        ...scheduleData,
-        sessionDate: Timestamp.fromDate(scheduleData.sessionDate),
-      });
-    }
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      classId,
+      ...doc.data(),
+      sessionDate: doc.data().sessionDate?.toDate() || new Date(),
+      originalDate: doc.data().originalDate?.toDate(),
+      rescheduledAt: doc.data().rescheduledAt?.toDate(),
+    } as ClassSchedule));
   } catch (error) {
-    console.error('Error generating schedules:', error);
+    console.error('Error getting class schedules:', error);
+    return [];
+  }
+}
+
+// Get single class schedule
+export async function getClassSchedule(
+  classId: string,
+  scheduleId: string
+): Promise<ClassSchedule | null> {
+  try {
+    const scheduleRef = doc(db, COLLECTION_NAME, classId, 'schedules', scheduleId);
+    const scheduleDoc = await getDoc(scheduleRef);
+    
+    if (!scheduleDoc.exists()) {
+      return null;
+    }
+    
+    const data = scheduleDoc.data();
+    return {
+      id: scheduleDoc.id,
+      classId,
+      ...data,
+      sessionDate: data.sessionDate?.toDate() || new Date(),
+      originalDate: data.originalDate?.toDate(),
+      rescheduledAt: data.rescheduledAt?.toDate(),
+    } as ClassSchedule;
+  } catch (error) {
+    console.error('Error getting class schedule:', error);
+    return null;
+  }
+}
+
+// Update class schedule with time validation
+export async function updateClassSchedule(
+  classId: string,
+  scheduleId: string,
+  data: Partial<ClassSchedule>
+): Promise<void> {
+  try {
+    const scheduleRef = doc(db, COLLECTION_NAME, classId, 'schedules', scheduleId);
+    
+    // Get current schedule data
+    const scheduleDoc = await getDoc(scheduleRef);
+    if (!scheduleDoc.exists()) {
+      throw new Error('Schedule not found');
+    }
+    
+    const currentSchedule = scheduleDoc.data();
+    const sessionDate = currentSchedule.sessionDate.toDate();
+    
+    // Get class info for time
+    const classDoc = await getDoc(doc(db, COLLECTION_NAME, classId));
+    if (!classDoc.exists()) {
+      throw new Error('Class not found');
+    }
+    
+    const classData = classDoc.data();
+    const [endHour, endMinute] = classData.endTime.split(':').map(Number);
+    
+    // Create end time for this session
+    const sessionEndTime = new Date(sessionDate);
+    sessionEndTime.setHours(endHour, endMinute, 0, 0);
+    
+    const now = new Date();
+    
+    // Prepare update data
+    const updateData: any = { ...data };
+    
+    // Check if trying to mark as completed but session hasn't ended yet
+    if (data.status === 'completed' && sessionEndTime > now) {
+      // Don't set to completed if session hasn't ended
+      // Unless there's attendance data
+      if (!data.attendance || data.attendance.length === 0) {
+        delete updateData.status;
+      }
+    }
+    
+    // If clearing all attendance (all students unmarked), don't mark as completed
+    if (data.attendance && data.attendance.length === 0 && sessionEndTime > now) {
+      updateData.status = 'scheduled';
+    }
+    
+    // Convert attendance array properly if exists
+    if (updateData.attendance) {
+      updateData.attendance = updateData.attendance.map((att: any) => ({
+        studentId: att.studentId,
+        status: att.status,
+        note: att.note || ''
+      }));
+    }
+    
+    await updateDoc(scheduleRef, updateData);
+  } catch (error) {
+    console.error('Error updating class schedule:', error);
     throw error;
   }
 }
 
-// Generate schedule dates helper with holiday checking
-async function generateScheduleDates(
+// Generate schedule dates
+function generateSchedules(
   startDate: Date,
+  endDate: Date,
   daysOfWeek: number[],
   totalSessions: number,
-  branchId: string
-): Promise<Date[]> {
+  holidayDates: Date[]
+): Date[] {
   const schedules: Date[] = [];
-  const currentDate = new Date(startDate.getTime());
+  const currentDate = new Date(startDate);
   
-  // Calculate end date for holiday lookup (estimate max 6 months)
-  const maxEndDate = new Date(startDate);
-  maxEndDate.setMonth(maxEndDate.getMonth() + 6);
-  
-  // Get all holidays for the branch in the date range
-  const holidays = await getHolidaysForBranch(branchId, startDate, maxEndDate);
-
-  // Create a Set of holiday dates for faster lookup
-  // ทุกวันหยุดคือวันปิดโรงเรียน
-  const holidayDates = new Set(
-    holidays.map(h => h.date.toDateString())
+  // Convert holiday dates to date strings for comparison
+  const holidayStrings = holidayDates.map(date => 
+    date.toISOString().split('T')[0]
   );
   
-  while (schedules.length < totalSessions) {
+  while (schedules.length < totalSessions && currentDate <= endDate) {
     const dayOfWeek = currentDate.getDay();
+    const dateString = currentDate.toISOString().split('T')[0];
     
-    // Check if it's a scheduled day and not a holiday
-    if (daysOfWeek.includes(dayOfWeek) && !holidayDates.has(currentDate.toDateString())) {
+    if (daysOfWeek.includes(dayOfWeek) && !holidayStrings.includes(dateString)) {
       schedules.push(new Date(currentDate));
     }
     
@@ -292,139 +376,51 @@ async function generateScheduleDates(
   return schedules;
 }
 
-// Get class schedules
-export async function getClassSchedules(classId: string): Promise<ClassSchedule[]> {
+// Check if class code exists
+export async function checkClassCodeExists(code: string, excludeId?: string): Promise<boolean> {
   try {
-    const schedulesRef = collection(db, COLLECTION_NAME, classId, 'schedules');
-    const q = query(schedulesRef, orderBy('sessionNumber', 'asc'));
-    const querySnapshot = await getDocs(q);
-    
-    return querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      sessionDate: doc.data().sessionDate?.toDate() || new Date(),
-      originalDate: doc.data().originalDate?.toDate(),
-      rescheduledAt: doc.data().rescheduledAt?.toDate(),
-    } as ClassSchedule));
-  } catch (error) {
-    console.error('Error getting class schedules:', error);
-    throw error;
-  }
-}
-
-// Get single class schedule
-// เพิ่มใน lib/services/classes.ts
-// แทนที่ function getClassSchedule เดิมด้วย:
-
-export async function getClassSchedule(
-  classId: string, 
-  scheduleId: string
-): Promise<ClassSchedule | null> {
-  console.log(`[getClassSchedule] Called with classId: ${classId}, scheduleId: ${scheduleId}`);
-  
-  try {
-    const docRef = doc(db, 'classes', classId, 'schedules', scheduleId);
-    console.log(`[getClassSchedule] Document path: classes/${classId}/schedules/${scheduleId}`);
-    
-    const docSnap = await getDoc(docRef);
-    console.log(`[getClassSchedule] Document exists: ${docSnap.exists()}`);
-    
-    if (docSnap.exists()) {
-      const data = docSnap.data();
-      console.log(`[getClassSchedule] Document data:`, data);
-      
-      const schedule = {
-        id: docSnap.id,
-        classId: classId,
-        ...data,
-        sessionDate: data.sessionDate?.toDate() || new Date(),
-        originalDate: data.originalDate?.toDate(),
-        rescheduledAt: data.rescheduledAt?.toDate(),
-      } as ClassSchedule;
-      
-      console.log(`[getClassSchedule] Returning schedule:`, schedule);
-      return schedule;
-    }
-    
-    console.log(`[getClassSchedule] Document not found`);
-    return null;
-  } catch (error) {
-    console.error(`[getClassSchedule] Error:`, error);
-    return null;
-  }
-}
-
-// Update class schedule
-export async function updateClassSchedule(
-  classId: string,
-  scheduleId: string,
-  scheduleData: Partial<ClassSchedule>
-): Promise<void> {
-  try {
-    const docRef = doc(db, COLLECTION_NAME, classId, 'schedules', scheduleId);
-    
-    // Remove fields that shouldn't be updated
-    const dataToUpdate = { ...scheduleData };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    delete (dataToUpdate as any).id;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    delete (dataToUpdate as any).classId;
-    
-    // Convert dates to Firestore timestamp
-    if (dataToUpdate.sessionDate instanceof Date) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (dataToUpdate as any).sessionDate = Timestamp.fromDate(dataToUpdate.sessionDate);
-    }
-    
-    if (dataToUpdate.originalDate instanceof Date) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (dataToUpdate as any).originalDate = Timestamp.fromDate(dataToUpdate.originalDate);
-    }
-    
-    if (dataToUpdate.rescheduledAt instanceof Date) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (dataToUpdate as any).rescheduledAt = Timestamp.fromDate(dataToUpdate.rescheduledAt);
-    }
-    
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await updateDoc(docRef, dataToUpdate as any);
-  } catch (error) {
-    console.error('Error updating schedule:', error);
-    throw error;
-  }
-}
-
-// Get upcoming classes
-export async function getUpcomingClasses(limit: number = 10): Promise<Class[]> {
-  try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
     const q = query(
       collection(db, COLLECTION_NAME),
-      where('status', 'in', ['published', 'started']),
-      where('endDate', '>=', Timestamp.fromDate(today)),
-      orderBy('endDate', 'asc')
+      where('code', '==', code)
     );
-    
     const querySnapshot = await getDocs(q);
     
-    return querySnapshot.docs
-      .map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        startDate: doc.data().startDate?.toDate() || new Date(),
-        endDate: doc.data().endDate?.toDate() || new Date(),
-        createdAt: doc.data().createdAt?.toDate() || new Date(),
-      } as Class))
-      .slice(0, limit);
+    if (excludeId) {
+      return querySnapshot.docs.some(doc => doc.id !== excludeId);
+    }
+    
+    return !querySnapshot.empty;
   } catch (error) {
-    console.error('Error getting upcoming classes:', error);
+    console.error('Error checking class code:', error);
     throw error;
   }
 }
 
-// Check if room is available (Enhanced version)
+// Update class status
+export async function updateClassStatus(id: string, status: Class['status']): Promise<void> {
+  try {
+    const docRef = doc(db, COLLECTION_NAME, id);
+    await updateDoc(docRef, { status });
+  } catch (error) {
+    console.error('Error updating class status:', error);
+    throw error;
+  }
+}
+
+// Get active classes (published or started)
+export async function getActiveClasses(): Promise<Class[]> {
+  try {
+    const classes = await getClasses();
+    return classes.filter(c => c.status === 'published' || c.status === 'started');
+  } catch (error) {
+    console.error('Error getting active classes:', error);
+    return [];
+  }
+}
+
+// lib/services/classes.ts - แก้ไขฟังก์ชัน checkRoomAvailability
+
+// Check room availability for a time slot (รวม makeup และ trial)
 export async function checkRoomAvailability(
   branchId: string,
   roomId: string,
@@ -434,47 +430,137 @@ export async function checkRoomAvailability(
   startDate: Date,
   endDate: Date,
   excludeClassId?: string
-): Promise<RoomAvailabilityResult> {
+): Promise<{ available: boolean; conflicts?: any[] }> {
   try {
-    // Get all classes in the same branch and room
-    const q = query(
-      collection(db, COLLECTION_NAME),
-      where('branchId', '==', branchId),
-      where('roomId', '==', roomId),
-      where('status', '!=', 'cancelled')
+    const conflicts: any[] = [];
+
+    // 1. Check regular classes in the same branch
+    const classes = await getClassesByBranch(branchId);
+    
+    // Filter classes that might conflict
+    const potentialClassConflicts = classes.filter(cls => {
+      // Skip the class we're editing
+      if (excludeClassId && cls.id === excludeClassId) return false;
+      
+      // Skip cancelled or completed classes
+      if (cls.status === 'cancelled' || cls.status === 'completed') return false;
+      
+      // Check if same room
+      if (cls.roomId !== roomId) return false;
+      
+      // Check if there's any day overlap
+      const dayOverlap = cls.daysOfWeek.some(day => daysOfWeek.includes(day));
+      if (!dayOverlap) return false;
+      
+      // Check date range overlap
+      const dateOverlap = (
+        (startDate >= cls.startDate && startDate <= cls.endDate) ||
+        (endDate >= cls.startDate && endDate <= cls.endDate) ||
+        (startDate <= cls.startDate && endDate >= cls.endDate)
+      );
+      if (!dateOverlap) return false;
+      
+      // Check time overlap
+      const timeOverlap = (
+        (startTime >= cls.startTime && startTime < cls.endTime) ||
+        (endTime > cls.startTime && endTime <= cls.endTime) ||
+        (startTime <= cls.startTime && endTime >= cls.endTime)
+      );
+      
+      return timeOverlap;
+    });
+    
+    // Add class conflicts
+    potentialClassConflicts.forEach(cls => {
+      conflicts.push({
+        type: 'class',
+        classId: cls.id,
+        className: cls.name,
+        classCode: cls.code,
+        startTime: cls.startTime,
+        endTime: cls.endTime,
+        daysOfWeek: cls.daysOfWeek,
+      });
+    });
+
+    // 2. Check Makeup Classes
+    const { getMakeupClasses } = await import('./makeup');
+    const makeupClasses = await getMakeupClasses();
+    
+    // Filter makeup classes for conflicts
+    const relevantMakeups = makeupClasses.filter(makeup => 
+      makeup.status === 'scheduled' &&
+      makeup.makeupSchedule &&
+      makeup.makeupSchedule.branchId === branchId &&
+      makeup.makeupSchedule.roomId === roomId
     );
     
-    const querySnapshot = await getDocs(q);
-    const classes = querySnapshot.docs
-      .map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        startDate: doc.data().startDate?.toDate() || new Date(),
-        endDate: doc.data().endDate?.toDate() || new Date(),
-      } as Class))
-      .filter(cls => cls.id !== excludeClassId);
+    // Check each makeup class
+    for (const makeup of relevantMakeups) {
+      if (!makeup.makeupSchedule) continue;
+      
+      const makeupDate = new Date(makeup.makeupSchedule.date);
+      const makeupDay = makeupDate.getDay();
+      
+      // Check if makeup day matches any of the class days
+      if (!daysOfWeek.includes(makeupDay)) continue;
+      
+      // Check if makeup date falls within the class date range
+      if (makeupDate < startDate || makeupDate > endDate) continue;
+      
+      // Check time overlap
+      if (startTime < makeup.makeupSchedule.endTime && endTime > makeup.makeupSchedule.startTime) {
+        // Get student info for display
+        const { getStudent } = await import('./parents');
+        const student = await getStudent(makeup.parentId, makeup.studentId);
+        
+        conflicts.push({
+          type: 'makeup',
+          classId: makeup.id,
+          className: `Makeup: ${student?.nickname || student?.name || 'Unknown'}`,
+          classCode: '',
+          startTime: makeup.makeupSchedule.startTime,
+          endTime: makeup.makeupSchedule.endTime,
+          daysOfWeek: [makeupDay],
+          date: makeupDate
+        });
+      }
+    }
+
+    // 3. Check Trial Sessions
+    const { getTrialSessions } = await import('./trial-bookings');
+    const trialSessions = await getTrialSessions();
     
-    const conflicts: RoomAvailabilityResult['conflicts'] = [];
+    // Filter trial sessions for conflicts
+    const relevantTrials = trialSessions.filter(trial => 
+      trial.status === 'scheduled' &&
+      trial.branchId === branchId &&
+      trial.roomId === roomId
+    );
     
-    // Check for time conflicts
-    for (const cls of classes) {
-      // Check if date ranges overlap
-      if (startDate <= cls.endDate && endDate >= cls.startDate) {
-        // Check if days of week overlap
-        const daysOverlap = cls.daysOfWeek.some(day => daysOfWeek.includes(day));
-        if (daysOverlap) {
-          // Check if time slots overlap
-          if (startTime < cls.endTime && endTime > cls.startTime) {
-            conflicts.push({
-              classId: cls.id,
-              className: cls.name,
-              classCode: cls.code,
-              startTime: cls.startTime,
-              endTime: cls.endTime,
-              daysOfWeek: cls.daysOfWeek
-            });
-          }
-        }
+    // Check each trial session
+    for (const trial of relevantTrials) {
+      const trialDate = new Date(trial.scheduledDate);
+      const trialDay = trialDate.getDay();
+      
+      // Check if trial day matches any of the class days
+      if (!daysOfWeek.includes(trialDay)) continue;
+      
+      // Check if trial date falls within the class date range
+      if (trialDate < startDate || trialDate > endDate) continue;
+      
+      // Check time overlap
+      if (startTime < trial.endTime && endTime > trial.startTime) {
+        conflicts.push({
+          type: 'trial',
+          classId: trial.id,
+          className: `ทดลองเรียน: ${trial.studentName}`,
+          classCode: '',
+          startTime: trial.startTime,
+          endTime: trial.endTime,
+          daysOfWeek: [trialDay],
+          date: trialDate
+        });
       }
     }
     
@@ -487,3 +573,160 @@ export async function checkRoomAvailability(
     return { available: false };
   }
 }
+
+// Get upcoming sessions for a class
+export async function getUpcomingSessions(
+  classId: string,
+  fromDate?: Date
+): Promise<ClassSchedule[]> {
+  try {
+    const schedulesRef = collection(db, COLLECTION_NAME, classId, 'schedules');
+    const startDate = fromDate || new Date();
+    
+    const q = query(
+      schedulesRef,
+      where('sessionDate', '>=', Timestamp.fromDate(startDate)),
+      where('status', '!=', 'cancelled'),
+      orderBy('sessionDate', 'asc')
+    );
+    
+    const querySnapshot = await getDocs(q);
+    
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      classId,
+      ...doc.data(),
+      sessionDate: doc.data().sessionDate?.toDate() || new Date(),
+      originalDate: doc.data().originalDate?.toDate(),
+      rescheduledAt: doc.data().rescheduledAt?.toDate(),
+    } as ClassSchedule));
+  } catch (error) {
+    console.error('Error getting upcoming sessions:', error);
+    return [];
+  }
+}
+
+// Reschedule a single session
+export async function rescheduleSession(
+  classId: string,
+  scheduleId: string,
+  newDate: Date,
+  reason?: string,
+  rescheduledBy?: string
+): Promise<void> {
+  try {
+    const scheduleRef = doc(db, COLLECTION_NAME, classId, 'schedules', scheduleId);
+    
+    // Get current schedule
+    const scheduleDoc = await getDoc(scheduleRef);
+    if (!scheduleDoc.exists()) {
+      throw new Error('Schedule not found');
+    }
+    
+    const currentData = scheduleDoc.data();
+    
+    await updateDoc(scheduleRef, {
+      sessionDate: Timestamp.fromDate(newDate),
+      status: 'rescheduled',
+      originalDate: currentData.sessionDate, // Keep original date
+      rescheduledAt: serverTimestamp(),
+      rescheduledBy: rescheduledBy || '',
+      note: reason || ''
+    });
+  } catch (error) {
+    console.error('Error rescheduling session:', error);
+    throw error;
+  }
+}
+
+// Get class statistics
+export async function getClassStatistics(classId: string): Promise<{
+  totalSessions: number;
+  completedSessions: number;
+  upcomingSessions: number;
+  cancelledSessions: number;
+  attendanceRate: number;
+}> {
+  try {
+    const schedules = await getClassSchedules(classId);
+    const now = new Date();
+    
+    const stats = {
+      totalSessions: schedules.length,
+      completedSessions: 0,
+      upcomingSessions: 0,
+      cancelledSessions: 0,
+      attendanceRate: 0,
+    };
+    
+    let totalAttendanceCount = 0;
+    let totalStudentSessions = 0;
+    
+    schedules.forEach(schedule => {
+      if (schedule.status === 'cancelled') {
+        stats.cancelledSessions++;
+      } else if (schedule.sessionDate > now) {
+        stats.upcomingSessions++;
+      } else if (schedule.status === 'completed' || schedule.attendance) {
+        stats.completedSessions++;
+        
+        // Calculate attendance rate
+        if (schedule.attendance) {
+          const presentCount = schedule.attendance.filter(a => a.status === 'present').length;
+          totalAttendanceCount += presentCount;
+          totalStudentSessions += schedule.attendance.length;
+        }
+      }
+    });
+    
+    if (totalStudentSessions > 0) {
+      stats.attendanceRate = (totalAttendanceCount / totalStudentSessions) * 100;
+    }
+    
+    return stats;
+  } catch (error) {
+    console.error('Error getting class statistics:', error);
+    return {
+      totalSessions: 0,
+      completedSessions: 0,
+      upcomingSessions: 0,
+      cancelledSessions: 0,
+      attendanceRate: 0,
+    };
+  }
+}
+
+// Batch update multiple schedules
+export async function batchUpdateSchedules(
+  classId: string,
+  updates: Array<{ scheduleId: string; data: Partial<ClassSchedule> }>
+): Promise<void> {
+  try {
+    const batch = writeBatch(db);
+    
+    updates.forEach(({ scheduleId, data }) => {
+      const scheduleRef = doc(db, COLLECTION_NAME, classId, 'schedules', scheduleId);
+      
+      // Convert dates to Timestamps if needed
+      const updateData: any = { ...data };
+      if (data.sessionDate) {
+        updateData.sessionDate = Timestamp.fromDate(data.sessionDate);
+      }
+      if (data.originalDate) {
+        updateData.originalDate = Timestamp.fromDate(data.originalDate);
+      }
+      
+      batch.update(scheduleRef, updateData);
+    });
+    
+    await batch.commit();
+  } catch (error) {
+    console.error('Error batch updating schedules:', error);
+    throw error;
+  }
+}
+
+// Export functions
+export {
+  generateSchedules,
+};

@@ -440,8 +440,23 @@ export default function ClassDetailDialog({
   const eventDate = event.start as Date;
 
   // Status color and icon
+  // Status color and icon - ปรับใหม่
   const getStatusBadge = () => {
+    const eventDate = event.start as Date;
+    const eventEndDate = event.end as Date;
+    const now = new Date();
+    const isPast = eventEndDate < now;
+    
     if (isMakeup) {
+      // ถ้าเป็น Makeup ที่ผ่านมาแล้ว
+      if (isPast || event.extendedProps.makeupStatus === 'completed') {
+        return (
+          <Badge className="bg-green-100 text-green-700">
+            <CheckCircle className="h-3 w-3 mr-1" />
+            เรียนเสร็จแล้ว
+          </Badge>
+        );
+      }
       return (
         <Badge className="bg-purple-100 text-purple-700">
           <UserCircle className="h-3 w-3 mr-1" />
@@ -449,13 +464,23 @@ export default function ClassDetailDialog({
         </Badge>
       );
     } else if (isTrial) {
+      // ถ้าเป็น Trial ที่ผ่านมาแล้ว
+      if (isPast) {
+        return (
+          <Badge className="bg-green-100 text-green-700">
+            <CheckCircle className="h-3 w-3 mr-1" />
+            ทดลองเรียนเสร็จแล้ว
+          </Badge>
+        );
+      }
       return (
         <Badge className="bg-orange-100 text-orange-700">
           <School className="h-3 w-3 mr-1" />
           ทดลองเรียน
         </Badge>
       );
-    } else if (event.extendedProps.status === 'completed') {
+    } else if (isPast || event.extendedProps.status === 'completed') {
+      // คลาสปกติที่ผ่านมาแล้ว หรือมีสถานะ completed
       return (
         <Badge className="bg-green-100 text-green-700">
           <CheckCircle className="h-3 w-3 mr-1" />
