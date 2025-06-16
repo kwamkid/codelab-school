@@ -180,10 +180,13 @@ export async function getCalendarEvents(
       });
     }
 
-    // 2. Process makeup classes
+    // 2. Process makeup classes (UPDATED - show all statuses)
     for (const makeup of makeupClasses) {
-      // Skip if not scheduled
-      if (!makeup.makeupSchedule || makeup.status !== 'scheduled') continue;
+      // Skip only if cancelled
+      if (makeup.status === 'cancelled') continue;
+      
+      // Skip if no makeup schedule (pending status)
+      if (!makeup.makeupSchedule) continue;
       
       // Get class info
       const originalClass = classMap.get(makeup.originalClassId);
@@ -220,8 +223,8 @@ export async function getCalendarEvents(
       let borderColor = '#D8B4FE'; // Purple-200 default
       let textColor = '#6B21A8'; // Purple-800 default
       
-      // Check if makeup has passed or has attendance
-      if (eventEnd < now || makeup.attendance) {
+      // Check if makeup has passed or has attendance or is completed
+      if (eventEnd < now || makeup.attendance || makeup.status === 'completed') {
         backgroundColor = '#D1FAE5'; // Green-100 for completed
         borderColor = '#A7F3D0'; // Green-200 border
         textColor = '#065F46'; // Green-800 text
@@ -251,10 +254,10 @@ export async function getCalendarEvents(
       });
     }
 
-    // 3. Process trial sessions
+    // 3. Process trial sessions (UPDATED - show all statuses except cancelled)
     for (const trial of trialSessions) {
-      // Skip if not scheduled
-      if (trial.status !== 'scheduled') continue;
+      // Skip only if cancelled
+      if (trial.status === 'cancelled') continue;
       
       // Skip if filtering by branch and doesn't match
       if (branchId && trial.branchId !== branchId) continue;
@@ -286,8 +289,8 @@ export async function getCalendarEvents(
       let borderColor = '#FDBA74'; // Orange-300 default
       let textColor = '#9A3412'; // Orange-900 default
       
-      // Check if trial has passed or has been attended
-      if (eventEnd < now || trial.attended) {
+      // Check if trial has passed or has been attended/absent
+      if (eventEnd < now || trial.attended || trial.status === 'attended' || trial.status === 'absent') {
         backgroundColor = '#D1FAE5'; // Green-100 for completed
         borderColor = '#A7F3D0'; // Green-200 border
         textColor = '#065F46'; // Green-800 text

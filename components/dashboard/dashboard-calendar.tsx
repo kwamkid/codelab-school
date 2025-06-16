@@ -244,8 +244,26 @@ export default function DashboardCalendar({
           }
         }))}
         eventDidMount={(info) => {
-          // Add tooltip to events
+          // Add class based on event type and status for styling
           const props = info.event.extendedProps;
+          const eventDate = info.event.end as Date;
+          const now = new Date();
+          
+          // Add class for completed events (past events)
+          if (props.type === 'class' && eventDate < now) {
+            info.el.classList.add('completed-event');
+          } else if (props.type === 'makeup' && eventDate < now) {
+            info.el.classList.add('completed-makeup-event');
+          } else if (props.type === 'trial' && eventDate < now) {
+            info.el.classList.add('completed-trial-event');
+          }
+          
+          // Add class based on status
+          if (props.status === 'completed') {
+            info.el.classList.add('status-completed');
+          }
+          
+          // Add tooltip to events
           let tooltipContent = '';
           
           if (props.type === 'makeup') {
@@ -459,10 +477,18 @@ export default function DashboardCalendar({
           background-color: #D1D5DB !important;
         }
         
-        /* Completed class styles - Green (จากสีที่ส่งมาจาก backend) */
-        .dashboard-calendar .fc-event[style*="rgb(209, 250, 229)"] {
+        /* Completed class styles - Green (using class instead of inline style) */
+        .dashboard-calendar .class-event.completed-event,
+        .dashboard-calendar .class-event.status-completed {
           background-color: #D1FAE5 !important;
           border-color: #A7F3D0 !important;
+          color: #065F46 !important;
+        }
+        
+        .dashboard-calendar .class-event.completed-event .fc-event-title,
+        .dashboard-calendar .class-event.status-completed .fc-event-title,
+        .dashboard-calendar .class-event.completed-event .fc-event-time,
+        .dashboard-calendar .class-event.status-completed .fc-event-time {
           color: #065F46 !important;
         }
         
@@ -477,6 +503,13 @@ export default function DashboardCalendar({
           background-color: #D8B4FE !important;
         }
         
+        /* Completed makeup */
+        .dashboard-calendar .makeup-event.completed-makeup-event {
+          background-color: #D1FAE5 !important;
+          border-color: #A7F3D0 !important;
+          color: #065F46 !important;
+        }
+        
         /* Trial event styles - Orange */
         .dashboard-calendar .trial-event {
           background-color: #FED7AA !important;
@@ -486,6 +519,41 @@ export default function DashboardCalendar({
         
         .dashboard-calendar .trial-event:hover {
           background-color: #FDBA74 !important;
+        }
+        
+        /* Completed trial */
+        .dashboard-calendar .trial-event.completed-trial-event {
+          background-color: #D1FAE5 !important;
+          border-color: #A7F3D0 !important;
+          color: #065F46 !important;
+        }
+        
+        /* Force green background for elements with specific RGB values */
+        .dashboard-calendar .fc-event[style*="rgb(209, 250, 229)"] {
+          background-color: #D1FAE5 !important;
+          border-color: #A7F3D0 !important;
+        }
+        
+        .dashboard-calendar .fc-event[style*="rgb(209, 250, 229)"] *,
+        .dashboard-calendar .fc-event[style*="#D1FAE5"] * {
+          color: #065F46 !important;
+        }
+        
+        /* Month view specific completed styles */
+        .dashboard-calendar .fc-daygrid-event.completed-event,
+        .dashboard-calendar .fc-daygrid-event.status-completed,
+        .dashboard-calendar .fc-daygrid-event.completed-makeup-event,
+        .dashboard-calendar .fc-daygrid-event.completed-trial-event {
+          background-color: #D1FAE5 !important;
+          border-color: #A7F3D0 !important;
+          color: #065F46 !important;
+        }
+        
+        .dashboard-calendar .fc-daygrid-event.completed-event *,
+        .dashboard-calendar .fc-daygrid-event.status-completed *,
+        .dashboard-calendar .fc-daygrid-event.completed-makeup-event *,
+        .dashboard-calendar .fc-daygrid-event.completed-trial-event * {
+          color: #065F46 !important;
         }
         
         /* Ensure calendar takes full height without scroll */
@@ -631,13 +699,6 @@ export default function DashboardCalendar({
           margin-bottom: 4px;
           padding-bottom: 4px;
           border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-        }
-        
-        /* Force text color for completed events */
-        .dashboard-calendar .fc-event[style*="rgb(209, 250, 229)"] .fc-event-title,
-        .dashboard-calendar .fc-event[style*="rgb(209, 250, 229)"] .fc-event-time,
-        .dashboard-calendar .fc-event[style*="rgb(209, 250, 229)"] * {
-          color: #065F46 !important;
         }
         
         @media (max-width: 640px) {
