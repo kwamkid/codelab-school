@@ -15,25 +15,30 @@ import { getTeachers } from './teachers';
 import { getBranches } from './branches';
 import { getMakeupClasses } from './makeup';
 import { getStudentWithParent } from './parents';
+import { getTrialSessions } from './trial-bookings';
 import { EventInput } from '@fullcalendar/core';
 
 export interface CalendarEvent extends EventInput {
   classId: string;
   extendedProps: {
-    type: 'class' | 'makeup'; // เพิ่ม type เพื่อแยกประเภท
+    type: 'class' | 'makeup' | 'trial'; // Added trial type
     branchId: string;
     branchName: string;
     roomName: string;
     teacherName: string;
+    subjectColor?: string; // Add subject color
     enrolled?: number;
     maxStudents?: number;
     sessionNumber?: number;
     status?: string;
-    // สำหรับ makeup
+    // For makeup
     studentName?: string;
     studentNickname?: string;
     originalClassName?: string;
     makeupStatus?: 'pending' | 'scheduled' | 'completed' | 'cancelled';
+    // For trial
+    trialStudentName?: string;
+    trialSubjectName?: string;
   };
 }
 
@@ -44,12 +49,13 @@ export async function getCalendarEvents(
 ): Promise<CalendarEvent[]> {
   try {
     // Get all necessary data
-    const [classes, subjects, teachers, branches, makeupClasses] = await Promise.all([
+    const [classes, subjects, teachers, branches, makeupClasses, trialSessions] = await Promise.all([
       getClasses(),
       getSubjects(),
       getTeachers(),
       getBranches(),
-      getMakeupClasses()
+      getMakeupClasses(),
+      getTrialSessions() // Get all trial sessions
     ]);
 
     // Create lookup maps
@@ -72,7 +78,7 @@ export async function getCalendarEvents(
 
     const events: CalendarEvent[] = [];
 
-    // Process regular class schedules
+    // 1. Process regular class schedules
     for (const cls of classes) {
       // Skip if filtering by branch and doesn't match
       if (branchId && cls.branchId !== branchId) continue;
@@ -114,16 +120,16 @@ export async function getCalendarEvents(
         const eventEnd = new Date(sessionDate);
         eventEnd.setHours(endHour, endMinute, 0, 0);
 
-        // Determine color based on status
-        let backgroundColor = subject.color || '#EF4444'; // Default red
-        let borderColor = backgroundColor;
+        // Determine color based on status - using neutral color for regular classes
+        let backgroundColor = '#E5E7EB'; // Gray-200 for regular classes
+        let borderColor = '#D1D5DB'; // Gray-300 border
         
         if (schedule.status === 'completed') {
-          backgroundColor = '#10B981'; // Green for completed
-          borderColor = backgroundColor;
+          backgroundColor = '#D1FAE5'; // Green-100 for completed
+          borderColor = '#A7F3D0'; // Green-200 border
         } else if (schedule.status === 'rescheduled') {
-          backgroundColor = '#F59E0B'; // Amber for rescheduled
-          borderColor = backgroundColor;
+          backgroundColor = '#FEF3C7'; // Amber-100 for rescheduled
+          borderColor = '#FDE68A'; // Amber-200 border
         }
 
         // Get room name
@@ -138,12 +144,14 @@ export async function getCalendarEvents(
           end: eventEnd,
           backgroundColor,
           borderColor,
+          textColor: '#374151', // Gray-700 text
           extendedProps: {
             type: 'class',
             branchId: cls.branchId,
             branchName: branch.name,
             roomName: roomName,
             teacherName: teacher.nickname || teacher.name,
+            subjectColor: subject.color, // Add subject color
             enrolled: cls.enrolledCount,
             maxStudents: cls.maxStudents,
             sessionNumber: schedule.sessionNumber,
@@ -153,7 +161,7 @@ export async function getCalendarEvents(
       });
     }
 
-    // Process makeup classes
+    // 2. Process makeup classes
     for (const makeup of makeupClasses) {
       // Skip if not scheduled
       if (!makeup.makeupSchedule || makeup.status !== 'scheduled') continue;
@@ -174,6 +182,7 @@ export async function getCalendarEvents(
       const teacher = teacherMap.get(makeup.makeupSchedule.teacherId);
       const branch = branchMap.get(makeup.makeupSchedule.branchId);
       const room = roomMap.get(`${makeup.makeupSchedule.branchId}-${makeup.makeupSchedule.roomId}`);
+      const subject = subjectMap.get(originalClass.subjectId);
       
       if (!student || !teacher || !branch) continue;
       
@@ -188,7 +197,8 @@ export async function getCalendarEvents(
       eventEnd.setHours(endHour, endMinute, 0, 0);
       
       // Purple color for makeup classes
-      const backgroundColor = '#8B5CF6';
+      const backgroundColor = '#E9D5FF'; // Purple-100
+      const borderColor = '#D8B4FE'; // Purple-200
       
       events.push({
         id: `makeup-${makeup.id}`,
@@ -197,17 +207,75 @@ export async function getCalendarEvents(
         start: eventStart,
         end: eventEnd,
         backgroundColor,
-        borderColor: backgroundColor,
+        borderColor,
+        textColor: '#6B21A8', // Purple-800 text
         extendedProps: {
           type: 'makeup',
           branchId: makeup.makeupSchedule.branchId,
           branchName: branch.name,
           roomName: room?.name || makeup.makeupSchedule.roomId,
           teacherName: teacher.nickname || teacher.name,
+          subjectColor: subject?.color, // Add subject color
           studentName: student.name,
           studentNickname: student.nickname,
           originalClassName: originalClass.name,
           makeupStatus: makeup.status
+        }
+      });
+    }
+
+    // 3. Process trial sessions
+    for (const trial of trialSessions) {
+      // Skip if not scheduled
+      if (trial.status !== 'scheduled') continue;
+      
+      // Skip if filtering by branch and doesn't match
+      if (branchId && trial.branchId !== branchId) continue;
+      
+      // Check if trial date is within range
+      const trialDate = new Date(trial.scheduledDate);
+      if (trialDate < start || trialDate > end) continue;
+      
+      // Get additional info
+      const teacher = teacherMap.get(trial.teacherId);
+      const branch = branchMap.get(trial.branchId);
+      const room = roomMap.get(`${trial.branchId}-${trial.roomId}`);
+      const subject = subjectMap.get(trial.subjectId);
+      
+      if (!teacher || !branch || !subject) continue;
+      
+      // Parse times and create proper date objects
+      const [startHour, startMinute] = trial.startTime.split(':').map(Number);
+      const [endHour, endMinute] = trial.endTime.split(':').map(Number);
+      
+      const eventStart = new Date(trialDate);
+      eventStart.setHours(startHour, startMinute, 0, 0);
+      
+      const eventEnd = new Date(trialDate);
+      eventEnd.setHours(endHour, endMinute, 0, 0);
+      
+      // Orange color for trial classes
+      const backgroundColor = '#FED7AA'; // Orange-200
+      const borderColor = '#FDBA74'; // Orange-300
+      
+      events.push({
+        id: `trial-${trial.id}`,
+        classId: '', // No class ID for trials
+        title: `${trial.studentName} - ${subject.name}`,
+        start: eventStart,
+        end: eventEnd,
+        backgroundColor,
+        borderColor,
+        textColor: '#9A3412', // Orange-900 text
+        extendedProps: {
+          type: 'trial',
+          branchId: trial.branchId,
+          branchName: branch.name,
+          roomName: room?.name || trial.roomName || trial.roomId,
+          teacherName: teacher.nickname || teacher.name,
+          subjectColor: subject.color, // Add subject color
+          trialStudentName: trial.studentName,
+          trialSubjectName: subject.name
         }
       });
     }
@@ -231,6 +299,7 @@ export interface DashboardStats {
   todayClasses: number;
   upcomingMakeups: number;
   pendingMakeups: number;
+  upcomingTrials: number; // Add trial stats
 }
 
 export async function getDashboardStats(branchId?: string): Promise<DashboardStats> {
@@ -241,9 +310,10 @@ export async function getDashboardStats(branchId?: string): Promise<DashboardSta
     tomorrow.setDate(tomorrow.getDate() + 1);
 
     // Get all data
-    const [classes, makeupClasses] = await Promise.all([
+    const [classes, makeupClasses, trialSessions] = await Promise.all([
       getClasses(),
-      getMakeupClasses()
+      getMakeupClasses(),
+      getTrialSessions()
     ]);
 
     // Filter by branch if specified
@@ -282,13 +352,21 @@ export async function getDashboardStats(branchId?: string): Promise<DashboardSta
       m.status === 'pending'
     ).length;
 
+    // Count upcoming trials
+    const upcomingTrials = trialSessions.filter(t => 
+      t.status === 'scheduled' && 
+      new Date(t.scheduledDate) >= today &&
+      (!branchId || t.branchId === branchId)
+    ).length;
+
     return {
       totalStudents,
       totalClasses: filteredClasses.length,
       activeClasses: activeClasses.length,
       todayClasses: todayClassCount,
       upcomingMakeups,
-      pendingMakeups
+      pendingMakeups,
+      upcomingTrials
     };
   } catch (error) {
     console.error('Error getting dashboard stats:', error);
@@ -298,7 +376,8 @@ export async function getDashboardStats(branchId?: string): Promise<DashboardSta
       activeClasses: 0,
       todayClasses: 0,
       upcomingMakeups: 0,
-      pendingMakeups: 0
+      pendingMakeups: 0,
+      upcomingTrials: 0
     };
   }
 }
