@@ -22,7 +22,8 @@ import {
   BookOpen,
   CalendarCheck,
   Home,
-  CalendarDays
+  CalendarDays,
+  TestTube,
 } from 'lucide-react';
 import Image from 'next/image';
 
@@ -59,6 +60,7 @@ const navigation: NavigationItem[] = [
     children: [
       { name: 'คลาสเรียน', href: '/classes', icon: Calendar },
       { name: 'Makeup Class', href: '/makeup', icon: CalendarDays },
+      { name: 'ทดลองเรียน', href: '/trial', icon: TestTube },
     ]
   },
   { name: 'ลงทะเบียน', href: '/enrollments', icon: UserCheck },

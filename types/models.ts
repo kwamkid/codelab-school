@@ -189,25 +189,64 @@ export interface Enrollment {
 // Trial & Booking Types
 export interface TrialBooking {
   id: string;
-  parentLineId: string;
+  source: 'online' | 'walkin' | 'phone';
+  
+  // Parent Info (ยังไม่เป็น Parent จริง)
   parentName: string;
   parentPhone: string;
-  studentName: string;
-  studentAge: number;
-  studentGrade?: string;
-  subjectInterest: string;
-  branchId: string;
-  preferredDate: Date;
-  preferredTime: string;
-  alternativeDate?: Date;
-  status: 'pending' | 'confirmed' | 'completed' | 'cancelled' | 'converted';
-  assignedTeacher?: string;
-  assignedRoom?: string;
-  feedback?: string;
-  conversionStatus?: 'interested' | 'not-interested' | 'enrolled';
-  followUpDate?: Date;
+  parentEmail?: string;
+  
+  // Students (รองรับหลายคน)
+  students: {
+    name: string;
+    schoolName?: string;
+    gradeLevel?: string;
+    subjectInterests: string[]; // วิชาที่สนใจ (subject IDs)
+  }[];
+  
+  status: 'new' | 'contacted' | 'scheduled' | 'completed' | 'converted' | 'cancelled';
+  
+  // Admin จัดการ
+  assignedTo?: string; // admin ID ที่รับผิดชอบ
+  contactedAt?: Date;
+  contactNote?: string;
+  
   createdAt: Date;
-  notes?: string;
+  updatedAt?: Date;
+}
+
+// Trial Session - การทดลองเรียนแต่ละครั้ง
+export interface TrialSession {
+  id: string;
+  bookingId: string; // link กับ TrialBooking
+  studentName: string; // ชื่อนักเรียนที่เรียน
+  
+  // Schedule
+  subjectId: string;
+  scheduledDate: Date;
+  startTime: string;
+  endTime: string;
+  
+  // Resources
+  teacherId: string;
+  branchId: string;
+  roomId: string;
+  
+  status: 'scheduled' | 'attended' | 'absent' | 'cancelled';
+  
+  // After trial
+  attended?: boolean;
+  feedback?: string;
+  teacherNote?: string;
+  interestedLevel?: 'high' | 'medium' | 'low' | 'not_interested';
+  
+  // Conversion
+  converted?: boolean;
+  convertedToClassId?: string;
+  conversionNote?: string;
+  
+  createdAt: Date;
+  completedAt?: Date;
 }
 
 // Notification Types
