@@ -12,7 +12,9 @@ import {
   Phone,
   Mail,
   Globe,
-  Link2
+  Link2,
+  Trash2,
+  AlertTriangle
 } from 'lucide-react';
 import { toast } from 'sonner';
 import Image from 'next/image';
@@ -23,12 +25,14 @@ import {
   GeneralSettings
 } from '@/lib/services/settings';
 import { auth } from '@/lib/firebase/client';
+import FactoryResetDialog from './factory-reset-dialog';
 
 export default function GeneralSettingsComponent() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [settings, setSettings] = useState<GeneralSettings | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [showResetDialog, setShowResetDialog] = useState(false);
   
   // Load settings on mount
   useEffect(() => {
@@ -355,6 +359,41 @@ export default function GeneralSettingsComponent() {
         </CardContent>
       </Card>
       
+      {/* System Maintenance Card */}
+      <Card className="border-red-200">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-red-600">
+            <AlertTriangle className="h-5 w-5" />
+            การบำรุงรักษาระบบ
+          </CardTitle>
+          <CardDescription>
+            เครื่องมือสำหรับจัดการและล้างข้อมูลระบบ
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div className="p-4 bg-red-50 rounded-lg">
+              <h4 className="font-medium mb-2">ล้างข้อมูลทั้งหมด</h4>
+              <p className="text-sm text-gray-600 mb-4">
+                ลบข้อมูลทั้งหมดในระบบ เช่น นักเรียน ครู ผู้ปกครอง คลาส วิชา และอื่นๆ
+                <br />
+                <span className="text-red-600 font-medium">
+                  (การตั้งค่าและบัญชี Admin จะไม่ถูกลบ)
+                </span>
+              </p>
+              <Button
+                variant="destructive"
+                onClick={() => setShowResetDialog(true)}
+                className="w-full sm:w-auto"
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                ล้างข้อมูลทั้งหมด
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+      
       {/* Save Button */}
       <div className="flex justify-end">
         <Button 
@@ -375,6 +414,12 @@ export default function GeneralSettingsComponent() {
           )}
         </Button>
       </div>
+      
+      {/* Factory Reset Dialog */}
+      <FactoryResetDialog
+        open={showResetDialog}
+        onOpenChange={setShowResetDialog}
+      />
     </div>
   );
 }
