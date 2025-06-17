@@ -181,37 +181,44 @@ export default function RescheduleTrialDialog({
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  e.preventDefault();
+  
+  // Validate
+  if (!selectedDate) {
+    toast.error('กรุณาเลือกวันที่');
+    return;
+  }
+  if (!startTime || !endTime) {
+    toast.error('กรุณาระบุเวลา');
+    return;
+  }
+  if (!selectedTeacher) {
+    toast.error('กรุณาเลือกครู');
+    return;
+  }
+  if (!selectedBranch || !selectedRoom) {
+    toast.error('กรุณาเลือกสาขาและห้อง');
+    return;
+  }
+  if (availabilityError) {
+    toast.error('ห้องไม่ว่างในช่วงเวลาที่เลือก');
+    return;
+  }
+
+  setLoading(true);
+
+  try {
+    // Get room name for storing
+    const selectedRoomData = rooms.find(r => r.id === selectedRoom);
     
-    // Validate
-    if (!selectedDate) {
-      toast.error('กรุณาเลือกวันที่');
-      return;
-    }
-    if (!startTime || !endTime) {
-      toast.error('กรุณาระบุเวลา');
-      return;
-    }
-    if (!selectedTeacher) {
-      toast.error('กรุณาเลือกครู');
-      return;
-    }
-    if (!selectedBranch || !selectedRoom) {
-      toast.error('กรุณาเลือกสาขาและห้อง');
-      return;
-    }
-    if (availabilityError) {
-      toast.error('ห้องไม่ว่างในช่วงเวลาที่เลือก');
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      // Get room name for storing
-      const selectedRoomData = rooms.find(r => r.id === selectedRoom);
-      
-      await updateTrialSession(session.id, {
+    // ใช้ rescheduleTrialSession แทน updateTrialSession
+    const { rescheduleTrialSession } = await import('@/lib/services/trial-bookings');
+    const { auth } = await import('@/lib/firebase/client');
+    const currentUser = auth.currentUser;
+    
+    await rescheduleTrialSession(
+      session.id,
+      {
         scheduledDate: selectedDate,
         startTime,
         endTime,
@@ -219,18 +226,28 @@ export default function RescheduleTrialDialog({
         branchId: selectedBranch,
         roomId: selectedRoom,
         roomName: selectedRoomData?.name || selectedRoom
-      });
+      },
+      'ไม่มาเรียนตามนัดเดิม', // reason
+      currentUser?.uid || 'admin' // rescheduledBy
+    );
 
-      toast.success('เปลี่ยนนัดหมายสำเร็จ');
-      onSuccess();
-      onClose();
-    } catch (error) {
-      console.error('Error rescheduling:', error);
-      toast.error('เกิดข้อผิดพลาดในการเปลี่ยนนัดหมาย');
-    } finally {
-      setLoading(false);
-    }
-  };
+    toast.success('เปลี่ยนนัดหมายสำเร็จ');
+    
+    // Clear URL parameters before calling onSuccess
+    const url = new URL(window.location.href);
+    url.searchParams.delete('action');
+    url.searchParams.delete('sessionId');
+    window.history.replaceState({}, '', url.toString());
+    
+    onSuccess();
+    onClose();
+  } catch (error) {
+    console.error('Error rescheduling:', error);
+    toast.error('เกิดข้อผิดพลาดในการเปลี่ยนนัดหมาย');
+  } finally {
+    setLoading(false);
+  }
+};
 
   // Get current subject info
   const currentSubject = subjects.find(s => s.id === session.subjectId);

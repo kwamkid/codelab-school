@@ -13,7 +13,8 @@ import {
   Timestamp,
   serverTimestamp,
   writeBatch,
-  deleteDoc
+  deleteDoc,
+  deleteField
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { TrialBooking, TrialSession } from '@/types/models';
@@ -200,13 +201,29 @@ export async function getTrialSessionsByBooking(bookingId: string): Promise<Tria
     );
     const querySnapshot = await getDocs(q);
     
-    return querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      scheduledDate: doc.data().scheduledDate?.toDate() || new Date(),
-      createdAt: doc.data().createdAt?.toDate() || new Date(),
-      completedAt: doc.data().completedAt?.toDate(),
-    } as TrialSession));
+    return querySnapshot.docs.map(doc => {
+      const data = doc.data();
+      
+      // Convert rescheduleHistory dates if exists
+      let rescheduleHistory = data.rescheduleHistory;
+      if (rescheduleHistory && Array.isArray(rescheduleHistory)) {
+        rescheduleHistory = rescheduleHistory.map((history: any) => ({
+          ...history,
+          originalDate: history.originalDate?.toDate ? history.originalDate.toDate() : history.originalDate,
+          newDate: history.newDate?.toDate ? history.newDate.toDate() : history.newDate,
+          rescheduledAt: history.rescheduledAt?.toDate ? history.rescheduledAt.toDate() : history.rescheduledAt
+        }));
+      }
+      
+      return {
+        id: doc.id,
+        ...data,
+        scheduledDate: data.scheduledDate?.toDate() || new Date(),
+        createdAt: data.createdAt?.toDate() || new Date(),
+        completedAt: data.completedAt?.toDate(),
+        rescheduleHistory
+      } as TrialSession;
+    });
   } catch (error) {
     console.error('Error getting trial sessions by booking:', error);
     throw error;
@@ -221,12 +238,25 @@ export async function getTrialSession(id: string): Promise<TrialSession | null> 
     
     if (docSnap.exists()) {
       const data = docSnap.data();
+      
+      // Convert rescheduleHistory dates if exists
+      let rescheduleHistory = data.rescheduleHistory;
+      if (rescheduleHistory && Array.isArray(rescheduleHistory)) {
+        rescheduleHistory = rescheduleHistory.map((history: any) => ({
+          ...history,
+          originalDate: history.originalDate?.toDate ? history.originalDate.toDate() : history.originalDate,
+          newDate: history.newDate?.toDate ? history.newDate.toDate() : history.newDate,
+          rescheduledAt: history.rescheduledAt?.toDate ? history.rescheduledAt.toDate() : history.rescheduledAt
+        }));
+      }
+      
       return {
         id: docSnap.id,
         ...data,
         scheduledDate: data.scheduledDate?.toDate() || new Date(),
         createdAt: data.createdAt?.toDate() || new Date(),
         completedAt: data.completedAt?.toDate(),
+        rescheduleHistory
       } as TrialSession;
     }
     return null;
@@ -282,9 +312,53 @@ export async function updateTrialSession(
     }
     
     await updateDoc(docRef, updateData);
+    
+    // Auto-update booking status based on all sessions
+    if (data.status === 'attended' || data.status === 'absent' || data.status === 'cancelled') {
+      const session = await getTrialSession(id);
+      if (session) {
+        await checkAndUpdateBookingStatus(session.bookingId);
+      }
+    }
   } catch (error) {
     console.error('Error updating trial session:', error);
     throw error;
+  }
+}
+
+// Helper function to check and update booking status
+async function checkAndUpdateBookingStatus(bookingId: string): Promise<void> {
+  try {
+    const [booking, sessions] = await Promise.all([
+      getTrialBooking(bookingId),
+      getTrialSessionsByBooking(bookingId)
+    ]);
+    
+    if (!booking || sessions.length === 0) return;
+    
+    // Check if any session has been converted
+    const hasConverted = sessions.some(s => s.converted);
+    if (hasConverted && booking.status !== 'converted') {
+      await updateBookingStatus(bookingId, 'converted');
+      return;
+    }
+    
+    // Check if all sessions are completed (attended, absent, cancelled, or converted)
+    const allCompleted = sessions.every(s => 
+      s.status === 'attended' || 
+      s.status === 'absent' || 
+      s.status === 'cancelled' || 
+      s.converted
+    );
+    
+    // Check if at least one session was attended
+    const hasAttended = sessions.some(s => s.status === 'attended');
+    
+    if (allCompleted && hasAttended && booking.status !== 'completed' && booking.status !== 'converted') {
+      await updateBookingStatus(bookingId, 'completed');
+    }
+  } catch (error) {
+    console.error('Error checking and updating booking status:', error);
   }
 }
 
@@ -308,6 +382,69 @@ export async function deleteTrialSession(id: string): Promise<void> {
     await deleteDoc(docRef);
   } catch (error) {
     console.error('Error deleting trial session:', error);
+    throw error;
+  }
+}
+
+// Reschedule trial session with history tracking
+export async function rescheduleTrialSession(
+  sessionId: string,
+  newSchedule: {
+    scheduledDate: Date;
+    startTime: string;
+    endTime: string;
+    teacherId: string;
+    branchId: string;
+    roomId: string;
+    roomName?: string;
+  },
+  reason?: string,
+  rescheduledBy: string = 'admin'
+): Promise<void> {
+  try {
+    // Get current session data
+    const currentSession = await getTrialSession(sessionId);
+    if (!currentSession) {
+      throw new Error('Trial session not found');
+    }
+    
+    // Prepare reschedule history entry
+    const historyEntry = {
+      originalDate: currentSession.scheduledDate,
+      originalTime: `${currentSession.startTime}-${currentSession.endTime}`,
+      newDate: newSchedule.scheduledDate,
+      newTime: `${newSchedule.startTime}-${newSchedule.endTime}`,
+      reason: reason || 'ไม่มาเรียนตามนัด',
+      rescheduledBy,
+      rescheduledAt: new Date()
+    };
+    
+    // Build update data
+    const updateData: any = {
+      ...newSchedule,
+      scheduledDate: Timestamp.fromDate(newSchedule.scheduledDate),
+      // Reset attendance status
+      status: 'scheduled',
+      attended: false,
+      feedback: '',
+      teacherNote: '',
+      // Clear interested level using deleteField
+      interestedLevel: deleteField(),
+      // Add to reschedule history
+      rescheduleHistory: [...(currentSession.rescheduleHistory || []), historyEntry]
+    };
+    
+    // Update the session
+    const docRef = doc(db, SESSIONS_COLLECTION, sessionId);
+    await updateDoc(docRef, updateData);
+    
+    // Also update booking status back to scheduled if needed
+    const booking = await getTrialBooking(currentSession.bookingId);
+    if (booking && booking.status === 'completed') {
+      await updateBookingStatus(currentSession.bookingId, 'scheduled');
+    }
+  } catch (error) {
+    console.error('Error rescheduling trial session:', error);
     throw error;
   }
 }
@@ -563,13 +700,8 @@ export async function convertTrialToEnrollment(
       conversionNote: `Converted to ${classData.name}`,
     });
     
-    // Update booking status
-    const remainingSessions = await getTrialSessionsByBooking(bookingId);
-    const allConverted = remainingSessions.every(s => s.converted || s.status === 'cancelled');
-    
-    if (allConverted) {
-      await updateBookingStatus(bookingId, 'converted');
-    }
+    // Check and update booking status
+    await checkAndUpdateBookingStatus(bookingId);
     
     return { parentId, studentId, enrollmentId };
   } catch (error) {
@@ -699,4 +831,3 @@ export async function getTrialBookingStats(): Promise<{
     };
   }
 }
-

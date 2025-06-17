@@ -472,6 +472,7 @@ const handleReschedule = () => {
     router.push(`/makeup/${makeupInfo.id}?action=reschedule`);
     onOpenChange(false);
   } else if (event?.extendedProps.type === 'trial' && trialInfo) {
+    // ส่ง action=reschedule เพื่อให้ reschedule dialog เปิดอัตโนมัติ
     router.push(`/trial/${trialInfo.bookingId}?action=reschedule&sessionId=${trialInfo.id}`);
     onOpenChange(false);
   }

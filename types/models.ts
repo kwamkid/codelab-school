@@ -215,11 +215,13 @@ export interface TrialBooking {
   updatedAt?: Date;
 }
 
-// Trial Session - การทดลองเรียนแต่ละครั้ง
+// หา TrialSession interface (ประมาณบรรทัด 241-268)
+// แก้ไขเป็น:
+
 export interface TrialSession {
   id: string;
-  bookingId: string; // link กับ TrialBooking
-  studentName: string; // ชื่อนักเรียนที่เรียน
+  bookingId: string;
+  studentName: string;
   
   // Schedule
   subjectId: string;
@@ -231,7 +233,7 @@ export interface TrialSession {
   teacherId: string;
   branchId: string;
   roomId: string;
-  roomName?: string; // เพิ่ม field เก็บชื่อห้อง
+  roomName?: string;
   
   status: 'scheduled' | 'attended' | 'absent' | 'cancelled';
   
@@ -245,6 +247,17 @@ export interface TrialSession {
   converted?: boolean;
   convertedToClassId?: string;
   conversionNote?: string;
+  
+  // Rescheduling history (เพิ่มใหม่)
+  rescheduleHistory?: Array<{
+    originalDate: Date;
+    originalTime: string;
+    newDate: Date;
+    newTime: string;
+    reason?: string;
+    rescheduledBy: string;
+    rescheduledAt: Date;
+  }>;
   
   createdAt: Date;
   completedAt?: Date;

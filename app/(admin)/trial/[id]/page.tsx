@@ -9,6 +9,11 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { 
   TestTube,
   ArrowLeft,
@@ -29,7 +34,8 @@ import {
   PhoneCall,
   CalendarCheck,
   UserPlus,
-  MoreVertical
+  MoreVertical,
+  History
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useSearchParams } from 'next/navigation';
@@ -105,19 +111,22 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
     loadData();
   }, [resolvedParams.id]);
 
- // เพิ่ม useEffect เพื่อตรวจสอบ action parameter
-    useEffect(() => {
+  // เพิ่ม useEffect เพื่อตรวจสอบ action parameter
+  useEffect(() => {
     const action = searchParams.get('action');
     const sessionId = searchParams.get('sessionId');
     
-    if (action === 'reschedule' && sessionId) {
-        const sessionToReschedule = sessions.find(s => s.id === sessionId);
-        if (sessionToReschedule) {
+    if (action === 'reschedule' && sessionId && sessions.length > 0) {
+      const sessionToReschedule = sessions.find(s => s.id === sessionId);
+      if (sessionToReschedule) {
         setSelectedSession(sessionToReschedule);
         setRescheduleModalOpen(true);
-        }
+        
+        // Clear URL parameters using Next.js router
+        router.replace(`/trial/${resolvedParams.id}`, { scroll: false });
+      }
     }
-    }, [searchParams, sessions]);
+  }, [searchParams, sessions, router, resolvedParams.id]);
   
   const loadData = async () => {
     try {
@@ -192,6 +201,9 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
     loadData();
     setRescheduleModalOpen(false);
     setSelectedSession(null);
+    
+    // Make sure URL is clean
+    router.replace(`/trial/${resolvedParams.id}`, { scroll: false });
   };
 
   const getStatusBadge = (status: TrialBooking['status']) => {
@@ -387,6 +399,7 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
                         <TableHead>วันที่และเวลา</TableHead>
                         <TableHead>สาขา/ครู/ห้อง</TableHead>
                         <TableHead className="text-center">การเข้าเรียน</TableHead>
+                        <TableHead>ประวัติ</TableHead>
                         <TableHead className="text-right">จัดการ</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -434,88 +447,161 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
                               </div>
                             </TableCell>
                             <TableCell className="text-center">
-                              {session.status === 'scheduled' && isPast ? (
-                                <div className="flex gap-2 justify-center">
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="bg-green-50 hover:bg-green-100 text-green-700 border-green-300"
-                                    onClick={async () => {
-                                      try {
-                                        await updateTrialSession(session.id, {
-                                          status: 'attended',
-                                          attended: true
-                                        });
-                                        
-                                        // Check if all sessions are completed
-                                        const updatedSessions = sessions.map(s => 
-                                          s.id === session.id ? { ...s, status: 'attended' as const } : s
-                                        );
-                                        const allCompleted = updatedSessions.every(s => 
-                                          s.status === 'attended' || s.status === 'absent' || s.status === 'cancelled'
-                                        );
-                                        
-                                        if (allCompleted) {
-                                          await updateBookingStatus(booking.id, 'completed');
-                                        }
-                                        
-                                        toast.success('บันทึกการเข้าเรียนสำเร็จ');
-                                        loadData();
-                                      } catch (error) {
-                                        toast.error('เกิดข้อผิดพลาดในการบันทึก');
-                                      }
-                                    }}
-                                  >
-                                    <CheckCircle className="h-4 w-4 mr-1" />
-                                    มาเรียน
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="bg-red-50 hover:bg-red-100 text-red-700 border-red-300"
-                                    onClick={async () => {
-                                      try {
-                                        await updateTrialSession(session.id, {
-                                          status: 'absent',
-                                          attended: false
-                                        });
-                                        
-                                        const updatedSessions = sessions.map(s => 
-                                          s.id === session.id ? { ...s, status: 'absent' as const } : s
-                                        );
-                                        const allCompleted = updatedSessions.every(s => 
-                                          s.status === 'attended' || s.status === 'absent' || s.status === 'cancelled'
-                                        );
-                                        
-                                        if (allCompleted) {
-                                          await updateBookingStatus(booking.id, 'completed');
-                                        }
-                                        
-                                        toast.success('บันทึกว่าไม่มาเรียน');
-                                        loadData();
-                                      } catch (error) {
-                                        toast.error('เกิดข้อผิดพลาดในการบันทึก');
-                                      }
-                                    }}
-                                  >
-                                    <XCircle className="h-4 w-4 mr-1" />
-                                    ไม่มา
-                                  </Button>
-                                </div>
-                              ) : session.status === 'scheduled' && !isPast ? (
-                                <Badge className="bg-purple-100 text-purple-700">
-                                  รอถึงวัน
+                              {/* ถ้าลงทะเบียนแล้ว ไม่ต้องแสดงสถานะอื่น */}
+                              {session.converted ? (
+                                <Badge className="bg-emerald-100 text-emerald-700">
+                                  <UserPlus className="h-3 w-3 mr-1" />
+                                  ลงทะเบียนแล้ว
                                 </Badge>
                               ) : (
-                                <Badge className={
-                                  session.status === 'attended' ? 'bg-green-100 text-green-700' :
-                                  session.status === 'absent' ? 'bg-red-100 text-red-700' :
-                                  'bg-gray-100 text-gray-700'
-                                }>
-                                  {session.status === 'attended' ? 'เข้าเรียนแล้ว' :
-                                   session.status === 'absent' ? 'ไม่มาเรียน' :
-                                   'ยกเลิก'}
-                                </Badge>
+                                // แสดงสถานะปกติถ้ายังไม่ได้ลงทะเบียน
+                                <>
+                                  {session.status === 'scheduled' && isPast ? (
+                                    <div className="flex gap-2 justify-center">
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="bg-green-50 hover:bg-green-100 text-green-700 border-green-300"
+                                        onClick={async () => {
+                                          try {
+                                            await updateTrialSession(session.id, {
+                                              status: 'attended',
+                                              attended: true
+                                            });
+                                            
+                                            // Check if all sessions are completed
+                                            const updatedSessions = sessions.map(s => 
+                                              s.id === session.id ? { ...s, status: 'attended' as const } : s
+                                            );
+                                            const allCompleted = updatedSessions.every(s => 
+                                              s.status === 'attended' || s.status === 'absent' || s.status === 'cancelled' || s.converted
+                                            );
+                                            
+                                            if (allCompleted) {
+                                              await updateBookingStatus(booking.id, 'completed');
+                                            }
+                                            
+                                            toast.success('บันทึกการเข้าเรียนสำเร็จ');
+                                            loadData();
+                                          } catch (error) {
+                                            toast.error('เกิดข้อผิดพลาดในการบันทึก');
+                                          }
+                                        }}
+                                      >
+                                        <CheckCircle className="h-4 w-4 mr-1" />
+                                        มาเรียน
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="bg-red-50 hover:bg-red-100 text-red-700 border-red-300"
+                                        onClick={async () => {
+                                          try {
+                                            await updateTrialSession(session.id, {
+                                              status: 'absent',
+                                              attended: false
+                                            });
+                                            
+                                            const updatedSessions = sessions.map(s => 
+                                              s.id === session.id ? { ...s, status: 'absent' as const } : s
+                                            );
+                                            const allCompleted = updatedSessions.every(s => 
+                                              s.status === 'attended' || s.status === 'absent' || s.status === 'cancelled' || s.converted
+                                            );
+                                            
+                                            if (allCompleted) {
+                                              await updateBookingStatus(booking.id, 'completed');
+                                            }
+                                            
+                                            toast.success('บันทึกว่าไม่มาเรียน');
+                                            loadData();
+                                          } catch (error) {
+                                            toast.error('เกิดข้อผิดพลาดในการบันทึก');
+                                          }
+                                        }}
+                                      >
+                                        <XCircle className="h-4 w-4 mr-1" />
+                                        ไม่มา
+                                      </Button>
+                                    </div>
+                                  ) : session.status === 'scheduled' && !isPast ? (
+                                    <Badge className="bg-purple-100 text-purple-700">
+                                      รอถึงวัน
+                                    </Badge>
+                                  ) : (
+                                    <Badge className={
+                                      session.status === 'attended' ? 'bg-green-100 text-green-700' :
+                                      session.status === 'absent' ? 'bg-red-100 text-red-700' :
+                                      'bg-gray-100 text-gray-700'
+                                    }>
+                                      {session.status === 'attended' ? 'เข้าเรียนแล้ว' :
+                                       session.status === 'absent' ? 'ไม่มาเรียน' :
+                                       'ยกเลิก'}
+                                    </Badge>
+                                  )}
+                                </>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {session.rescheduleHistory && session.rescheduleHistory.length > 0 && (
+                                <Popover>
+                                  <PopoverTrigger asChild>
+                                    <Button 
+                                      variant="outline" 
+                                      size="sm"
+                                      className="h-auto py-1 px-2"
+                                    >
+                                      <History className="h-3 w-3 mr-1" />
+                                      เลื่อน {session.rescheduleHistory.length} ครั้ง
+                                    </Button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-80">
+                                    <div className="space-y-3">
+                                      <h4 className="font-medium text-sm flex items-center gap-2">
+                                        <Clock className="h-4 w-4" />
+                                        ประวัติการเลื่อนนัด
+                                      </h4>
+                                      <div className="space-y-3 max-h-64 overflow-y-auto">
+                                        {session.rescheduleHistory.map((history, idx) => {
+                                          // Convert Timestamp to Date if needed
+                                          const originalDate = history.originalDate instanceof Date 
+                                            ? history.originalDate 
+                                            : new Date((history.originalDate as any).seconds * 1000);
+                                          const newDate = history.newDate instanceof Date 
+                                            ? history.newDate 
+                                            : new Date((history.newDate as any).seconds * 1000);
+                                          const rescheduledAt = history.rescheduledAt instanceof Date 
+                                            ? history.rescheduledAt 
+                                            : new Date((history.rescheduledAt as any).seconds * 1000);
+                                          
+                                          return (
+                                            <div key={idx} className="text-sm border-l-2 border-gray-200 pl-3">
+                                              <div className="font-medium mb-1">ครั้งที่ {idx + 1}</div>
+                                              <div className="text-gray-600 space-y-0.5 text-xs">
+                                                <div className="flex items-start gap-1">
+                                                  <span className="text-gray-500">จาก:</span>
+                                                  <span>{formatDate(originalDate)} {history.originalTime}</span>
+                                                </div>
+                                                <div className="flex items-start gap-1">
+                                                  <span className="text-gray-500">เป็น:</span>
+                                                  <span>{formatDate(newDate)} {history.newTime}</span>
+                                                </div>
+                                                <div className="flex items-start gap-1">
+                                                  <span className="text-gray-500">เหตุผล:</span>
+                                                  <span>{history.reason}</span>
+                                                </div>
+                                                <div className="flex items-start gap-1">
+                                                  <span className="text-gray-500">เมื่อ:</span>
+                                                  <span>{formatDate(rescheduledAt, 'full')}</span>
+                                                </div>
+                                              </div>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  </PopoverContent>
+                                </Popover>
                               )}
                             </TableCell>
                             <TableCell className="text-right">
@@ -534,79 +620,102 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
                                   <DropdownMenuLabel>จัดการ</DropdownMenuLabel>
                                   <DropdownMenuSeparator />
                                   
-                                  {session.status === 'scheduled' && isPast && (
-                                    <DropdownMenuItem
-                                      onSelect={async () => {
-                                        try {
-                                          await updateTrialSession(session.id, {
-                                            status: 'attended',
-                                            attended: true
-                                          });
-                                          
-                                          const allSessions = sessions.filter(s => s.id !== session.id);
-                                          const allAttended = allSessions.every(s => 
-                                            s.status === 'attended' || s.status === 'absent' || s.status === 'cancelled'
-                                          );
-                                          
-                                          if (allAttended) {
-                                            await updateBookingStatus(booking.id, 'completed');
-                                          }
-                                          
-                                          toast.success('บันทึกการเข้าเรียนสำเร็จ');
-                                          loadData();
-                                        } catch (error) {
-                                          console.error('Error updating attendance:', error);
-                                          toast.error('เกิดข้อผิดพลาดในการบันทึก');
-                                        }
-                                      }}
-                                    >
+                                  {/* ถ้าลงทะเบียนแล้ว ไม่ต้องแสดง action อื่น */}
+                                  {session.converted ? (
+                                    <DropdownMenuItem disabled className="text-gray-400">
                                       <CheckCircle className="h-4 w-4 mr-2" />
-                                      บันทึกว่าเข้าเรียนแล้ว
+                                      ลงทะเบียนเรียบร้อยแล้ว
                                     </DropdownMenuItem>
-                                  )}
-                                  
-                                  {session.status === 'attended' && !session.converted && (
-                                    <DropdownMenuItem 
-                                      onSelect={() => {
-                                        setSelectedSession(session);
-                                        setConvertModalOpen(true);
-                                      }}
-                                      className="text-green-600 focus:text-green-600"
-                                    >
-                                      <UserPlus className="h-4 w-4 mr-2" />
-                                      แปลงเป็นนักเรียน
-                                    </DropdownMenuItem>
-                                  )}
-                                  
-                                  {session.status === 'scheduled' && !isPast && (
+                                  ) : (
                                     <>
-                                      <DropdownMenuItem
-                                        onSelect={() => {
-                                          setSelectedSession(session);
-                                          setRescheduleModalOpen(true);
-                                        }}
-                                      >
-                                        <Edit className="h-4 w-4 mr-2" />
-                                        เปลี่ยนวันนัดหมาย
-                                      </DropdownMenuItem>
-                                      <DropdownMenuSeparator />
-                                      <DropdownMenuItem 
-                                        className="text-red-600 focus:text-red-600"
-                                        onSelect={async () => {
-                                          if (confirm('ยืนยันการยกเลิกนัดหมาย?')) {
+                                      {session.status === 'scheduled' && isPast && (
+                                        <DropdownMenuItem
+                                          onSelect={async () => {
                                             try {
-                                              await cancelTrialSession(session.id, 'ยกเลิกโดย Admin');
-                                              toast.success('ยกเลิกนัดหมายสำเร็จ');
+                                              await updateTrialSession(session.id, {
+                                                status: 'attended',
+                                                attended: true
+                                              });
+                                              
+                                              const allSessions = sessions.filter(s => s.id !== session.id);
+                                              const allAttended = allSessions.every(s => 
+                                                s.status === 'attended' || s.status === 'absent' || s.status === 'cancelled' || s.converted
+                                              );
+                                              
+                                              if (allAttended) {
+                                                await updateBookingStatus(booking.id, 'completed');
+                                              }
+                                              
+                                              toast.success('บันทึกการเข้าเรียนสำเร็จ');
                                               loadData();
                                             } catch (error) {
-                                              toast.error('เกิดข้อผิดพลาดในการยกเลิก');
+                                              console.error('Error updating attendance:', error);
+                                              toast.error('เกิดข้อผิดพลาดในการบันทึก');
                                             }
-                                          }
-                                        }}
-                                      >
-                                        <XCircle className="h-4 w-4 mr-2" />
-                                        ยกเลิกนัดหมาย
-                                      </DropdownMenuItem>
+                                          }}
+                                        >
+                                          <CheckCircle className="h-4 w-4 mr-2" />
+                                          บันทึกว่าเข้าเรียนแล้ว
+                                        </DropdownMenuItem>
+                                      )}
+                                      
+                                      {session.status === 'attended' && !session.converted && (
+                                        <DropdownMenuItem 
+                                          onSelect={() => {
+                                            setSelectedSession(session);
+                                            setConvertModalOpen(true);
+                                          }}
+                                          className="text-green-600 focus:text-green-600"
+                                        >
+                                          <UserPlus className="h-4 w-4 mr-2" />
+                                          แปลงเป็นนักเรียน
+                                        </DropdownMenuItem>
+                                      )}
+                                      
+                                      {session.status === 'scheduled' && !isPast && (
+                                        <>
+                                          <DropdownMenuItem
+                                            onSelect={() => {
+                                              setSelectedSession(session);
+                                              setRescheduleModalOpen(true);
+                                            }}
+                                          >
+                                            <Edit className="h-4 w-4 mr-2" />
+                                            เปลี่ยนวันนัดหมาย
+                                          </DropdownMenuItem>
+                                          <DropdownMenuSeparator />
+                                          <DropdownMenuItem 
+                                            className="text-red-600 focus:text-red-600"
+                                            onSelect={async () => {
+                                              if (confirm('ยืนยันการยกเลิกนัดหมาย?')) {
+                                                try {
+                                                  await cancelTrialSession(session.id, 'ยกเลิกโดย Admin');
+                                                  toast.success('ยกเลิกนัดหมายสำเร็จ');
+                                                  loadData();
+                                                } catch (error) {
+                                                  toast.error('เกิดข้อผิดพลาดในการยกเลิก');
+                                                }
+                                              }
+                                            }}
+                                          >
+                                            <XCircle className="h-4 w-4 mr-2" />
+                                            ยกเลิกนัดหมาย
+                                          </DropdownMenuItem>
+                                        </>
+                                      )}
+                                      
+                                      {session.status === 'absent' && (
+                                        <DropdownMenuItem
+                                          onSelect={() => {
+                                            setSelectedSession(session);
+                                            setRescheduleModalOpen(true);
+                                          }}
+                                          className="text-blue-600 focus:text-blue-600"
+                                        >
+                                          <Calendar className="h-4 w-4 mr-2" />
+                                          นัดวันใหม่
+                                        </DropdownMenuItem>
+                                      )}
                                     </>
                                   )}
                                 </DropdownMenuContent>
