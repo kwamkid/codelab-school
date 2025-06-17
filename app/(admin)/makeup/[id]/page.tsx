@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { useSearchParams } from 'next/navigation';
 import { 
   Calendar,
   Clock,
@@ -69,6 +70,8 @@ export default function MakeupDetailPage() {
   const params = useParams();
   const router = useRouter();
   const makeupId = params.id as string;
+  const searchParams = useSearchParams();
+
   
   const [makeup, setMakeup] = useState<MakeupClass | null>(null);
   const [student, setStudent] = useState<(Student & { parentName: string; parentPhone: string }) | null>(null);
@@ -91,6 +94,14 @@ export default function MakeupDetailPage() {
       loadMakeupDetails();
     }
   }, [makeupId]);
+
+    // เพิ่ม useEffect เพื่อตรวจสอบ action parameter
+  useEffect(() => {
+    const action = searchParams.get('action');
+    if (action === 'reschedule' && makeup?.status === 'scheduled') {
+      setShowEditSchedule(true);
+    }
+  }, [searchParams, makeup]);
 
   const loadMakeupDetails = async () => {
     try {

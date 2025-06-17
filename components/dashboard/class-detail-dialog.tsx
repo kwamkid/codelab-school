@@ -467,18 +467,15 @@ export default function ClassDetailDialog({
     }
   };
 
-  // Handle reschedule for makeup/trial
-  const handleReschedule = () => {
-    if (event?.extendedProps.type === 'makeup' && makeupInfo) {
-      // เปลี่ยนไปหน้า makeup detail พร้อม query parameter
-      router.push(`/makeup/${makeupInfo.id}?action=reschedule`);
-      onOpenChange(false);
-    } else if (event?.extendedProps.type === 'trial' && trialInfo) {
-      // เปลี่ยนไปหน้า trial detail พร้อม query parameter
-      router.push(`/trial/${trialInfo.bookingId}?action=reschedule`);
-      onOpenChange(false);
-    }
-  };
+const handleReschedule = () => {
+  if (event?.extendedProps.type === 'makeup' && makeupInfo) {
+    router.push(`/makeup/${makeupInfo.id}?action=reschedule`);
+    onOpenChange(false);
+  } else if (event?.extendedProps.type === 'trial' && trialInfo) {
+    router.push(`/trial/${trialInfo.bookingId}?action=reschedule&sessionId=${trialInfo.id}`);
+    onOpenChange(false);
+  }
+};
 
   // Check if event is past
   const isPastEvent = () => {

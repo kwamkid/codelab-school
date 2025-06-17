@@ -32,6 +32,7 @@ import {
   MoreVertical
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useSearchParams } from 'next/navigation';
 import { TrialBooking, TrialSession, Subject, Teacher, Branch, Room } from '@/types/models';
 import { 
   getTrialBooking, 
@@ -82,6 +83,7 @@ const sourceConfig = {
 };
 
 export default function TrialBookingDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const searchParams = useSearchParams();
   const resolvedParams = use(params);
   const router = useRouter();
   const [booking, setBooking] = useState<TrialBooking | null>(null);
@@ -103,6 +105,20 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
     loadData();
   }, [resolvedParams.id]);
 
+ // เพิ่ม useEffect เพื่อตรวจสอบ action parameter
+    useEffect(() => {
+    const action = searchParams.get('action');
+    const sessionId = searchParams.get('sessionId');
+    
+    if (action === 'reschedule' && sessionId) {
+        const sessionToReschedule = sessions.find(s => s.id === sessionId);
+        if (sessionToReschedule) {
+        setSelectedSession(sessionToReschedule);
+        setRescheduleModalOpen(true);
+        }
+    }
+    }, [searchParams, sessions]);
+  
   const loadData = async () => {
     try {
       setLoading(true);
