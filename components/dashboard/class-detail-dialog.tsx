@@ -72,6 +72,7 @@ interface ClassDetailDialogProps {
 interface StudentWithAttendance extends Student {
   parentName: string;
   parentPhone: string;
+  lineDisplayName?: string;
   enrollmentId: string;
   attendance?: {
     status: 'present' | 'absent' | 'late';
@@ -97,6 +98,7 @@ export default function ClassDetailDialog({
   const [trialInfo, setTrialInfo] = useState<any>(null);
   const [loadingMakeup, setLoadingMakeup] = useState(false);
   const [actualTeacherId, setActualTeacherId] = useState<string>('');
+  const [originalTeacherId, setOriginalTeacherId] = useState<string>(''); // เพิ่มตัวแปรเก็บครูประจำคลาส
   const [teachers, setTeachers] = useState<any[]>([]);
   const [loadingTeachers, setLoadingTeachers] = useState(false);
   
@@ -153,6 +155,7 @@ export default function ClassDetailDialog({
         const classModule = await import('@/lib/services/classes');
         const classData = await classModule.getClass(event.classId);
         setActualTeacherId(classData?.teacherId || '');
+        setOriginalTeacherId(classData?.teacherId || ''); // บันทึกครูประจำคลาส
       }
     } catch (error) {
       console.error('Error loading teachers:', error);
@@ -456,13 +459,23 @@ export default function ClassDetailDialog({
     }
   };
 
+  // เพิ่ม function handleViewTrialDetail ที่หายไป
+  const handleViewTrialDetail = () => {
+    if (trialInfo && trialInfo.bookingId) {
+      router.push(`/trial/${trialInfo.bookingId}`);
+      onOpenChange(false);
+    }
+  };
+
   // Handle reschedule for makeup/trial
   const handleReschedule = () => {
     if (event?.extendedProps.type === 'makeup' && makeupInfo) {
-      router.push(`/makeup/${makeupInfo.id}?reschedule=true`);
+      // เปลี่ยนไปหน้า makeup detail พร้อม query parameter
+      router.push(`/makeup/${makeupInfo.id}?action=reschedule`);
       onOpenChange(false);
     } else if (event?.extendedProps.type === 'trial' && trialInfo) {
-      router.push(`/trial/${trialInfo.bookingId}?reschedule=true`);
+      // เปลี่ยนไปหน้า trial detail พร้อม query parameter
+      router.push(`/trial/${trialInfo.bookingId}?action=reschedule`);
       onOpenChange(false);
     }
   };
@@ -828,6 +841,19 @@ export default function ClassDetailDialog({
                             {trialInfo.feedback && (
                               <p className="text-gray-600">Feedback: {trialInfo.feedback}</p>
                             )}
+                            {trialInfo.status === 'absent' && (
+                              <div className="mt-3">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={handleReschedule}
+                                  className="text-blue-600 hover:text-blue-700"
+                                >
+                                  <Calendar className="h-4 w-4 mr-1" />
+                                  นัดวันใหม่
+                                </Button>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -940,6 +966,19 @@ export default function ClassDetailDialog({
                             {makeupInfo.attendance.note && (
                               <p className="text-gray-600">หมายเหตุ: {makeupInfo.attendance.note}</p>
                             )}
+                            {makeupInfo.attendance.status === 'absent' && (
+                              <div className="mt-3">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={handleReschedule}
+                                  className="text-blue-600 hover:text-blue-700"
+                                >
+                                  <Calendar className="h-4 w-4 mr-1" />
+                                  นัดวันใหม่
+                                </Button>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -1013,7 +1052,8 @@ export default function ClassDetailDialog({
                           {teachers.map((teacher) => (
                             <SelectItem key={teacher.id} value={teacher.id}>
                               {teacher.nickname || teacher.name}
-                              {event.extendedProps.type === 'class' && teacher.id === actualTeacherId && ' (ครูประจำคลาส)'}
+                              {/* แก้ไขการแสดง - เช็คครูประจำคลาสจาก originalTeacherId */}
+                              {teacher.id === originalTeacherId && ' (ครูประจำคลาส)'}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -1107,8 +1147,9 @@ export default function ClassDetailDialog({
                 </Button>
               )}
               
-              {/* Reschedule button for past makeup/trial events */}
-              {isPastEvent() && (event.extendedProps.type === 'makeup' || event.extendedProps.type === 'trial') && (
+              {/* Reschedule button for makeup/trial that marked as absent */}
+              {((event.extendedProps.type === 'makeup' && makeupAttendance === 'absent') || 
+                (event.extendedProps.type === 'trial' && trialAttendance === 'absent')) && (
                 <Button
                   variant="outline"
                   onClick={handleReschedule}
