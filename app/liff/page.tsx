@@ -1,73 +1,103 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useLiff } from '@/components/liff/liff-provider'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Calendar, Users, User, Phone, BookOpen } from 'lucide-react'
+import { Calendar, Users, CalendarOff } from 'lucide-react'
+import { getGeneralSettings } from '@/lib/services/settings'
+import Image from 'next/image'
 
 export default function LiffPage() {
   const router = useRouter()
-  const { isLoggedIn, profile, isLoading } = useLiff()
+  const { isLoggedIn, profile } = useLiff()
+  const [settings, setSettings] = useState<any>(null)
   
-  console.log('[LiffPage] Render state:', { isLoading, isLoggedIn, profile })
+  // Load settings for logo
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const data = await getGeneralSettings()
+        setSettings(data)
+      } catch (error) {
+        console.error('Error loading settings:', error)
+      }
+    }
+    loadSettings()
+  }, [])
 
   const menuItems = [
     {
-      title: 'ตารางเรียน',
+      title: 'Schedule',
+      titleTh: 'ตารางเรียน',
       icon: Calendar,
       path: '/liff/schedule',
       description: 'ดูตารางเรียนของนักเรียน',
       color: 'bg-blue-500'
     },
     {
-      title: 'จองทดลองเรียน',
-      icon: BookOpen,
-      path: '/liff/booking',
-      description: 'จองคลาสทดลองเรียน',
+      title: 'Parent & Students',
+      titleTh: 'ผู้ปกครองและนักเรียน',
+      icon: Users,
+      path: '/liff/profile',
+      description: 'จัดการข้อมูลส่วนตัว',
       color: 'bg-green-500'
     },
     {
-      title: 'โปรไฟล์',
-      icon: User,
-      path: '/liff/profile',
-      description: 'จัดการข้อมูลส่วนตัว',
-      color: 'bg-orange-500'
-    },
-    {
-      title: 'Makeup Class',
-      icon: Users,
+      title: 'Leave & Makeup',
+      titleTh: 'ลาเรียนและเรียนชดเชย',
+      icon: CalendarOff,
       path: '/liff/makeup',
-      description: 'ดูตารางเรียนชดเชย',
-      color: 'bg-pink-500'
-    },
-    {
-      title: 'ติดต่อเรา',
-      icon: Phone,
-      path: '/liff/contact',
-      description: 'ข้อมูลการติดต่อ',
-      color: 'bg-gray-500'
+      description: 'ขอลาเรียนและดูตารางเรียนชดเชย',
+      color: 'bg-orange-500'
     }
   ]
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-primary text-white p-4">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold">CodeLab School</h1>
-          <p className="text-sm opacity-90 mt-1">ระบบจัดการเรียนออนไลน์</p>
+      {/* Header with Logo */}
+      <div className="bg-white shadow-sm">
+        <div className="p-6 text-center">
+          {/* Logo */}
+          <div className="flex justify-center mb-4">
+            {settings?.logoUrl ? (
+              <div className="relative w-[200px] h-[60px]">
+                <Image 
+                  src={settings.logoUrl} 
+                  alt={settings.schoolName || 'School Logo'} 
+                  width={200}
+                  height={60}
+                  className="object-contain"
+                  priority
+                  unoptimized
+                />
+              </div>
+            ) : (
+              <div className="relative h-[60px]" style={{ width: '200px' }}>
+                <Image 
+                  src="/logo.svg" 
+                  alt="CodeLab Logo" 
+                  fill
+                  className="object-contain"
+                />
+              </div>
+            )}
+          </div>
+          <h1 className="text-xl font-bold text-gray-800">
+            {settings?.schoolName || 'CodeLab School'}
+          </h1>
+          <p className="text-sm text-gray-600 mt-1">ระบบจัดการเรียนออนไลน์</p>
         </div>
       </div>
 
       {/* Welcome Message */}
       {isLoggedIn && profile && (
         <div className="p-4">
-          <Card className="bg-white shadow-sm">
-            <CardContent className="pt-6">
-              <p className="text-center">
-                สวัสดีคุณ <span className="font-semibold">{profile.displayName}</span> 👋
+          <Card className="bg-primary/5 border-primary/20">
+            <CardContent className="pt-1">
+              <p className="text-center text-gray-700">
+                สวัสดีคุณ <span className="font-semibold text-primary">{profile.displayName}</span> 👋
               </p>
             </CardContent>
           </Card>
@@ -76,23 +106,28 @@ export default function LiffPage() {
 
       {/* Menu Grid */}
       <div className="p-4">
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 max-w-md mx-auto">
           {menuItems.map((item) => {
             const Icon = item.icon
             return (
               <Card
                 key={item.path}
-                className="cursor-pointer hover:shadow-lg transition-shadow"
+                className="cursor-pointer hover:shadow-lg transition-all hover:-translate-y-1"
                 onClick={() => router.push(item.path)}
               >
                 <CardContent className="p-6">
-                  <div className="flex flex-col items-center text-center space-y-3">
-                    <div className={`p-3 rounded-full ${item.color} text-white`}>
+                  <div className="flex items-center gap-4">
+                    <div className={`p-4 rounded-full ${item.color} text-white`}>
                       <Icon className="h-8 w-8" />
                     </div>
-                    <div>
-                      <h3 className="font-semibold text-sm">{item.title}</h3>
-                      <p className="text-xs text-muted-foreground mt-1">
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-lg text-gray-800">
+                        {item.titleTh}
+                      </h3>
+                      <p className="text-sm text-gray-500">
+                        {item.title}
+                      </p>
+                      <p className="text-xs text-gray-600 mt-1">
                         {item.description}
                       </p>
                     </div>
@@ -106,14 +141,15 @@ export default function LiffPage() {
 
       {/* Quick Actions */}
       {!isLoggedIn && (
-        <div className="p-4">
+        <div className="p-4 max-w-md mx-auto">
           <Card>
-            <CardHeader>
-              <CardTitle className="text-center">เริ่มต้นใช้งาน</CardTitle>
-            </CardHeader>
-            <CardContent>
+            <CardContent className="pt-6">
+              <p className="text-center text-gray-600 mb-4">
+                กรุณาเข้าสู่ระบบเพื่อใช้งาน
+              </p>
               <Button 
                 className="w-full" 
+                size="lg"
                 onClick={() => router.push('/liff/profile')}
               >
                 เข้าสู่ระบบด้วย LINE
@@ -122,6 +158,11 @@ export default function LiffPage() {
           </Card>
         </div>
       )}
+
+      {/* Footer */}
+      <div className="mt-auto p-4 text-center text-xs text-gray-500">
+        <p>&copy; 2024 {settings?.schoolName || 'CodeLab School'}. All rights reserved.</p>
+      </div>
     </div>
   )
 }
