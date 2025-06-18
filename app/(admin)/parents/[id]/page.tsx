@@ -24,6 +24,8 @@ import {
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { formatDate, calculateAge } from '@/lib/utils';
+import { LinkAccountQR } from '@/components/admin/link-account-qr';
+
 
 export default function ParentDetailPage() {
   const params = useParams();
@@ -340,6 +342,53 @@ export default function ParentDetailPage() {
               )}
             </CardContent>
           </Card>
+        </div>
+        <div>
+<Card>
+  <CardHeader>
+    <CardTitle>การเชื่อมต่อ LINE</CardTitle>
+  </CardHeader>
+  <CardContent>
+    {parent.lineUserId ? (
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <Badge variant="success">
+            <CheckCircle className="h-3 w-3 mr-1" />
+            เชื่อมต่อแล้ว
+          </Badge>
+        </div>
+        
+        <div className="text-sm space-y-1">
+          <p><span className="text-muted-foreground">LINE ID:</span> {parent.lineUserId}</p>
+          <p><span className="text-muted-foreground">Display Name:</span> {parent.displayName}</p>
+        </div>
+        
+        {parent.pictureUrl && (
+          <img 
+            src={parent.pictureUrl} 
+            alt={parent.displayName}
+            className="w-16 h-16 rounded-full"
+          />
+        )}
+      </div>
+    ) : (
+      <div className="space-y-4">
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            ยังไม่ได้เชื่อมต่อ LINE - สร้าง QR Code ให้ผู้ปกครองสแกน
+          </AlertDescription>
+        </Alert>
+        
+        <LinkAccountQR 
+          parentId={parent.id}
+          parentName={parent.displayName}
+          parentPhone={parent.phone}
+        />
+      </div>
+    )}
+  </CardContent>
+</Card>
         </div>
       </div>
     </div>
