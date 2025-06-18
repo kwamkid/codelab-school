@@ -8,7 +8,8 @@ import {
   query,
   where,
   orderBy,
-  Timestamp 
+  Timestamp,
+  deleteField,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { Parent, Student } from '@/types/models';
@@ -140,37 +141,32 @@ export async function createParent(parentData: Omit<Parent, 'id' | 'createdAt' |
 }
 
 // Update parent
-// Update parent
 export async function updateParent(id: string, parentData: Partial<Parent>): Promise<void> {
   try {
     const docRef = doc(db, COLLECTION_NAME, id);
     
     // Create a properly typed update object
-    const updateData: {
-      displayName?: string;
-      phone?: string;
-      emergencyPhone?: string;
-      email?: string;
-      lineUserId?: string;
-      pictureUrl?: string;
-      preferredBranchId?: string;
-      address?: {
-        houseNumber: string;
-        street?: string;
-        subDistrict: string;
-        district: string;
-        province: string;
-        postalCode: string;
-      };
-    } = {};
+    const updateData: any = {};
     
     // Copy only the fields that should be updated
     if (parentData.displayName !== undefined) updateData.displayName = parentData.displayName;
     if (parentData.phone !== undefined) updateData.phone = parentData.phone;
     if (parentData.emergencyPhone !== undefined) updateData.emergencyPhone = parentData.emergencyPhone;
     if (parentData.email !== undefined) updateData.email = parentData.email;
-    if (parentData.lineUserId !== undefined) updateData.lineUserId = parentData.lineUserId;
-    if (parentData.pictureUrl !== undefined) updateData.pictureUrl = parentData.pictureUrl;
+    
+    // Handle LINE fields - use deleteField() for null values
+    if (parentData.lineUserId !== undefined) {
+      updateData.lineUserId = parentData.lineUserId === null || parentData.lineUserId === '' 
+        ? deleteField() 
+        : parentData.lineUserId;
+    }
+    
+    if (parentData.pictureUrl !== undefined) {
+      updateData.pictureUrl = parentData.pictureUrl === null || parentData.pictureUrl === '' 
+        ? deleteField() 
+        : parentData.pictureUrl;
+    }
+    
     if (parentData.preferredBranchId !== undefined) updateData.preferredBranchId = parentData.preferredBranchId;
     
     // Handle address update
@@ -430,5 +426,33 @@ export async function getStudentWithParent(studentId: string): Promise<(Student 
   } catch (error) {
     console.error('Error getting student with parent:', error);
     return null;
+  }
+}
+
+// Check if LINE User ID already exists
+export async function checkLineUserIdExists(lineUserId: string): Promise<{ exists: boolean; parentId?: string }> {
+  try {
+    // Don't check if lineUserId is empty
+    if (!lineUserId || lineUserId.trim() === '') {
+      return { exists: false };
+    }
+    
+    const q = query(
+      collection(db, COLLECTION_NAME),
+      where('lineUserId', '==', lineUserId)
+    );
+    const querySnapshot = await getDocs(q);
+    
+    if (!querySnapshot.empty) {
+      return { 
+        exists: true, 
+        parentId: querySnapshot.docs[0].id 
+      };
+    }
+    
+    return { exists: false };
+  } catch (error) {
+    console.error('Error checking LINE User ID:', error);
+    throw error;
   }
 }

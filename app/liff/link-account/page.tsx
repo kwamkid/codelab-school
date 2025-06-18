@@ -104,51 +104,62 @@ function LinkAccountContent() {
   };
 
   const handleConfirmLink = async () => {
-    if (!token || !phone || !profile?.userId || !tokenId) return;
+  if (!token || !phone || !profile?.userId || !tokenId) return;
 
-    try {
-      setLinking(true);
-      setError('');
+  try {
+    setLinking(true);
+    setError('');
 
-      const response = await fetch('/api/liff/link-account', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          token,
-          phone: phone.replace(/-/g, ''),
-          lineUserId: profile.userId,
-          lineDisplayName: profile.displayName,
-          linePictureUrl: profile.pictureUrl
-        })
-      });
+    const response = await fetch('/api/liff/link-account', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        token,
+        phone: phone.replace(/-/g, ''),
+        lineUserId: profile.userId,
+        lineDisplayName: profile.displayName,
+        linePictureUrl: profile.pictureUrl
+      })
+    });
 
-      const data = await response.json();
+    const data = await response.json();
 
-      if (!response.ok) {
-        setError(data.error || 'เกิดข้อผิดพลาดในการเชื่อมต่อ');
-        return;
-      }
-
-      // Success
-      toast.success('เชื่อมต่อ LINE สำเร็จ!');
-      
-      // Close LIFF window or redirect
-      if (liff?.isInClient()) {
-        setTimeout(() => {
-          liff.closeWindow();
-        }, 2000);
+    if (!response.ok) {
+      // Handle specific error cases
+      if (data.errorCode === 'line_already_used') {
+        setError('LINE account นี้ถูกใช้งานแล้ว กรุณาใช้ LINE account อื่น');
+        
+        // Optional: Show which parent is using this LINE
+        if (data.existingParentId) {
+          console.log('LINE already used by parent:', data.existingParentId);
+        }
       } else {
-        setTimeout(() => {
-          router.push('/liff/profile');
-        }, 2000);
+        setError(data.error || 'เกิดข้อผิดพลาดในการเชื่อมต่อ');
       }
-    } catch (error) {
-      console.error('Error linking account:', error);
-      setError('ไม่สามารถเชื่อมต่อได้');
-    } finally {
-      setLinking(false);
+      return;
     }
-  };
+
+    // Success
+    toast.success('เชื่อมต่อ LINE สำเร็จ!');
+    
+    // Close LIFF window or redirect
+    if (liff?.isInClient()) {
+      setTimeout(() => {
+        liff.closeWindow();
+      }, 2000);
+    } else {
+      setTimeout(() => {
+        // Redirect to profile page instead of reloading
+        window.location.href = '/liff/profile';
+      }, 2000);
+    }
+  } catch (error) {
+    console.error('Error linking account:', error);
+    setError('ไม่สามารถเชื่อมต่อได้');
+  } finally {
+    setLinking(false);
+  }
+};
 
   // Error state for invalid token
   if (!token) {

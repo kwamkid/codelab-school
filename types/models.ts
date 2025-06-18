@@ -358,3 +358,14 @@ export interface MakeupClass {
   updatedAt?: Date;
   notes?: string; // หมายเหตุเพิ่มเติม
 }
+
+export interface LinkToken {
+  id: string;                    // Document ID ใน Firestore
+  token: string;                 // Token 32 ตัวอักษร สำหรับ QR Code
+  parentId: string;              // ID ของผู้ปกครองที่จะเชื่อมต่อ
+  createdAt: Date;               // วันเวลาที่สร้าง token
+  expiresAt: Date;               // วันเวลาที่หมดอายุ (24 ชม.)
+  used: boolean;                 // สถานะการใช้งาน
+  usedAt?: Date;                 // วันเวลาที่ใช้ (optional - มีค่าเมื่อใช้แล้ว)
+  linkedLineUserId?: string;     // LINE User ID ที่เชื่อมต่อ (optional - มีค่าเมื่อใช้แล้ว)
+}

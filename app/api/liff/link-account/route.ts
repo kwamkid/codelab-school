@@ -2,7 +2,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyLinkToken, markTokenAsUsed } from '@/lib/services/link-tokens';
-import { updateParent } from '@/lib/services/parents';
+import { updateParent, checkLineUserIdExists } from '@/lib/services/parents';
 
 export async function POST(request: NextRequest) {
   try {
@@ -16,7 +16,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verify token and phone again
+    // Check if LINE User ID already exists
+    const lineCheck = await checkLineUserIdExists(lineUserId);
+    if (lineCheck.exists) {
+      return NextResponse.json(
+        { 
+          error: 'LINE account นี้ถูกใช้งานแล้ว', 
+          errorCode: 'line_already_used',
+          existingParentId: lineCheck.parentId 
+        },
+        { status: 400 }
+      );
+    }
+
+    // Verify token and phone
     const result = await verifyLinkToken(token, phone);
 
     if (!result.valid || !result.tokenDoc) {

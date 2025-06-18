@@ -114,43 +114,55 @@ export default function LiffRegisterPage() {
   };
 
   const handleFinalSubmit = async () => {
-    // Validate at least one student
-    const validStudents = students.filter(s => s.name && s.birthdate);
-    if (validStudents.length === 0) {
-      toast.error('กรุณากรอกข้อมูลนักเรียนอย่างน้อย 1 คน');
-      return;
-    }
+  // Validate at least one student
+  const validStudents = students.filter(s => s.name && s.birthdate);
+  if (validStudents.length === 0) {
+    toast.error('กรุณากรอกข้อมูลนักเรียนอย่างน้อย 1 คน');
+    return;
+  }
 
-    setLoading(true);
-    
-    try {
-      // Create parent
-      const parentId = await createParent({
-        ...parentData,
-        lineUserId: profile?.userId || '',
-        pictureUrl: profile?.pictureUrl,
-      });
-
-      // Create students
-      for (const student of validStudents) {
-        await createStudent(parentId, {
-          ...student,
-          birthdate: new Date(student.birthdate),
-          isActive: true,
-        });
-      }
-
-      toast.success('ลงทะเบียนสำเร็จ! กรุณารอเจ้าหน้าที่ติดต่อกลับ');
+  setLoading(true);
+  
+  try {
+    // Check if LINE ID already used
+    if (profile?.userId) {
+      const { checkLineUserIdExists } = await import('@/lib/services/parents');
+      const lineCheck = await checkLineUserIdExists(profile.userId);
       
-      // Redirect to profile
-      router.push('/liff/profile');
-    } catch (error) {
-      console.error('Registration error:', error);
-      toast.error('เกิดข้อผิดพลาด กรุณาลองใหม่');
-    } finally {
-      setLoading(false);
+      if (lineCheck.exists) {
+        toast.error('LINE account นี้ถูกใช้งานแล้ว');
+        setLoading(false);
+        return;
+      }
     }
-  };
+
+    // Create parent
+    const parentId = await createParent({
+      ...parentData,
+      lineUserId: profile?.userId || '',
+      pictureUrl: profile?.pictureUrl,
+    });
+
+    // Create students
+    for (const student of validStudents) {
+      await createStudent(parentId, {
+        ...student,
+        birthdate: new Date(student.birthdate),
+        isActive: true,
+      });
+    }
+
+    toast.success('ลงทะเบียนสำเร็จ! กรุณารอเจ้าหน้าที่ติดต่อกลับ');
+    
+    // Redirect to profile
+    router.push('/liff/profile');
+  } catch (error) {
+    console.error('Registration error:', error);
+    toast.error('เกิดข้อผิดพลาด กรุณาลองใหม่');
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <div className="min-h-screen bg-gray-50">
