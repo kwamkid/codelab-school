@@ -7,9 +7,12 @@ import timeGridPlugin from '@fullcalendar/timegrid';
 import listPlugin from '@fullcalendar/list';
 import interactionPlugin from '@fullcalendar/interaction';
 import { DatesSetArg, EventClickArg, EventContentArg } from '@fullcalendar/core';
-import { Clock, Users, MapPin, User, Calendar } from 'lucide-react';
+import { Clock, Users, MapPin, User, Calendar, AlertCircle } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { toast } from 'sonner';
 
 export interface ScheduleEvent {
   id: string;
@@ -36,6 +39,8 @@ export interface ScheduleEvent {
     // For makeup
     originalClassName?: string;
     makeupStatus?: string;
+    // For leave
+    hasMakeupRequest?: boolean;
   };
 }
 
@@ -44,17 +49,21 @@ interface ScheduleCalendarProps {
   onDatesSet: (dateInfo: DatesSetArg) => void;
   loading?: boolean;
   selectedStudentId?: string;
+  onRefreshNeeded?: () => void;
 }
 
 export default function ScheduleCalendar({ 
   events, 
   onDatesSet,
   loading = false,
-  selectedStudentId
+  selectedStudentId,
+  onRefreshNeeded
 }: ScheduleCalendarProps) {
   const calendarRef = useRef<FullCalendar>(null);
   const [selectedEvent, setSelectedEvent] = useState<ScheduleEvent | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [confirmLeaveOpen, setConfirmLeaveOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     // Set calendar to today when component mounts
@@ -68,6 +77,63 @@ export default function ScheduleCalendar({
   const filteredEvents = selectedStudentId 
     ? events.filter(event => event.extendedProps.studentId === selectedStudentId)
     : events;
+
+  // Handle leave request
+  const handleLeaveRequest = (event: ScheduleEvent) => {
+    setSelectedEvent(event);
+    setConfirmLeaveOpen(true);
+  };
+
+  // Submit leave request
+  const submitLeaveRequest = async () => {
+    if (!selectedEvent) return;
+
+    try {
+      setIsSubmitting(true);
+      
+      // Get the schedule ID from the event ID (format: classId-scheduleId-studentId)
+      const [classId, scheduleId] = selectedEvent.id.split('-');
+      
+      // Call API to create makeup request
+      const response = await fetch('/api/liff/leave-request', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          studentId: selectedEvent.extendedProps.studentId,
+          classId: classId,
+          scheduleId: scheduleId,
+          reason: 'ลาผ่านระบบ LIFF',
+          type: 'scheduled', // Since parent requests in advance
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'เกิดข้อผิดพลาด');
+      }
+
+      toast.success('บันทึกการลาเรียนเรียบร้อยแล้ว', {
+        description: 'รอเจ้าหน้าที่นัดหมายวันเรียนชดเชยใหม่'
+      });
+      
+      setDialogOpen(false);
+      setConfirmLeaveOpen(false);
+      
+      // Force refresh to show red color
+      if (onRefreshNeeded) {
+        setTimeout(() => {
+          onRefreshNeeded();
+        }, 500); // Small delay to ensure database is updated
+      }
+    } catch (error) {
+      console.error('Error submitting leave request:', error);
+      toast.error(error instanceof Error ? error.message : 'ไม่สามารถบันทึกการลาได้');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   // Handle event click
   const handleEventClick = (clickInfo: EventClickArg) => {
@@ -101,7 +167,12 @@ export default function ScheduleCalendar({
               )}
               {isMakeup && <span className="text-purple-600">[Makeup] </span>}
               <span>{props.studentNickname || props.studentName}</span>
-              <span className="text-gray-500">- {props.className || props.subjectName}</span>
+              <span className="text-gray-500">
+                - {props.className || props.subjectName}
+                {props.sessionNumber && (
+                  <span className="ml-1">(ครั้งที่ {props.sessionNumber})</span>
+                )}
+              </span>
             </div>
             <div className="text-xs text-gray-600 flex items-center gap-3 mt-0.5">
               <span className="flex items-center gap-1">
@@ -170,6 +241,9 @@ export default function ScheduleCalendar({
               </div>
               <div className="text-xs text-purple-600 mt-1">
                 {props.originalClassName}
+                {props.sessionNumber && (
+                  <span className="ml-1">(ครั้งที่ {props.sessionNumber})</span>
+                )}
               </div>
             </div>
           ) : (
@@ -222,7 +296,7 @@ export default function ScheduleCalendar({
           events={filteredEvents.map(event => ({
             ...event,
             title: event.extendedProps.type === 'makeup' 
-              ? `[Makeup] ${event.extendedProps.studentNickname || event.extendedProps.studentName} - ${event.extendedProps.originalClassName}`
+              ? `[Makeup] ${event.extendedProps.studentNickname || event.extendedProps.studentName} - ${event.extendedProps.originalClassName}${event.extendedProps.sessionNumber ? ` (ครั้งที่ ${event.extendedProps.sessionNumber})` : ''}`
               : `${event.extendedProps.studentNickname || event.extendedProps.studentName} - ${event.extendedProps.className || event.extendedProps.subjectName}`,
           }))}
           eventDidMount={(info) => {
@@ -239,6 +313,13 @@ export default function ScheduleCalendar({
             
             if (props.status === 'completed') {
               info.el.classList.add('status-completed');
+            }
+            
+            // Add class for absent/leave events
+            if (props.status === 'absent') {
+              info.el.classList.add('absent-event');
+            } else if (props.status === 'leave-requested') {
+              info.el.classList.add('leave-requested');
             }
           }}
           eventClick={handleEventClick}
@@ -318,6 +399,14 @@ export default function ScheduleCalendar({
             color: #065F46 !important;
           }
           
+          /* Absent/Leave class styles */
+          .liff-schedule-calendar .class-event.absent-event,
+          .liff-schedule-calendar .class-event.leave-requested {
+            background-color: #FEE2E2 !important;
+            border-color: #FCA5A5 !important;
+            color: #991B1B !important;
+          }
+          
           /* Makeup event styles */
           .liff-schedule-calendar .makeup-event {
             background-color: #E9D5FF !important;
@@ -363,6 +452,10 @@ export default function ScheduleCalendar({
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 rounded bg-green-100 border border-green-200" />
             <span>เรียนเสร็จแล้ว</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded bg-red-100 border border-red-300" />
+            <span>ลาเรียน</span>
           </div>
         </div>
       </div>
@@ -467,10 +560,88 @@ export default function ScheduleCalendar({
                   </Badge>
                 </div>
               )}
+              
+              {(selectedEvent.extendedProps.status === 'absent' || selectedEvent.extendedProps.status === 'leave-requested') && (
+                <div className="pt-3 border-t">
+                  <Badge className="w-full justify-center bg-red-600 hover:bg-red-700">
+                    ลาเรียน (รอนัด Makeup)
+                  </Badge>
+                </div>
+              )}
+              
+              {/* Leave Request Button */}
+              {selectedEvent.extendedProps.type === 'class' && 
+               selectedEvent.extendedProps.status !== 'completed' &&
+               selectedEvent.extendedProps.status !== 'absent' &&
+               selectedEvent.extendedProps.status !== 'leave-requested' &&
+               new Date(selectedEvent.start) > new Date() && (
+                <div className="pt-3 border-t">
+                  <Button 
+                    className="w-full" 
+                    variant="destructive"
+                    onClick={() => handleLeaveRequest(selectedEvent)}
+                  >
+                    ขอลาเรียน
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Confirm Leave Dialog */}
+      <AlertDialog open={confirmLeaveOpen} onOpenChange={setConfirmLeaveOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-destructive" />
+              ยืนยันการขอลาเรียน
+            </AlertDialogTitle>
+          </AlertDialogHeader>
+          <div className="space-y-2 text-sm text-muted-foreground">
+            {selectedEvent && (
+              <>
+                <div>คุณต้องการขอลาเรียนสำหรับ:</div>
+                <div className="bg-gray-50 p-3 rounded-md space-y-1 text-foreground">
+                  <p className="font-medium">{selectedEvent.extendedProps.studentNickname || selectedEvent.extendedProps.studentName}</p>
+                  <p className="text-sm">
+                    คลาส: {selectedEvent.extendedProps.className || selectedEvent.extendedProps.subjectName}
+                    {selectedEvent.extendedProps.sessionNumber && (
+                      <span className="text-muted-foreground"> (ครั้งที่ {selectedEvent.extendedProps.sessionNumber})</span>
+                    )}
+                  </p>
+                  <p className="text-sm">
+                    วันที่: {selectedEvent.start.toLocaleDateString('th-TH', { 
+                      weekday: 'long', 
+                      year: 'numeric', 
+                      month: 'long', 
+                      day: 'numeric' 
+                    })}
+                  </p>
+                  <p className="text-sm">
+                    เวลา: {selectedEvent.start.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.
+                  </p>
+                </div>
+                <div className="text-sm text-muted-foreground mt-3">
+                  หลังจากยืนยันการลา ระบบจะแจ้งให้เจ้าหน้าที่นัดหมายวันเรียนชดเชยให้
+                </div>
+              </>
+            )}
+          </div>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isSubmitting}>ยกเลิก</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={submitLeaveRequest}
+              disabled={isSubmitting}
+              className="bg-destructive hover:bg-destructive/90"
+            >
+              {isSubmitting ? 'กำลังบันทึก...' : 'ยืนยันการลา'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

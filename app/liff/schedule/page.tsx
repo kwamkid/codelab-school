@@ -50,6 +50,13 @@ export default function SchedulePage() {
     }
   }, [profile, selectedStudentId])
 
+  // Public method to force refresh
+  const forceRefresh = useCallback(() => {
+    if (dateRange) {
+      loadSchedules(dateRange.start, dateRange.end)
+    }
+  }, [dateRange, loadSchedules])
+
   // Load overall stats for all students
   const loadOverallStats = useCallback(async () => {
     if (!profile?.userId || students.length === 0) return
@@ -295,6 +302,7 @@ export default function SchedulePage() {
                 onDatesSet={handleDatesSet}
                 loading={loading}
                 selectedStudentId={selectedStudentId}
+                onRefreshNeeded={forceRefresh}
               />
             )}
           </CardContent>

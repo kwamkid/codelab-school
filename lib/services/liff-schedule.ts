@@ -161,6 +161,9 @@ export async function getParentScheduleEvents(
             
             // Skip cancelled schedules
             if (schedule.status === 'cancelled') return;
+            
+            // Debug log for each schedule
+            console.log(`[getParentScheduleEvents] Processing schedule: classId=${classData.id}, scheduleId=${doc.id}, sessionNumber=${schedule.sessionNumber}`);
 
             // Parse times
             const [startHour, startMinute] = classData.startTime.split(':').map(Number);
@@ -188,10 +191,42 @@ export async function getParentScheduleEvents(
               (a: any) => a.studentId === student.id
             );
             
+            // Check if there's a makeup request for this schedule
+            const hasMakeupRequest = studentData.makeupClasses.some(makeup => 
+              makeup.originalClassId === classData.id && 
+              makeup.originalScheduleId === doc.id &&
+              makeup.status !== 'cancelled'
+            );
+            
+            // Debug log
+            if (hasMakeupRequest) {
+              console.log(`[Schedule] Found makeup request for ${student.name} - ${classData.name} session ${schedule.sessionNumber}`);
+            }
+            
             if (effectiveStatus === 'completed' || hasAttendance) {
-              backgroundColor = '#D1FAE5'; // Green
-              borderColor = '#A7F3D0';
-              textColor = '#065F46';
+              // If marked as absent with makeup request, show in red
+              if (hasAttendance && hasAttendance.status === 'absent' && hasMakeupRequest) {
+                backgroundColor = '#FEE2E2'; // Red-100
+                borderColor = '#FCA5A5'; // Red-300
+                textColor = '#991B1B'; // Red-800
+                effectiveStatus = 'absent';
+              } else if (hasMakeupRequest) {
+                // Completed session but has makeup = should be red
+                backgroundColor = '#FEE2E2'; // Red-100
+                borderColor = '#FCA5A5'; // Red-300
+                textColor = '#991B1B'; // Red-800
+                effectiveStatus = 'absent';
+              } else {
+                backgroundColor = '#D1FAE5'; // Green
+                borderColor = '#A7F3D0';
+                textColor = '#065F46';
+              }
+            } else if (hasMakeupRequest) {
+              // Future class with makeup request (leave requested in advance)
+              backgroundColor = '#FEE2E2'; // Red-100
+              borderColor = '#FCA5A5'; // Red-300
+              textColor = '#991B1B'; // Red-800
+              effectiveStatus = 'leave-requested';
             }
 
             events.push({
@@ -215,7 +250,8 @@ export async function getParentScheduleEvents(
                 className: classData.name,
                 subjectColor: subject.color,
                 sessionNumber: schedule.sessionNumber,
-                status: effectiveStatus
+                status: effectiveStatus,
+                hasMakeupRequest: hasMakeupRequest
               }
             });
           });
@@ -229,6 +265,11 @@ export async function getParentScheduleEvents(
       studentData.makeupClasses = makeupClasses;
       
       console.log(`[getParentScheduleEvents] Student ${student.name} has ${makeupClasses.length} makeup classes`);
+      
+      // Debug: Log makeup details
+      makeupClasses.forEach(makeup => {
+        console.log(`[getParentScheduleEvents] Makeup: classId=${makeup.originalClassId}, scheduleId=${makeup.originalScheduleId}, status=${makeup.status}`);
+      });
 
       // Process makeup classes
       for (const makeup of makeupClasses) {
@@ -269,6 +310,16 @@ export async function getParentScheduleEvents(
           textColor = '#065F46';
         }
 
+        // Get original session number
+        let originalSessionNumber;
+        try {
+          const { getClassSchedule } = await import('./classes');
+          const originalSchedule = await getClassSchedule(makeup.originalClassId, makeup.originalScheduleId);
+          originalSessionNumber = originalSchedule?.sessionNumber;
+        } catch (error) {
+          console.error('Error getting original session number:', error);
+        }
+
         events.push({
           id: `makeup-${makeup.id}-${student.id}`,
           classId: makeup.originalClassId,
@@ -287,8 +338,10 @@ export async function getParentScheduleEvents(
             roomName: room?.name || makeup.makeupSchedule.roomId,
             teacherName: teacher.nickname || teacher.name,
             subjectName: subject?.name || '',
+            className: originalClass.name,
             subjectColor: subject?.color,
             originalClassName: originalClass.name,
+            sessionNumber: originalSessionNumber, // ใช้ session number เดิม
             makeupStatus: makeup.status
           }
         });
