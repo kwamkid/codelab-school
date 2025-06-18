@@ -20,42 +20,53 @@ export default function SchedulePage() {
   const [events, setEvents] = useState<ScheduleEvent[]>([])
   const [students, setStudents] = useState<any[]>([])
   const [selectedStudentId, setSelectedStudentId] = useState<string>('')
-  const [dateRange, setDateRange] = useState<{ start: Date; end: Date } | null>(null)
   const [overallStats, setOverallStats] = useState<Record<string, StudentStats>>({})
   const [loadingStats, setLoadingStats] = useState(true)
+  const [dataLoaded, setDataLoaded] = useState(false)
 
-  const loadSchedules = useCallback(async (start: Date, end: Date) => {
-    if (!profile?.userId) return
+  // Load all data for the current year
+  const loadYearData = useCallback(async () => {
+    if (!profile?.userId || dataLoaded) return
 
     try {
       setLoading(true)
+      
+      // Load data for the whole year
+      const now = new Date()
+      const yearStart = new Date(now.getFullYear(), 0, 1) // January 1st
+      const yearEnd = new Date(now.getFullYear(), 11, 31) // December 31st
+      
+      console.log(`Loading data from ${yearStart.toDateString()} to ${yearEnd.toDateString()}`)
+      
       const { events: fetchedEvents, students: studentsData } = await getParentScheduleEvents(
         profile.userId,
-        start,
-        end
+        yearStart,
+        yearEnd
       )
       
       setEvents(fetchedEvents)
       setStudents(studentsData)
+      setDataLoaded(true)
       
       // Set default selected student
       if (studentsData.length > 0 && !selectedStudentId) {
         setSelectedStudentId(studentsData[0].student.id)
       }
+      
+      console.log(`Loaded ${fetchedEvents.length} events for the year`)
     } catch (error) {
       console.error('Error loading schedules:', error)
       toast.error('ไม่สามารถโหลดตารางเรียนได้')
     } finally {
       setLoading(false)
     }
-  }, [profile, selectedStudentId])
+  }, [profile, selectedStudentId, dataLoaded])
 
-  // Public method to force refresh
-  const forceRefresh = useCallback(() => {
-    if (dateRange) {
-      loadSchedules(dateRange.start, dateRange.end)
-    }
-  }, [dateRange, loadSchedules])
+  // Force refresh function
+  const forceRefresh = useCallback(async () => {
+    setDataLoaded(false)
+    await loadYearData()
+  }, [loadYearData])
 
   // Load overall stats for all students
   const loadOverallStats = useCallback(async () => {
@@ -82,21 +93,18 @@ export default function SchedulePage() {
     }
   }, [profile, students])
 
+  // Calendar dates set handler (no need to load data anymore)
   const handleDatesSet = useCallback((dateInfo: DatesSetArg) => {
-    setDateRange({ start: dateInfo.start, end: dateInfo.end })
-    loadSchedules(dateInfo.start, dateInfo.end)
-  }, [loadSchedules])
+    // Just let the calendar update its view
+    // Data is already loaded for the whole year
+  }, [])
 
-  // Initial load with current month
+  // Initial load
   useEffect(() => {
-    if (profile?.userId && !dateRange) {
-      const now = new Date()
-      const start = new Date(now.getFullYear(), now.getMonth(), 1)
-      const end = new Date(now.getFullYear(), now.getMonth() + 1, 0)
-      setDateRange({ start, end })
-      loadSchedules(start, end)
+    if (profile?.userId) {
+      loadYearData()
     }
-  }, [profile, dateRange, loadSchedules])
+  }, [profile?.userId, loadYearData])
 
   // Load overall stats when students data is available
   useEffect(() => {

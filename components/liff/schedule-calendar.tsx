@@ -41,6 +41,9 @@ export interface ScheduleEvent {
     makeupStatus?: string;
     // For leave
     hasMakeupRequest?: boolean;
+    makeupScheduled?: boolean;
+    makeupDate?: string;
+    makeupTime?: string;
   };
 }
 
@@ -564,8 +567,13 @@ export default function ScheduleCalendar({
               {(selectedEvent.extendedProps.status === 'absent' || selectedEvent.extendedProps.status === 'leave-requested') && (
                 <div className="pt-3 border-t">
                   <Badge className="w-full justify-center bg-red-600 hover:bg-red-700">
-                    ลาเรียน (รอนัด Makeup)
+                    ลาเรียน
                   </Badge>
+                  <p className="text-xs text-center text-muted-foreground mt-2">
+                    {selectedEvent.extendedProps.makeupScheduled 
+                      ? `นัดเรียนชดเชย: ${new Date(selectedEvent.extendedProps.makeupDate).toLocaleDateString('th-TH')} เวลา ${selectedEvent.extendedProps.makeupTime}`
+                      : 'รอเจ้าหน้าที่นัดเรียนชดเชย'}
+                  </p>
                 </div>
               )}
               
@@ -629,7 +637,6 @@ export default function ScheduleCalendar({
               </>
             )}
           </div>
-          </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isSubmitting}>ยกเลิก</AlertDialogCancel>
             <AlertDialogAction 

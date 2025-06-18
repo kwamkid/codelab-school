@@ -116,6 +116,22 @@ export async function getParentScheduleEvents(
       
       console.log(`[getParentScheduleEvents] Student ${student.name} has ${activeEnrollments.length} active enrollments`);
 
+      // Get ALL makeup classes for this student first (not just in date range)
+      const allMakeupClasses = await getMakeupClassesByStudent(student.id);
+      studentData.makeupClasses = allMakeupClasses;
+      
+      console.log(`[getParentScheduleEvents] Student ${student.name} has ${allMakeupClasses.length} total makeup classes`);
+      
+      // Create a map of makeup requests by originalClassId and originalScheduleId
+      const makeupRequestMap = new Map<string, any>();
+      allMakeupClasses.forEach(makeup => {
+        if (makeup.status !== 'cancelled') {
+          const key = `${makeup.originalClassId}-${makeup.originalScheduleId}`;
+          makeupRequestMap.set(key, makeup);
+          console.log(`[getParentScheduleEvents] Makeup request found: ${key}, status: ${makeup.status}`);
+        }
+      });
+
       // Process each enrollment
       for (const enrollment of activeEnrollments) {
         try {
@@ -162,8 +178,12 @@ export async function getParentScheduleEvents(
             // Skip cancelled schedules
             if (schedule.status === 'cancelled') return;
             
-            // Debug log for each schedule
-            console.log(`[getParentScheduleEvents] Processing schedule: classId=${classData.id}, scheduleId=${doc.id}, sessionNumber=${schedule.sessionNumber}`);
+            // Check if there's a makeup request for this schedule
+            const makeupKey = `${classData.id}-${doc.id}`;
+            const hasMakeupRequest = makeupRequestMap.has(makeupKey);
+            const makeupData = makeupRequestMap.get(makeupKey);
+            
+            console.log(`[getParentScheduleEvents] Schedule ${doc.id}, session ${schedule.sessionNumber}, hasMakeup: ${hasMakeupRequest}`);
 
             // Parse times
             const [startHour, startMinute] = classData.startTime.split(':').map(Number);
@@ -182,51 +202,39 @@ export async function getParentScheduleEvents(
             let effectiveStatus = schedule.status;
             
             // Check if session has passed
-            if (eventEnd < now) {
-              effectiveStatus = 'completed';
-            }
+            const sessionHasPassed = eventEnd < now;
             
             // Check attendance
             const hasAttendance = schedule.attendance && schedule.attendance.find(
               (a: any) => a.studentId === student.id
             );
             
-            // Check if there's a makeup request for this schedule
-            const hasMakeupRequest = studentData.makeupClasses.some(makeup => 
-              makeup.originalClassId === classData.id && 
-              makeup.originalScheduleId === doc.id &&
-              makeup.status !== 'cancelled'
-            );
-            
-            // Debug log
+            // Determine status based on various conditions
             if (hasMakeupRequest) {
-              console.log(`[Schedule] Found makeup request for ${student.name} - ${classData.name} session ${schedule.sessionNumber}`);
-            }
-            
-            if (effectiveStatus === 'completed' || hasAttendance) {
-              // If marked as absent with makeup request, show in red
-              if (hasAttendance && hasAttendance.status === 'absent' && hasMakeupRequest) {
-                backgroundColor = '#FEE2E2'; // Red-100
-                borderColor = '#FCA5A5'; // Red-300
-                textColor = '#991B1B'; // Red-800
-                effectiveStatus = 'absent';
-              } else if (hasMakeupRequest) {
-                // Completed session but has makeup = should be red
-                backgroundColor = '#FEE2E2'; // Red-100
-                borderColor = '#FCA5A5'; // Red-300
-                textColor = '#991B1B'; // Red-800
-                effectiveStatus = 'absent';
-              } else {
-                backgroundColor = '#D1FAE5'; // Green
-                borderColor = '#A7F3D0';
-                textColor = '#065F46';
-              }
-            } else if (hasMakeupRequest) {
-              // Future class with makeup request (leave requested in advance)
+              // Has makeup request - should be red
               backgroundColor = '#FEE2E2'; // Red-100
               borderColor = '#FCA5A5'; // Red-300
               textColor = '#991B1B'; // Red-800
-              effectiveStatus = 'leave-requested';
+              effectiveStatus = sessionHasPassed ? 'absent' : 'leave-requested';
+              console.log(`[getParentScheduleEvents] Setting red color for makeup request: ${makeupKey}`);
+            } else if (hasAttendance) {
+              if (hasAttendance.status === 'present') {
+                backgroundColor = '#D1FAE5'; // Green
+                borderColor = '#A7F3D0';
+                textColor = '#065F46';
+                effectiveStatus = 'completed';
+              } else if (hasAttendance.status === 'absent') {
+                backgroundColor = '#FEE2E2'; // Red
+                borderColor = '#FCA5A5';
+                textColor = '#991B1B';
+                effectiveStatus = 'absent';
+              }
+            } else if (sessionHasPassed) {
+              // Past session without attendance data - assume completed
+              backgroundColor = '#D1FAE5'; // Green
+              borderColor = '#A7F3D0';
+              textColor = '#065F46';
+              effectiveStatus = 'completed';
             }
 
             events.push({
@@ -251,7 +259,10 @@ export async function getParentScheduleEvents(
                 subjectColor: subject.color,
                 sessionNumber: schedule.sessionNumber,
                 status: effectiveStatus,
-                hasMakeupRequest: hasMakeupRequest
+                hasMakeupRequest: hasMakeupRequest,
+                makeupScheduled: makeupData?.status === 'scheduled' && makeupData?.makeupSchedule,
+                makeupDate: makeupData?.makeupSchedule?.date?.toISOString(),
+                makeupTime: makeupData?.makeupSchedule ? `${makeupData.makeupSchedule.startTime} - ${makeupData.makeupSchedule.endTime}` : undefined
               }
             });
           });
@@ -260,19 +271,8 @@ export async function getParentScheduleEvents(
         }
       }
 
-      // Get makeup classes
-      const makeupClasses = await getMakeupClassesByStudent(student.id);
-      studentData.makeupClasses = makeupClasses;
-      
-      console.log(`[getParentScheduleEvents] Student ${student.name} has ${makeupClasses.length} makeup classes`);
-      
-      // Debug: Log makeup details
-      makeupClasses.forEach(makeup => {
-        console.log(`[getParentScheduleEvents] Makeup: classId=${makeup.originalClassId}, scheduleId=${makeup.originalScheduleId}, status=${makeup.status}`);
-      });
-
-      // Process makeup classes
-      for (const makeup of makeupClasses) {
+      // Process makeup classes that fall within the date range
+      for (const makeup of allMakeupClasses) {
         if (makeup.status === 'cancelled' || !makeup.makeupSchedule) continue;
         
         const makeupDate = new Date(makeup.makeupSchedule.date);
@@ -341,7 +341,7 @@ export async function getParentScheduleEvents(
             className: originalClass.name,
             subjectColor: subject?.color,
             originalClassName: originalClass.name,
-            sessionNumber: originalSessionNumber, // ใช้ session number เดิม
+            sessionNumber: originalSessionNumber,
             makeupStatus: makeup.status
           }
         });
