@@ -23,10 +23,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from 'sonner';
-import { Loader2, Save, X, Calendar, AlertCircle, Plus, Info } from 'lucide-react';
+import { Loader2, Save, X, Calendar, AlertCircle, Plus, Info, CheckCircle } from 'lucide-react';
 import Link from 'next/link';
 import { generateClassCode, getDayName } from '@/lib/utils';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 
 interface ClassFormProps {
   classData?: Class;
@@ -52,6 +53,11 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
   const [rooms, setRooms] = useState<Room[]>([]);
   const [checkingAvailability, setCheckingAvailability] = useState(false);
   const [autoStatus, setAutoStatus] = useState<'draft' | 'published' | 'started' | null>(null);
+  const [roomAvailability, setRoomAvailability] = useState<{
+    checked: boolean;
+    available: boolean;
+    conflicts?: any[];
+  }>({ checked: false, available: true });
   
   const [formData, setFormData] = useState({
     name: classData?.name || '',
@@ -143,6 +149,18 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
       }
     }
   }, [formData.startDate, isEdit, formData.status]);
+
+  // เพิ่ม useEffect สำหรับตรวจสอบห้องว่างอัตโนมัติเมื่อเลือกห้อง
+  useEffect(() => {
+    if (formData.roomId && formData.branchId && formData.startDate && formData.endDate && 
+        formData.daysOfWeek.length > 0 && formData.startTime && formData.endTime) {
+      checkRoomAvailabilityAuto();
+    } else {
+      // Reset availability if conditions not met
+      setRoomAvailability({ checked: false, available: true });
+    }
+  }, [formData.roomId, formData.branchId, formData.startDate, formData.endDate, 
+      formData.daysOfWeek, formData.startTime, formData.endTime]);
 
   const loadInitialData = async () => {
     try {
@@ -245,17 +263,7 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
     }));
   };
 
-  const checkAvailability = async () => {
-    if (!formData.branchId || !formData.roomId || !formData.startDate || !formData.endDate) {
-      toast.error('กรุณากรอกข้อมูลให้ครบก่อนตรวจสอบ');
-      return;
-    }
-
-    if (formData.daysOfWeek.length === 0) {
-      toast.error('กรุณาเลือกวันที่เรียนก่อนตรวจสอบ');
-      return;
-    }
-
+  const checkRoomAvailabilityAuto = async () => {
     setCheckingAvailability(true);
     try {
       const result = await checkRoomAvailability(
@@ -269,23 +277,18 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
         isEdit ? classData?.id : undefined
       );
 
-      if (result.available) {
-        toast.success('✅ ห้องเรียนว่างในช่วงเวลานี้');
-      } else {
-        const conflictInfo = result.conflicts?.[0];
-        if (conflictInfo) {
-          toast.error(
-            `❌ ห้องไม่ว่าง: มีคลาส "${conflictInfo.className}" (${conflictInfo.classCode}) ` +
-            `เรียนในเวลา ${conflictInfo.startTime}-${conflictInfo.endTime} น.`,
-            { duration: 5000 }
-          );
-        } else {
-          toast.error('❌ ห้องเรียนไม่ว่างในช่วงเวลานี้');
-        }
-      }
+      setRoomAvailability({
+        checked: true,
+        available: result.available,
+        conflicts: result.conflicts
+      });
     } catch (error) {
       console.error('Error checking availability:', error);
-      toast.error('ไม่สามารถตรวจสอบได้');
+      setRoomAvailability({
+        checked: true,
+        available: false,
+        conflicts: []
+      });
     } finally {
       setCheckingAvailability(false);
     }
@@ -316,36 +319,15 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
       return;
     }
 
+    // Check room availability one more time before save
+    if (!roomAvailability.available) {
+      toast.error('ห้องเรียนไม่ว่างในช่วงเวลานี้ กรุณาเลือกห้องอื่นหรือเปลี่ยนเวลา');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      // ตรวจสอบห้องว่างก่อนบันทึก
-      const result = await checkRoomAvailability(
-        formData.branchId,
-        formData.roomId,
-        formData.daysOfWeek,
-        formData.startTime,
-        formData.endTime,
-        new Date(formData.startDate),
-        new Date(formData.endDate),
-        isEdit ? classData?.id : undefined
-      );
-
-      if (!result.available) {
-        const conflictInfo = result.conflicts?.[0];
-        if (conflictInfo) {
-          toast.error(
-            `ไม่สามารถบันทึกได้: ห้องถูกใช้โดยคลาส "${conflictInfo.className}" ` +
-            `(${conflictInfo.classCode}) ในเวลา ${conflictInfo.startTime}-${conflictInfo.endTime} น.`,
-            { duration: 5000 }
-          );
-        } else {
-          toast.error('ห้องเรียนไม่ว่างในช่วงเวลานี้ กรุณาเลือกห้องอื่นหรือเปลี่ยนเวลา');
-        }
-        setLoading(false);
-        return;
-      }
-
       const classPayload = {
         ...formData,
         startDate: new Date(formData.startDate),
@@ -476,72 +458,6 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
                 </Select>
               </div>
             </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="teacher">ครูผู้สอน *</Label>
-                <Select
-                  value={formData.teacherId}
-                  onValueChange={(value) => setFormData({ ...formData, teacherId: value })}
-                  disabled={!formData.branchId}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder={formData.branchId ? "เลือกครู" : "เลือกสาขาก่อน"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {teachers.length === 0 ? (
-                      <div className="p-2 text-center">
-                        <p className="text-sm text-gray-500 mb-2">ยังไม่มีครูในสาขานี้</p>
-                        <Link href="/teachers/new">
-                          <Button size="sm" className="w-full bg-red-500 hover:bg-red-600">
-                            <Plus className="h-3 w-3 mr-1" />
-                            เพิ่มครู
-                          </Button>
-                        </Link>
-                      </div>
-                    ) : (
-                      teachers.map((teacher) => (
-                        <SelectItem key={teacher.id} value={teacher.id}>
-                          {teacher.nickname || teacher.name}
-                        </SelectItem>
-                      ))
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="room">ห้องเรียน *</Label>
-                <Select
-                  value={formData.roomId}
-                  onValueChange={(value) => setFormData({ ...formData, roomId: value })}
-                  disabled={!formData.branchId}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder={formData.branchId ? "เลือกห้อง" : "เลือกสาขาก่อน"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {rooms.length === 0 ? (
-                      <div className="p-2 text-center">
-                        <p className="text-sm text-gray-500 mb-2">ยังไม่มีห้องในสาขานี้</p>
-                        <Link href={`/branches/${formData.branchId}/rooms`}>
-                          <Button size="sm" className="w-full bg-red-500 hover:bg-red-600">
-                            <Plus className="h-3 w-3 mr-1" />
-                            เพิ่มห้อง
-                          </Button>
-                        </Link>
-                      </div>
-                    ) : (
-                      rooms.map((room) => (
-                        <SelectItem key={room.id} value={room.id}>
-                          {room.name} (จุ {room.capacity} คน)
-                        </SelectItem>
-                      ))
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
           </CardContent>
         </Card>
 
@@ -656,6 +572,120 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
               </div>
             </div>
 
+            {/* Teacher and Room Selection - Moved after endDate */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t">
+              <div className="space-y-2">
+                <Label htmlFor="teacher">ครูผู้สอน *</Label>
+                <Select
+                  value={formData.teacherId}
+                  onValueChange={(value) => setFormData({ ...formData, teacherId: value })}
+                  disabled={!formData.branchId}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={formData.branchId ? "เลือกครู" : "เลือกสาขาก่อน"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {teachers.length === 0 ? (
+                      <div className="p-2 text-center">
+                        <p className="text-sm text-gray-500 mb-2">ยังไม่มีครูในสาขานี้</p>
+                        <Link href="/teachers/new">
+                          <Button size="sm" className="w-full bg-red-500 hover:bg-red-600">
+                            <Plus className="h-3 w-3 mr-1" />
+                            เพิ่มครู
+                          </Button>
+                        </Link>
+                      </div>
+                    ) : (
+                      teachers.map((teacher) => (
+                        <SelectItem key={teacher.id} value={teacher.id}>
+                          {teacher.nickname || teacher.name}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="room">ห้องเรียน *</Label>
+                <Select
+                  value={formData.roomId}
+                  onValueChange={(value) => setFormData({ ...formData, roomId: value })}
+                  disabled={!formData.branchId}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={formData.branchId ? "เลือกห้อง" : "เลือกสาขาก่อน"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {rooms.length === 0 ? (
+                      <div className="p-2 text-center">
+                        <p className="text-sm text-gray-500 mb-2">ยังไม่มีห้องในสาขานี้</p>
+                        <Link href={`/branches/${formData.branchId}/rooms`}>
+                          <Button size="sm" className="w-full bg-red-500 hover:bg-red-600">
+                            <Plus className="h-3 w-3 mr-1" />
+                            เพิ่มห้อง
+                          </Button>
+                        </Link>
+                      </div>
+                    ) : (
+                      rooms.map((room) => (
+                        <SelectItem key={room.id} value={room.id}>
+                          {room.name} (จุ {room.capacity} คน)
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Room Availability Status */}
+            {formData.roomId && (
+              <div className="mt-4">
+                {checkingAvailability ? (
+                  <Alert>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <AlertDescription>
+                      กำลังตรวจสอบห้องว่าง...
+                    </AlertDescription>
+                  </Alert>
+                ) : roomAvailability.checked ? (
+                  roomAvailability.available ? (
+                    <Alert className="border-green-200 bg-green-50">
+                      <CheckCircle className="h-4 w-4 text-green-600" />
+                      <AlertDescription className="text-green-800">
+                        ห้องเรียนว่างในช่วงเวลานี้
+                      </AlertDescription>
+                    </Alert>
+                  ) : (
+                    <Alert className="border-red-200 bg-red-50">
+                      <AlertCircle className="h-4 w-4 text-red-600" />
+                      <AlertDescription className="text-red-800">
+                        <div className="space-y-2">
+                          <p className="font-medium">ห้องเรียนไม่ว่างในช่วงเวลานี้</p>
+                          {roomAvailability.conflicts && roomAvailability.conflicts.length > 0 && (
+                            <div className="space-y-1">
+                              <p className="text-sm">ชนกับ:</p>
+                              {roomAvailability.conflicts.map((conflict, index) => (
+                                <div key={index} className="text-sm pl-4">
+                                  • {conflict.type === 'class' && 'คลาส'} 
+                                    {conflict.type === 'makeup' && 'Makeup Class'} 
+                                    {conflict.type === 'trial' && 'ทดลองเรียน'}: {conflict.className}
+                                  {conflict.classCode && ` (${conflict.classCode})`}
+                                  {' '}เวลา {conflict.startTime}-{conflict.endTime} น.
+                                  {conflict.date && ` วันที่ ${new Date(conflict.date).toLocaleDateString('th-TH')}`}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </AlertDescription>
+                    </Alert>
+                  )
+                ) : null}
+              </div>
+            )}
+
             {/* แสดง Alert เมื่อวันเริ่มต้นเป็นวันที่ผ่านมาแล้ว */}
             {autoStatus === 'started' && (
               <Alert>
@@ -664,45 +694,6 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
                   เนื่องจากวันเริ่มต้นเป็นวันที่ผ่านมาแล้ว สถานะคลาสจะถูกกำหนดเป็น <strong>&quot;กำลังเรียน&quot;</strong> อัตโนมัติ
                 </AlertDescription>
               </Alert>
-            )}
-
-            <div className="flex justify-end">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={checkAvailability}
-                disabled={checkingAvailability || !formData.branchId || !formData.roomId || !formData.startDate || formData.daysOfWeek.length === 0}
-                className="w-full md:w-auto"
-              >
-                {checkingAvailability ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    กำลังตรวจสอบ...
-                  </>
-                ) : (
-                  <>
-                    <Calendar className="mr-2 h-4 w-4" />
-                    ตรวจสอบห้องว่าง
-                  </>
-                )}
-              </Button>
-            </div>
-
-            {(!formData.branchId || !formData.roomId || !formData.startDate || formData.daysOfWeek.length === 0) && (
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                <div className="flex items-start gap-2">
-                  <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5" />
-                  <div className="text-sm text-amber-800">
-                    <p className="font-medium">กรุณากรอกข้อมูลให้ครบก่อนตรวจสอบห้องว่าง:</p>
-                    <ul className="list-disc list-inside mt-1">
-                      {!formData.branchId && <li>เลือกสาขา</li>}
-                      {!formData.roomId && <li>เลือกห้องเรียน</li>}
-                      {formData.daysOfWeek.length === 0 && <li>เลือกวันที่เรียน</li>}
-                      {!formData.startDate && <li>เลือกวันเริ่มเรียน</li>}
-                    </ul>
-                  </div>
-                </div>
-              </div>
             )}
           </CardContent>
         </Card>
@@ -862,7 +853,7 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
           <Button
             type="submit"
             className="bg-red-500 hover:bg-red-600"
-            disabled={loading}
+            disabled={loading || !roomAvailability.available}
           >
             {loading ? (
               <>

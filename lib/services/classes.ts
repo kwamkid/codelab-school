@@ -14,11 +14,13 @@ import {
   serverTimestamp,
   writeBatch,
   DocumentData,
-  deleteDoc
+  deleteDoc,
+  increment
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { Class, ClassSchedule, Room } from '@/types/models';
 import { getRoomsByBranch } from './rooms';
+import { getHolidaysForBranch } from './holidays';
 
 const COLLECTION_NAME = 'classes';
 
@@ -135,12 +137,24 @@ export async function getClassesByBranch(branchId: string): Promise<Class[]> {
   }
 }
 
-// Create new class with schedules
+// Create new class with schedules (FIXED - now gets holidays internally)
 export async function createClass(
-  classData: Omit<Class, 'id' | 'createdAt' | 'enrolledCount'>,
-  holidayDates: Date[]
+  classData: Omit<Class, 'id' | 'createdAt' | 'enrolledCount'>
 ): Promise<string> {
   try {
+    // Get holidays for the branch
+    const maxEndDate = new Date(classData.startDate);
+    maxEndDate.setMonth(maxEndDate.getMonth() + 6); // Look ahead 6 months
+    
+    const holidays = await getHolidaysForBranch(
+      classData.branchId,
+      classData.startDate,
+      maxEndDate
+    );
+    
+    // Convert holidays to Date array
+    const holidayDates = holidays.map(h => h.date);
+    
     // Add class document
     const docRef = await addDoc(collection(db, COLLECTION_NAME), {
       ...classData,
@@ -150,7 +164,7 @@ export async function createClass(
       createdAt: serverTimestamp(),
     });
 
-    // Generate schedules
+    // Generate schedules with holidays
     const schedules = generateSchedules(
       classData.startDate,
       classData.endDate,
@@ -418,9 +432,7 @@ export async function getActiveClasses(): Promise<Class[]> {
   }
 }
 
-// lib/services/classes.ts - แก้ไขฟังก์ชัน checkRoomAvailability
-
-// Check room availability for a time slot (รวม makeup และ trial)
+// Check room availability for a time slot (comprehensive check for all types)
 export async function checkRoomAvailability(
   branchId: string,
   roomId: string,
@@ -722,6 +734,17 @@ export async function batchUpdateSchedules(
     await batch.commit();
   } catch (error) {
     console.error('Error batch updating schedules:', error);
+    throw error;
+  }
+}
+
+// Fix enrolled count (add this new function)
+export async function fixEnrolledCount(classId: string, newCount: number): Promise<void> {
+  try {
+    const docRef = doc(db, COLLECTION_NAME, classId);
+    await updateDoc(docRef, { enrolledCount: newCount });
+  } catch (error) {
+    console.error('Error fixing enrolled count:', error);
     throw error;
   }
 }
