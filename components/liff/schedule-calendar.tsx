@@ -10,8 +10,6 @@ import { DatesSetArg, EventClickArg, EventContentArg } from '@fullcalendar/core'
 import { Clock, Users, MapPin, User, Calendar } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { format } from 'date-fns';
-import { th } from 'date-fns/locale';
 
 export interface ScheduleEvent {
   id: string;
@@ -31,6 +29,7 @@ export interface ScheduleEvent {
     roomName: string;
     teacherName: string;
     subjectName: string;
+    className?: string;
     subjectColor?: string;
     sessionNumber?: number;
     status?: string;
@@ -102,7 +101,7 @@ export default function ScheduleCalendar({
               )}
               {isMakeup && <span className="text-purple-600">[Makeup] </span>}
               <span>{props.studentNickname || props.studentName}</span>
-              <span className="text-gray-500">- {props.subjectName}</span>
+              <span className="text-gray-500">- {props.className || props.subjectName}</span>
             </div>
             <div className="text-xs text-gray-600 flex items-center gap-3 mt-0.5">
               <span className="flex items-center gap-1">
@@ -190,7 +189,7 @@ export default function ScheduleCalendar({
                 </span>
               </div>
               <div className="text-xs text-gray-600 mt-0.5">
-                {props.subjectName}
+                {props.className || props.subjectName}
                 {props.sessionNumber && (
                   <span className="ml-1">ครั้งที่ {props.sessionNumber}</span>
                 )}
@@ -224,7 +223,7 @@ export default function ScheduleCalendar({
             ...event,
             title: event.extendedProps.type === 'makeup' 
               ? `[Makeup] ${event.extendedProps.studentNickname || event.extendedProps.studentName} - ${event.extendedProps.originalClassName}`
-              : `${event.extendedProps.studentNickname || event.extendedProps.studentName} - ${event.extendedProps.subjectName}`,
+              : `${event.extendedProps.studentNickname || event.extendedProps.studentName} - ${event.extendedProps.className || event.extendedProps.subjectName}`,
           }))}
           eventDidMount={(info) => {
             const props = info.event.extendedProps;
@@ -411,27 +410,40 @@ export default function ScheduleCalendar({
               {/* Class Details */}
               <div className="space-y-3">
                 <div>
-                  <p className="text-sm text-muted-foreground">วิชา</p>
-                  <p className="font-medium flex items-center gap-2">
+                  <p className="text-sm text-muted-foreground">คลาสเรียน</p>
+                  <div className="font-medium flex items-center gap-2">
                     {selectedEvent.extendedProps.subjectColor && (
                       <div 
                         className="w-3 h-3 rounded-full" 
                         style={{ backgroundColor: selectedEvent.extendedProps.subjectColor }}
                       />
                     )}
-                    {selectedEvent.extendedProps.type === 'makeup' 
-                      ? selectedEvent.extendedProps.originalClassName 
-                      : selectedEvent.extendedProps.subjectName}
-                  </p>
+                    <span>
+                      {selectedEvent.extendedProps.type === 'makeup' 
+                        ? selectedEvent.extendedProps.originalClassName 
+                        : selectedEvent.extendedProps.className || selectedEvent.extendedProps.subjectName}
+                      {selectedEvent.extendedProps.sessionNumber && selectedEvent.extendedProps.type !== 'makeup' && (
+                        <span className="text-muted-foreground ml-2">
+                          (ครั้งที่ {selectedEvent.extendedProps.sessionNumber})
+                        </span>
+                      )}
+                    </span>
+                  </div>
                 </div>
 
                 <div>
                   <p className="text-sm text-muted-foreground">วันที่และเวลา</p>
                   <p className="font-medium">
-                    {format(selectedEvent.start, 'EEEE d MMMM yyyy', { locale: th })}
+                    {selectedEvent.start.toLocaleDateString('th-TH', { 
+                      weekday: 'long', 
+                      year: 'numeric', 
+                      month: 'long', 
+                      day: 'numeric' 
+                    })}
                   </p>
                   <p className="text-sm">
-                    {format(selectedEvent.start, 'HH:mm')} - {format(selectedEvent.end, 'HH:mm')} น.
+                    {selectedEvent.start.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} - 
+                    {selectedEvent.end.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.
                   </p>
                 </div>
 
@@ -445,13 +457,6 @@ export default function ScheduleCalendar({
                   <p className="text-sm text-muted-foreground">ครูผู้สอน</p>
                   <p className="font-medium">ครู{selectedEvent.extendedProps.teacherName}</p>
                 </div>
-
-                {selectedEvent.extendedProps.sessionNumber && (
-                  <div>
-                    <p className="text-sm text-muted-foreground">คาบเรียน</p>
-                    <p className="font-medium">ครั้งที่ {selectedEvent.extendedProps.sessionNumber}</p>
-                  </div>
-                )}
               </div>
 
               {/* Status */}

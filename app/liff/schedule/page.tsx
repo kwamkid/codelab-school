@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { ChevronLeft, Loader2, Calendar, Users } from 'lucide-react'
 import { useLiff } from '@/components/liff/liff-provider'
-import { getParentScheduleEvents, getStudentScheduleStats } from '@/lib/services/liff-schedule'
+import { getParentScheduleEvents, getStudentOverallStats, StudentStats } from '@/lib/services/liff-schedule'
 import { toast } from 'sonner'
 import { DatesSetArg } from '@fullcalendar/core'
 import ScheduleCalendar, { ScheduleEvent } from '@/components/liff/schedule-calendar'
@@ -21,6 +21,8 @@ export default function SchedulePage() {
   const [students, setStudents] = useState<any[]>([])
   const [selectedStudentId, setSelectedStudentId] = useState<string>('')
   const [dateRange, setDateRange] = useState<{ start: Date; end: Date } | null>(null)
+  const [overallStats, setOverallStats] = useState<Record<string, StudentStats>>({})
+  const [loadingStats, setLoadingStats] = useState(true)
 
   const loadSchedules = useCallback(async (start: Date, end: Date) => {
     if (!profile?.userId) return
@@ -48,6 +50,31 @@ export default function SchedulePage() {
     }
   }, [profile, selectedStudentId])
 
+  // Load overall stats for all students
+  const loadOverallStats = useCallback(async () => {
+    if (!profile?.userId || students.length === 0) return
+
+    try {
+      setLoadingStats(true)
+      const statsPromises = students.map(async (studentData) => {
+        const stats = await getStudentOverallStats(profile.userId, studentData.student.id)
+        return { studentId: studentData.student.id, stats }
+      })
+
+      const results = await Promise.all(statsPromises)
+      const statsMap: Record<string, StudentStats> = {}
+      results.forEach(({ studentId, stats }) => {
+        statsMap[studentId] = stats
+      })
+      
+      setOverallStats(statsMap)
+    } catch (error) {
+      console.error('Error loading overall stats:', error)
+    } finally {
+      setLoadingStats(false)
+    }
+  }, [profile, students])
+
   const handleDatesSet = useCallback((dateInfo: DatesSetArg) => {
     setDateRange({ start: dateInfo.start, end: dateInfo.end })
     loadSchedules(dateInfo.start, dateInfo.end)
@@ -64,9 +91,16 @@ export default function SchedulePage() {
     }
   }, [profile, dateRange, loadSchedules])
 
+  // Load overall stats when students data is available
+  useEffect(() => {
+    if (students.length > 0) {
+      loadOverallStats()
+    }
+  }, [students, loadOverallStats])
+
   // Get stats for selected student
-  const selectedStudentStats = selectedStudentId 
-    ? getStudentScheduleStats(events, selectedStudentId)
+  const selectedStudentStats = selectedStudentId && overallStats[selectedStudentId]
+    ? overallStats[selectedStudentId]
     : null
 
   return (
@@ -128,33 +162,107 @@ export default function SchedulePage() {
           </Card>
         )}
 
-        {/* Statistics */}
+        {/* Overall Statistics */}
         {selectedStudentStats && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <Card>
               <CardContent className="p-3 text-center">
-                <p className="text-2xl font-bold text-primary">{selectedStudentStats.totalClasses}</p>
+                <p className="text-2xl font-bold text-primary">
+                  {loadingStats ? (
+                    <Loader2 className="h-6 w-6 animate-spin mx-auto" />
+                  ) : (
+                    selectedStudentStats.totalClasses
+                  )}
+                </p>
                 <p className="text-xs text-muted-foreground">คลาสทั้งหมด</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-3 text-center">
-                <p className="text-2xl font-bold text-green-600">{selectedStudentStats.completedClasses}</p>
+                <p className="text-2xl font-bold text-green-600">
+                  {loadingStats ? (
+                    <Loader2 className="h-6 w-6 animate-spin mx-auto" />
+                  ) : (
+                    selectedStudentStats.completedClasses
+                  )}
+                </p>
                 <p className="text-xs text-muted-foreground">เรียนแล้ว</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-3 text-center">
-                <p className="text-2xl font-bold text-blue-600">{selectedStudentStats.upcomingClasses}</p>
+                <p className="text-2xl font-bold text-blue-600">
+                  {loadingStats ? (
+                    <Loader2 className="h-6 w-6 animate-spin mx-auto" />
+                  ) : (
+                    selectedStudentStats.upcomingClasses
+                  )}
+                </p>
                 <p className="text-xs text-muted-foreground">กำลังจะถึง</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-3 text-center">
-                <p className="text-2xl font-bold text-purple-600">{selectedStudentStats.makeupClasses}</p>
+                <p className="text-2xl font-bold text-purple-600">
+                  {loadingStats ? (
+                    <Loader2 className="h-6 w-6 animate-spin mx-auto" />
+                  ) : (
+                    selectedStudentStats.makeupClasses
+                  )}
+                </p>
                 <p className="text-xs text-muted-foreground">เรียนชดเชย</p>
               </CardContent>
             </Card>
+          </div>
+        )}
+
+        {/* Show overall stats for all students when no student is selected */}
+        {!selectedStudentId && students.length > 0 && (
+          <div className="space-y-3">
+            <p className="text-sm font-medium text-muted-foreground">สรุปรายนักเรียน</p>
+            {students.map((data) => {
+              const stats = overallStats[data.student.id]
+              return (
+                <Card key={data.student.id}>
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-3">
+                        <Avatar className="h-10 w-10">
+                          <AvatarImage src={data.student.profileImage} />
+                          <AvatarFallback>
+                            {data.student.nickname?.charAt(0) || data.student.name.charAt(0)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <p className="font-medium">{data.student.nickname || data.student.name}</p>
+                          <p className="text-sm text-muted-foreground">{data.student.name}</p>
+                        </div>
+                      </div>
+                      {stats && (
+                        <div className="grid grid-cols-4 gap-2 text-center">
+                          <div>
+                            <p className="text-sm font-bold">{stats.totalClasses}</p>
+                            <p className="text-xs text-muted-foreground">ทั้งหมด</p>
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-green-600">{stats.completedClasses}</p>
+                            <p className="text-xs text-muted-foreground">เรียนแล้ว</p>
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-blue-600">{stats.upcomingClasses}</p>
+                            <p className="text-xs text-muted-foreground">จะถึง</p>
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-purple-600">{stats.makeupClasses}</p>
+                            <p className="text-xs text-muted-foreground">ชดเชย</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )
+            })}
           </div>
         )}
 

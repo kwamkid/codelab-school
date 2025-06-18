@@ -749,6 +749,23 @@ export async function fixEnrolledCount(classId: string, newCount: number): Promi
   }
 }
 
+// Get class with schedules included
+export async function getClassWithSchedules(classId: string): Promise<(Class & { schedules?: ClassSchedule[] }) | null> {
+  try {
+    const classData = await getClass(classId);
+    if (!classData) return null;
+    
+    const schedules = await getClassSchedules(classId);
+    return {
+      ...classData,
+      schedules
+    };
+  } catch (error) {
+    console.error('Error getting class with schedules:', error);
+    return null;
+  }
+}
+
 // Export functions
 export {
   generateSchedules,
