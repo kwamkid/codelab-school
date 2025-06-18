@@ -30,7 +30,7 @@ const nextConfig: NextConfig = {
     ],
   },
   
-  // สำหรับ LIFF App
+  // อนุญาต ngrok domain สำหรับ development
   async headers() {
     return [
       {
@@ -39,6 +39,10 @@ const nextConfig: NextConfig = {
           {
             key: 'X-Frame-Options',
             value: 'SAMEORIGIN'
+          },
+          {
+            key: 'Access-Control-Allow-Origin',
+            value: '*' // หรือระบุ ngrok domain ของคุณ
           },
         ],
       },
@@ -53,9 +57,26 @@ const nextConfig: NextConfig = {
             key: 'X-Content-Type-Options',
             value: 'nosniff'
           },
+          {
+            key: 'Access-Control-Allow-Origin',
+            value: '*'
+          },
         ],
       },
     ]
+  },
+  
+  // เพิ่ม experimental config สำหรับ allowed origins
+  experimental: {
+    // อนุญาต ngrok domains
+    serverActions: {
+      allowedOrigins: [
+        'localhost:3000',
+        '*.ngrok.app',
+        '*.ngrok-free.app',
+        'a3b8-2405-9800-b670-c34-1945-f2ac-abc9-a72e.ngrok-free.app'
+      ]
+    }
   },
   
   reactStrictMode: true,

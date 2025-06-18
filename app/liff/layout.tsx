@@ -1,28 +1,40 @@
-import { Metadata, Viewport } from 'next';
-import { LiffProvider } from '@/components/liff/liff-provider';
+import type { Metadata, Viewport } from 'next'
+import { LiffErrorBoundary } from '@/components/liff/error-boundary'
+import { LiffProvider } from '@/components/liff/liff-provider'
+import { Toaster } from 'sonner'
 
 export const metadata: Metadata = {
   title: 'CodeLab School',
-  description: 'ระบบจัดการข้อมูลสำหรับผู้ปกครอง',
-};
+  description: 'ระบบจัดการโรงเรียนสอนเขียนโปรแกรม',
+}
 
+// แยก viewport ออกมาเป็น export แยก
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
-  themeColor: '#ef4444',
-};
+  themeColor: '#f97316',
+}
 
-export default function LiffLayout({
+export default function LIFFLayout({
   children,
 }: {
-  children: React.ReactNode;
+  children: React.ReactNode
 }) {
   return (
-    <LiffProvider>
-      <div className="min-h-screen max-w-md mx-auto bg-white">
+    <LiffErrorBoundary>
+      <LiffProvider>
         {children}
-      </div>
-    </LiffProvider>
-  );
+      </LiffProvider>
+      <Toaster 
+        position="top-center"
+        toastOptions={{
+          style: {
+            background: 'white',
+          },
+          className: 'my-toast',
+        }}
+      />
+    </LiffErrorBoundary>
+  )
 }

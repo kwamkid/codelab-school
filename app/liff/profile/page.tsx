@@ -1,258 +1,396 @@
-'use client';
+'use client'
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { useLiff } from '@/components/liff/liff-provider';
-import { useLiffParent } from '@/hooks/useLiffParent';
-import { Button } from '@/components/ui/button';
-import { 
-  User, 
-  Phone, 
-  Mail, 
-  MapPin, 
-  Plus, 
-  Edit,
-  ChevronLeft,
-  Loader2,
-  LogOut
-} from 'lucide-react';
-import Link from 'next/link';
-import { formatDate, calculateAge } from '@/lib/utils';
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Button } from "@/components/ui/button"
+import { User, Users, School, LogOut, ChevronRight, ChevronLeft, MapPin, Phone, Mail } from 'lucide-react'
+import { useLiff } from '@/components/liff/liff-provider'
+import { getParentByLineId, getStudentsByParent } from '@/lib/services/parents'
+import { getBranch } from '@/lib/services/branches'
+import { toast } from 'sonner'
 
-export default function LiffProfilePage() {
-  const router = useRouter();
-  const { profile, isLoggedIn, login, logout } = useLiff();
-  const { parent, students, loading, isRegistered } = useLiffParent();
-  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+// Define types
+interface Student {
+  id: string
+  name: string
+  nickname: string
+  birthdate: any // รองรับหลาย format
+  gradeLevel: string
+  profileImage?: string
+  isActive: boolean
+}
+
+interface Address {
+  houseNumber: string
+  street: string
+  subDistrict: string
+  district: string
+  province: string
+  postalCode: string
+}
+
+interface ParentData {
+  displayName: string
+  email?: string
+  phone?: string
+  emergencyPhone?: string
+  address?: Address
+  preferredBranchId?: string
+  pictureUrl?: string
+}
+
+interface Branch {
+  id: string
+  name: string
+  address?: string
+}
+
+export default function ProfilePage() {
+  const router = useRouter()
+  const { liff, profile, isLoggedIn } = useLiff()
+  const [parentData, setParentData] = useState<ParentData | null>(null)
+  const [students, setStudents] = useState<Student[]>([])
+  const [preferredBranch, setPreferredBranch] = useState<Branch | null>(null)
+  const [isLoadingData, setIsLoadingData] = useState(true)
+  const [parentId, setParentId] = useState<string | null>(null)
 
   useEffect(() => {
-    // ถ้ายังไม่ login ให้ login ก่อน
-    if (!isLoggedIn) {
-      login();
+    if (profile?.userId) {
+      loadParentData(profile.userId)
     }
-  }, [isLoggedIn, login]);
+  }, [profile])
 
-  // ถ้ายังไม่ลงทะเบียน ให้ไปหน้าลงทะเบียน
-  useEffect(() => {
-    if (!loading && isLoggedIn && !isRegistered) {
-      router.push('/liff/register');
+  const loadParentData = async (lineUserId: string) => {
+    try {
+      setIsLoadingData(true)
+      
+      // Get parent data using service function
+      const parent = await getParentByLineId(lineUserId)
+      console.log('Parent data:', parent)
+      
+      if (parent) {
+        setParentData(parent)
+        setParentId(parent.id) // เก็บ parent ID
+
+        // Load preferred branch
+        if (parent.preferredBranchId) {
+          const branch = await getBranch(parent.preferredBranchId)
+          if (branch) {
+            setPreferredBranch(branch)
+          }
+        }
+
+        // Load students
+        const studentsList = await getStudentsByParent(parent.id)
+        console.log('Students:', studentsList)
+        
+        // Debug birthdate format
+        if (studentsList.length > 0) {
+          console.log('First student birthdate:', studentsList[0].birthdate)
+          console.log('Birthdate type:', typeof studentsList[0].birthdate)
+        }
+        
+        setStudents(studentsList.filter(student => student.isActive))
+      } else {
+        console.log('No parent data found for LINE ID:', lineUserId)
+      }
+    } catch (error) {
+      console.error('Error loading parent data:', error)
+      toast.error("ไม่สามารถโหลดข้อมูลได้")
+    } finally {
+      setIsLoadingData(false)
     }
-  }, [loading, isLoggedIn, isRegistered, router]);
+  }
 
-  if (loading) {
+  const handleLogout = () => {
+    if (liff) {
+      liff.logout()
+    }
+  }
+
+  const calculateAge = (birthdate: any) => {
+    let birth: Date;
+    
+    // Handle different birthdate formats
+    if (birthdate?.seconds) {
+      // Firestore Timestamp
+      birth = new Date(birthdate.seconds * 1000);
+    } else if (birthdate?.toDate && typeof birthdate.toDate === 'function') {
+      // Firestore Timestamp with toDate method
+      birth = birthdate.toDate();
+    } else if (birthdate instanceof Date) {
+      // Already a Date object
+      birth = birthdate;
+    } else if (typeof birthdate === 'string') {
+      // String date
+      birth = new Date(birthdate);
+    } else {
+      console.error('Invalid birthdate format:', birthdate);
+      return 0;
+    }
+    
+    const today = new Date();
+    let age = today.getFullYear() - birth.getFullYear();
+    const monthDiff = today.getMonth() - birth.getMonth();
+    
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+      age--;
+    }
+    
+    return age;
+  }
+
+  const formatAddress = (address?: Address) => {
+    if (!address) return 'ไม่ได้ระบุ'
+    
+    const parts = [
+      address.houseNumber,
+      address.street && `ถ.${address.street}`,
+      address.subDistrict && `แขวง${address.subDistrict}`,
+      address.district && `เขต${address.district}`,
+      address.province,
+      address.postalCode
+    ].filter(Boolean)
+    
+    return parts.join(' ') || 'ไม่ได้ระบุ'
+  }
+
+  if (!isLoggedIn) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-red-500" />
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <Card className="w-full max-w-md">
+          <CardContent className="pt-6">
+            <div className="text-center">
+              <p className="mb-4">กรุณาเข้าสู่ระบบผ่าน LINE</p>
+              <Button onClick={() => liff?.login()}>
+                เข้าสู่ระบบ
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       </div>
-    );
+    )
   }
-
-  if (!isLoggedIn || !parent) {
-    return null;
-  }
-
-  const activeStudents = students.filter(s => s.isActive);
 
   return (
-    <div className="pb-20">
-      {/* Header */}
-      <div className="bg-red-500 text-white p-4">
-        <div className="flex items-center justify-between mb-4">
-          <Link href="/liff" className="flex items-center text-white">
-            <ChevronLeft className="h-5 w-5 mr-1" />
-            <span>กลับ</span>
-          </Link>
-          <button
-            onClick={() => setShowLogoutConfirm(true)}
-            className="flex items-center text-white/80 hover:text-white"
-          >
-            <LogOut className="h-4 w-4 mr-1" />
-            <span className="text-sm">ออกจากระบบ</span>
-          </button>
-        </div>
-        
-        <div className="flex items-center gap-4">
-          {profile?.pictureUrl ? (
-            <img
-              src={profile.pictureUrl}
-              alt={profile.displayName}
-              className="w-16 h-16 rounded-full border-2 border-white"
-            />
-          ) : (
-            <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center">
-              <User className="h-8 w-8 text-white" />
-            </div>
-          )}
-          <div>
-            <h1 className="text-xl font-bold">{parent.displayName}</h1>
-            <p className="text-sm text-white/80">
-              สมาชิกตั้งแต่ {formatDate(parent.createdAt)}
-            </p>
+    <div className="min-h-screen bg-gray-50">
+      {/* Header with Back Button */}
+      <div className="bg-primary text-white p-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => router.push('/liff')}
+              className="text-white hover:text-white/80 -ml-2"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </Button>
+            <h1 className="text-xl font-bold">โปรไฟล์</h1>
           </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleLogout}
+            className="text-white hover:text-white/80"
+          >
+            <LogOut className="h-4 w-4" />
+          </Button>
         </div>
       </div>
 
-      {/* Contact Info */}
       <div className="p-4 space-y-4">
-        <div className="bg-white rounded-lg border p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="font-semibold text-gray-900">ข้อมูลติดต่อ</h2>
-            <Link href="/liff/profile/edit">
-              <Button size="sm" variant="ghost">
-                <Edit className="h-4 w-4" />
-              </Button>
-            </Link>
-          </div>
-          
-          <div className="space-y-3">
-            <div className="flex items-start gap-3">
-              <Phone className="h-4 w-4 text-gray-400 mt-0.5" />
-              <div>
-                <p className="text-sm text-gray-600">เบอร์โทร</p>
-                <p className="font-medium">{parent.phone}</p>
-                {parent.emergencyPhone && (
-                  <p className="text-sm text-gray-600 mt-1">
-                    ฉุกเฉิน: {parent.emergencyPhone}
-                  </p>
-                )}
+        {/* Parent Profile Card */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <User className="h-5 w-5" />
+              ข้อมูลผู้ปกครอง
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-4 mb-4">
+              <Avatar className="h-16 w-16">
+                <AvatarImage src={profile?.pictureUrl} />
+                <AvatarFallback>
+                  {profile?.displayName?.charAt(0) || 'U'}
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex-1">
+                <h3 className="font-semibold">{profile?.displayName || 'ไม่ระบุชื่อ'}</h3>
               </div>
             </div>
-            
-            {parent.email && (
-              <div className="flex items-start gap-3">
-                <Mail className="h-4 w-4 text-gray-400 mt-0.5" />
+
+            <div className="space-y-3 text-sm">
+              {parentData?.phone && (
+                <div className="flex items-center gap-2">
+                  <Phone className="h-4 w-4 text-muted-foreground" />
+                  <span>โทร: {parentData.phone}</span>
+                  {parentData.emergencyPhone && (
+                    <span className="text-muted-foreground">
+                      (ฉุกเฉิน: {parentData.emergencyPhone})
+                    </span>
+                  )}
+                </div>
+              )}
+              
+              {parentData?.email && (
+                <div className="flex items-center gap-2">
+                  <Mail className="h-4 w-4 text-muted-foreground" />
+                  <span>{parentData.email}</span>
+                </div>
+              )}
+
+              <div className="flex items-start gap-2">
+                <MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />
                 <div>
-                  <p className="text-sm text-gray-600">อีเมล</p>
-                  <p className="font-medium break-all">{parent.email}</p>
+                  <span className="font-medium">ที่อยู่: </span>
+                  <span className={parentData?.address ? '' : 'text-red-500'}>
+                    {formatAddress(parentData?.address)}
+                  </span>
+                  {!parentData?.address && (
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="text-xs h-auto p-0 ml-2"
+                      onClick={() => router.push('/liff/edit-profile')}
+                    >
+                      กรุณากรอกที่อยู่
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {preferredBranch && (
+              <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+                <div className="flex items-start gap-2 text-sm">
+                  <School className="h-4 w-4 text-primary mt-0.5" />
+                  <div>
+                    <p className="font-medium">{preferredBranch.name}</p>
+                    {preferredBranch.address && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {preferredBranch.address}
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
-            
-            {parent.address && (
-              <div className="flex items-start gap-3">
-                <MapPin className="h-4 w-4 text-gray-400 mt-0.5" />
-                <div>
-                  <p className="text-sm text-gray-600">ที่อยู่</p>
-                  <p className="text-sm">
-                    {parent.address.houseNumber} {parent.address.street && `ถ.${parent.address.street}`}
-                  </p>
-                  <p className="text-sm">
-                    แขวง{parent.address.subDistrict} เขต{parent.address.district}
-                  </p>
-                  <p className="text-sm">
-                    {parent.address.province} {parent.address.postalCode}
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
 
-        {/* Students */}
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="font-semibold text-gray-900">
-              ข้อมูลนักเรียน ({activeStudents.length})
-            </h2>
-            <Link href="/liff/profile/students/new">
-              <Button size="sm" className="bg-red-500 hover:bg-red-600">
-                <Plus className="h-4 w-4 mr-1" />
-                เพิ่ม
-              </Button>
-            </Link>
-          </div>
+            <Button 
+              variant="outline" 
+              className="w-full mt-4"
+              onClick={() => parentId && router.push(`/liff/profile/${parentId}`)}
+              disabled={!parentId}
+            >
+              แก้ไขข้อมูล
+            </Button>
+          </CardContent>
+        </Card>
 
-          {activeStudents.length === 0 ? (
-            <div className="bg-gray-50 rounded-lg p-8 text-center">
-              <User className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-              <p className="text-gray-600 mb-4">ยังไม่มีข้อมูลนักเรียน</p>
-              <Link href="/liff/profile/students/new">
-                <Button className="bg-red-500 hover:bg-red-600">
-                  <Plus className="h-4 w-4 mr-2" />
-                  เพิ่มนักเรียน
-                </Button>
-              </Link>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {activeStudents.map((student) => (
-                <Link
-                  key={student.id}
-                  href={`/liff/profile/students/${student.id}`}
-                  className="block bg-white rounded-lg border p-4 hover:shadow-md transition-shadow"
+        {/* Students Card */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5" />
+                รายชื่อนักเรียน
+              </CardTitle>
+              {students.length > 0 && parentId && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => router.push(`/liff/profile/${parentId}/students`)}
                 >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-start gap-3">
-                      {student.profileImage ? (
-                        <img
-                          src={student.profileImage}
-                          alt={student.name}
-                          className="w-12 h-12 rounded-lg object-cover"
-                        />
-                      ) : (
-                        <div className="w-12 h-12 rounded-lg bg-gray-100 flex items-center justify-center">
-                          <User className="h-6 w-6 text-gray-400" />
-                        </div>
-                      )}
+                  จัดการ
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            {isLoadingData ? (
+              <div className="text-center py-8">
+                <p className="text-muted-foreground">กำลังโหลดข้อมูล...</p>
+              </div>
+            ) : students.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-muted-foreground mb-4">ยังไม่มีข้อมูลนักเรียน</p>
+                <Button 
+                  onClick={() => router.push(`/liff/profile/${parentId}/students/new`)}
+                  className="gap-2"
+                >
+                  <Users className="h-4 w-4" />
+                  ลงทะเบียนนักเรียน
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {students.map((student) => (
+                  <div
+                    key={student.id}
+                    className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 cursor-pointer"
+                    onClick={() => router.push(`/liff/profile/${parentId}/students/${student.id}`)}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Avatar className="h-10 w-10">
+                        <AvatarImage src={student.profileImage} />
+                        <AvatarFallback>
+                          {student.nickname?.charAt(0) || student.name.charAt(0)}
+                        </AvatarFallback>
+                      </Avatar>
                       <div>
-                        <h3 className="font-semibold">
-                          {student.nickname || student.name}
-                        </h3>
-                        <p className="text-sm text-gray-600">{student.name}</p>
-                        <div className="flex items-center gap-3 mt-1">
-                          <span className="text-xs text-gray-500">
-                            {calculateAge(student.birthdate)} ปี
-                          </span>
-                          <span className="text-xs px-2 py-0.5 bg-gray-100 rounded">
-                            {student.gender === 'M' ? 'ชาย' : 'หญิง'}
-                          </span>
-                        </div>
+                        <p className="font-medium">{student.nickname || student.name}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {student.gradeLevel} • อายุ {calculateAge(student.birthdate)} ปี
+                        </p>
                       </div>
                     </div>
-                    <ChevronLeft className="h-5 w-5 text-gray-400 rotate-180" />
+                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
                   </div>
-                  
-                  {student.allergies && (
-                    <div className="mt-2 text-xs text-red-600 bg-red-50 px-2 py-1 rounded">
-                      ⚠️ แพ้: {student.allergies}
-                    </div>
-                  )}
-                </Link>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
+                ))}
 
-      {/* Logout Confirmation Modal */}
-      {showLogoutConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg p-6 max-w-sm w-full">
-            <h3 className="text-lg font-semibold mb-2">ออกจากระบบ?</h3>
-            <p className="text-gray-600 mb-4">
-              คุณต้องการออกจากระบบใช่หรือไม่?
-            </p>
-            <div className="flex gap-3">
+                <Button 
+                  variant="outline" 
+                  className="w-full mt-4"
+                  onClick={() => router.push(`/liff/profile/${parentId}/students/new`)}
+                >
+                  เพิ่มนักเรียน
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Quick Actions */}
+        {students.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>เมนูลัด</CardTitle>
+            </CardHeader>
+            <CardContent className="grid grid-cols-2 gap-3">
               <Button
                 variant="outline"
-                className="flex-1"
-                onClick={() => setShowLogoutConfirm(false)}
+                className="h-20 flex-col gap-2"
+                onClick={() => router.push('/liff/schedule')}
               >
-                ยกเลิก
+                <School className="h-6 w-6" />
+                <span className="text-sm">ตารางเรียน</span>
               </Button>
               <Button
-                className="flex-1 bg-red-500 hover:bg-red-600"
-                onClick={() => {
-                  logout();
-                  setShowLogoutConfirm(false);
-                }}
+                variant="outline"
+                className="h-20 flex-col gap-2"
+                onClick={() => router.push('/liff/makeup')}
               >
-                ออกจากระบบ
+                <Users className="h-6 w-6" />
+                <span className="text-sm">Makeup Class</span>
               </Button>
-            </div>
-          </div>
-        </div>
-      )}
+            </CardContent>
+          </Card>
+        )}
+      </div>
     </div>
-  );
+  )
 }

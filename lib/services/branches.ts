@@ -124,6 +124,30 @@ export async function toggleBranchStatus(id: string, isActive: boolean): Promise
   }
 }
 
+// Check if branch code already exists
+export async function checkBranchCodeExists(
+  code: string, 
+  excludeId?: string
+): Promise<boolean> {
+  try {
+    const q = query(
+      collection(db, COLLECTION_NAME),
+      where('code', '==', code)
+    );
+    const querySnapshot = await getDocs(q);
+    
+    if (excludeId) {
+      // If we're updating, exclude the current branch from the check
+      return querySnapshot.docs.some(doc => doc.id !== excludeId);
+    }
+    
+    return !querySnapshot.empty;
+  } catch (error) {
+    console.error('Error checking branch code:', error);
+    throw error;
+  }
+}
+
 // Get branches by IDs
 export async function getBranchesByIds(ids: string[]): Promise<Branch[]> {
   try {

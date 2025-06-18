@@ -1,135 +1,127 @@
-'use client';
+'use client'
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { useLiff } from '@/components/liff/liff-provider';
-import { 
-  Calendar, 
-  User, 
-  CalendarOff, 
-  TestTube,
-  Loader2
-} from 'lucide-react';
-import Link from 'next/link';
+import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { useLiff } from '@/components/liff/liff-provider'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Calendar, Users, User, Phone, BookOpen } from 'lucide-react'
 
-export default function LiffHomePage() {
-  const router = useRouter();
-  const { isLoggedIn, isReady, profile } = useLiff();
-
-  useEffect(() => {
-    // ถ้ายังไม่ login และพร้อมแล้ว ให้ redirect ไป profile
-    if (isReady && !isLoggedIn) {
-      router.push('/liff/profile');
-    }
-  }, [isReady, isLoggedIn, router]);
-
-  if (!isReady || !isLoggedIn) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-red-500" />
-      </div>
-    );
-  }
+export default function LiffPage() {
+  const router = useRouter()
+  const { isLoggedIn, profile, isLoading } = useLiff()
+  
+  console.log('[LiffPage] Render state:', { isLoading, isLoggedIn, profile })
 
   const menuItems = [
     {
-      title: 'ข้อมูลส่วนตัว',
-      description: 'จัดการข้อมูลผู้ปกครองและนักเรียน',
-      icon: User,
-      href: '/liff/profile',
-      color: 'bg-blue-500',
-    },
-    {
       title: 'ตารางเรียน',
-      description: 'ดูตารางเรียนของลูกทุกคน',
       icon: Calendar,
-      href: '/liff/schedule',
-      color: 'bg-green-500',
+      path: '/liff/schedule',
+      description: 'ดูตารางเรียนของนักเรียน',
+      color: 'bg-blue-500'
     },
     {
-      title: 'ขอลาเรียน',
-      description: 'ขอลาและดูประวัติการลา',
-      icon: CalendarOff,
-      href: '/liff/leave',
-      color: 'bg-purple-500',
-    },
-    {
-      title: 'ทดลองเรียน',
+      title: 'จองทดลองเรียน',
+      icon: BookOpen,
+      path: '/liff/booking',
       description: 'จองคลาสทดลองเรียน',
-      icon: TestTube,
-      href: '/liff/trial',
-      color: 'bg-orange-500',
+      color: 'bg-green-500'
     },
-  ];
+    {
+      title: 'โปรไฟล์',
+      icon: User,
+      path: '/liff/profile',
+      description: 'จัดการข้อมูลส่วนตัว',
+      color: 'bg-orange-500'
+    },
+    {
+      title: 'Makeup Class',
+      icon: Users,
+      path: '/liff/makeup',
+      description: 'ดูตารางเรียนชดเชย',
+      color: 'bg-pink-500'
+    },
+    {
+      title: 'ติดต่อเรา',
+      icon: Phone,
+      path: '/liff/contact',
+      description: 'ข้อมูลการติดต่อ',
+      color: 'bg-gray-500'
+    }
+  ]
 
   return (
-    <div className="p-4">
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="mb-6 text-center">
-        <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-red-100 mb-3">
-          <img
-            src="/logo.svg"
-            alt="CodeLab"
-            className="w-12 h-12"
-          />
+      <div className="bg-primary text-white p-4">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold">CodeLab School</h1>
+          <p className="text-sm opacity-90 mt-1">ระบบจัดการเรียนออนไลน์</p>
         </div>
-        <h1 className="text-xl font-bold text-gray-900">CodeLab School</h1>
-        <p className="text-sm text-gray-600 mt-1">
-          สวัสดีคุณ{profile?.displayName}
-        </p>
       </div>
 
-      {/* Menu Grid */}
-      <div className="grid grid-cols-2 gap-4">
-        {menuItems.map((item) => {
-          const Icon = item.icon;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-lg transition-shadow"
-            >
-              <div className={`${item.color} w-12 h-12 rounded-lg flex items-center justify-center mb-3`}>
-                <Icon className="h-6 w-6 text-white" />
-              </div>
-              <h3 className="font-semibold text-gray-900 mb-1">
-                {item.title}
-              </h3>
-              <p className="text-xs text-gray-600 line-clamp-2">
-                {item.description}
+      {/* Welcome Message */}
+      {isLoggedIn && profile && (
+        <div className="p-4">
+          <Card className="bg-white shadow-sm">
+            <CardContent className="pt-6">
+              <p className="text-center">
+                สวัสดีคุณ <span className="font-semibold">{profile.displayName}</span> 👋
               </p>
-            </Link>
-          );
-        })}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Menu Grid */}
+      <div className="p-4">
+        <div className="grid grid-cols-2 gap-4">
+          {menuItems.map((item) => {
+            const Icon = item.icon
+            return (
+              <Card
+                key={item.path}
+                className="cursor-pointer hover:shadow-lg transition-shadow"
+                onClick={() => router.push(item.path)}
+              >
+                <CardContent className="p-6">
+                  <div className="flex flex-col items-center text-center space-y-3">
+                    <div className={`p-3 rounded-full ${item.color} text-white`}>
+                      <Icon className="h-8 w-8" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-sm">{item.title}</h3>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {item.description}
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          })}
+        </div>
       </div>
 
       {/* Quick Actions */}
-      <div className="mt-8 bg-gray-50 rounded-xl p-4">
-        <h3 className="font-semibold text-gray-900 mb-3">ข้อมูลด่วน</h3>
-        <div className="space-y-2">
-          <div className="flex justify-between items-center">
-            <span className="text-sm text-gray-600">คลาสถัดไป</span>
-            <span className="text-sm font-medium">Python - พรุ่งนี้ 13:00</span>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className="text-sm text-gray-600">โควต้าลาคงเหลือ</span>
-            <span className="text-sm font-medium">3/4 ครั้ง</span>
-          </div>
+      {!isLoggedIn && (
+        <div className="p-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-center">เริ่มต้นใช้งาน</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Button 
+                className="w-full" 
+                onClick={() => router.push('/liff/profile')}
+              >
+                เข้าสู่ระบบด้วย LINE
+              </Button>
+            </CardContent>
+          </Card>
         </div>
-      </div>
-
-      {/* Footer */}
-      <div className="mt-8 text-center">
-        <p className="text-xs text-gray-500">
-          ต้องการความช่วยเหลือ?
-        </p>
-        <a
-          href="tel:021234567"
-          className="text-sm text-red-500 font-medium"
-        >
-          โทร 02-123-4567
-        </a>
-      </div>
+      )}
     </div>
-  );
+  )
 }

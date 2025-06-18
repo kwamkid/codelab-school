@@ -17,6 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { GradeLevelCombobox } from "@/components/ui/grade-level-combobox";
 import { toast } from 'sonner';
 import { Loader2, Save, X, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
@@ -190,26 +191,26 @@ export default function StudentForm({ parentId, student, isEdit = false }: Stude
             <CardTitle>ข้อมูลการศึกษา</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="schoolName">โรงเรียน</Label>
-                <Input
-                  id="schoolName"
-                  value={formData.schoolName}
-                  onChange={(e) => setFormData({ ...formData, schoolName: e.target.value })}
-                  placeholder="ชื่อโรงเรียน"
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="gradeLevel">ระดับชั้น</Label>
-                <Input
-                  id="gradeLevel"
-                  value={formData.gradeLevel}
-                  onChange={(e) => setFormData({ ...formData, gradeLevel: e.target.value })}
-                  placeholder="เช่น ป.4, ม.2"
-                />
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="schoolName">โรงเรียน</Label>
+              <Input
+                id="schoolName"
+                value={formData.schoolName}
+                onChange={(e) => setFormData({ ...formData, schoolName: e.target.value })}
+                placeholder="ชื่อโรงเรียน"
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="gradeLevel">ระดับชั้น</Label>
+              <GradeLevelCombobox
+                value={formData.gradeLevel}
+                onChange={(value) => setFormData({ ...formData, gradeLevel: value })}
+                placeholder="พิมพ์ระดับชั้น เช่น ป.4, Grade 3..."
+              />
+              <p className="text-xs text-gray-500">
+                เริ่มพิมพ์เพื่อค้นหา เช่น "ป", "ประถม", "Grade", "Year"
+              </p>
             </div>
           </CardContent>
         </Card>
