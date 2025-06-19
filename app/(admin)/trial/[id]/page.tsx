@@ -61,6 +61,7 @@ import TrialSessionDialog from '@/components/trial/trial-session-dialog';
 import ContactHistorySection from '@/components/trial/contact-history-section';
 import ConvertToStudentDialog from '@/components/trial/convert-to-student-dialog';
 import RescheduleTrialDialog from '@/components/trial/reschedule-trial-dialog';
+import { GradeLevelCombobox } from '@/components/ui/grade-level-combobox';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -433,10 +434,10 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
                           value={tempStudentData.schoolName}
                           onChange={(e) => setTempStudentData(prev => ({ ...prev, schoolName: e.target.value }))}
                         />
-                        <Input
-                          placeholder="ระดับชั้น"
+                        <GradeLevelCombobox
                           value={tempStudentData.gradeLevel}
-                          onChange={(e) => setTempStudentData(prev => ({ ...prev, gradeLevel: e.target.value }))}
+                          onChange={(value) => setTempStudentData(prev => ({ ...prev, gradeLevel: value }))}
+                          placeholder="พิมพ์ระดับชั้น เช่น ป.4, Grade 3..."
                         />
                         <div className="flex gap-2">
                           <Button size="sm" onClick={handleStudentSave}>บันทึก</Button>

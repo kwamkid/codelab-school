@@ -506,10 +506,12 @@ export async function convertTrialToEnrollment(
   sessionId: string,
   conversionData: {
     // Parent info
+    useExistingParent?: boolean;
+    existingParentId?: string;
     parentName: string;
     parentPhone: string;
     parentEmail?: string;
-    emergencyPhone?: string; // เปลี่ยนเป็น optional
+    emergencyPhone?: string;
     address?: {
       houseNumber: string;
       street?: string;
@@ -520,10 +522,12 @@ export async function convertTrialToEnrollment(
     };
     
     // Student info
-    studentName: string;
-    studentNickname: string;
-    studentBirthdate: Date;
-    studentGender: 'M' | 'F';
+    useExistingStudent?: boolean;
+    existingStudentId?: string;
+    studentName?: string;
+    studentNickname?: string;
+    studentBirthdate?: Date;
+    studentGender?: 'M' | 'F';
     studentSchoolName?: string;
     studentGradeLevel?: string;
     studentAllergies?: string;
@@ -558,84 +562,64 @@ export async function convertTrialToEnrollment(
     }
     
     // Import required services
-    const { createParent, createStudent, checkParentPhoneExists } = await import('./parents');
+    const { createParent, createStudent, updateParent } = await import('./parents');
     const { createEnrollment } = await import('./enrollments');
     const { getClass } = await import('./classes');
     
-    // Check if parent exists by phone
     let parentId: string;
+    let studentId: string;
     
-    // Check main phone
-    const mainPhoneExists = await checkParentPhoneExists(conversionData.parentPhone);
-    
-    if (mainPhoneExists) {
-      throw new Error('เบอร์โทรหลักนี้มีอยู่ในระบบแล้ว กรุณาตรวจสอบข้อมูลผู้ปกครอง');
-    }
-    
-    // Check emergency phone only if provided and different from main phone
-    if (conversionData.emergencyPhone && 
-        conversionData.emergencyPhone !== conversionData.parentPhone) {
-      const emergencyPhoneExists = await checkParentPhoneExists(conversionData.emergencyPhone);
+    // Handle parent
+    if (conversionData.useExistingParent && conversionData.existingParentId) {
+      parentId = conversionData.existingParentId;
+    } else {
+      // Create new parent
+      const parentData: any = {
+        displayName: conversionData.parentName,
+        phone: conversionData.parentPhone,
+        email: conversionData.parentEmail,
+        preferredBranchId: session.branchId,
+      };
       
-      if (emergencyPhoneExists) {
-        throw new Error('เบอร์โทรฉุกเฉินนี้มีอยู่ในระบบแล้ว กรุณาใช้เบอร์อื่น');
+      if (conversionData.emergencyPhone) {
+        parentData.emergencyPhone = conversionData.emergencyPhone;
       }
+      
+      if (conversionData.address) {
+        parentData.address = conversionData.address;
+      }
+      
+      parentId = await createParent(parentData);
     }
     
-    // Create new parent with complete data
-    const parentData: any = {
-      displayName: conversionData.parentName,
-      phone: conversionData.parentPhone,
-      email: conversionData.parentEmail,
-      // Optional: If you want to set preferred branch from trial session
-      preferredBranchId: session.branchId,
-    };
-    
-    // Add emergency phone only if provided
-    if (conversionData.emergencyPhone) {
-      parentData.emergencyPhone = conversionData.emergencyPhone;
+    // Handle student
+    if (conversionData.useExistingStudent && conversionData.existingStudentId) {
+      studentId = conversionData.existingStudentId;
+    } else {
+      // Create new student
+      if (!conversionData.studentName || !conversionData.studentNickname || !conversionData.studentBirthdate || !conversionData.studentGender) {
+        throw new Error('Missing required student information');
+      }
+      
+      studentId = await createStudent(parentId, {
+        name: conversionData.studentName,
+        nickname: conversionData.studentNickname,
+        birthdate: conversionData.studentBirthdate,
+        gender: conversionData.studentGender,
+        schoolName: conversionData.studentSchoolName,
+        gradeLevel: conversionData.studentGradeLevel,
+        allergies: conversionData.studentAllergies,
+        specialNeeds: conversionData.studentSpecialNeeds,
+        emergencyContact: conversionData.emergencyContact,
+        emergencyPhone: conversionData.emergencyContactPhone,
+        isActive: true,
+      });
     }
-    
-    // Add address only if provided
-    if (conversionData.address) {
-      parentData.address = conversionData.address;
-    }
-    
-    parentId = await createParent(parentData);
-    
-    // Create student with complete data
-    const studentId = await createStudent(parentId, {
-      name: conversionData.studentName,
-      nickname: conversionData.studentNickname,
-      birthdate: conversionData.studentBirthdate,
-      gender: conversionData.studentGender,
-      schoolName: conversionData.studentSchoolName,
-      gradeLevel: conversionData.studentGradeLevel,
-      allergies: conversionData.studentAllergies,
-      specialNeeds: conversionData.studentSpecialNeeds,
-      emergencyContact: conversionData.emergencyContact,
-      emergencyPhone: conversionData.emergencyContactPhone,
-      isActive: true,
-    });
     
     // Get class data for branch ID
     const classData = await getClass(conversionData.classId);
     if (!classData) {
       throw new Error('Class not found');
-    }
-    
-    // Validate student age against subject requirements
-    const { getSubjects } = await import('./subjects');
-    const subjects = await getSubjects();
-    const subject = subjects.find(s => s.id === classData.subjectId);
-    
-    if (subject) {
-      const { calculateAge } = await import('../utils');
-      const studentAge = calculateAge(conversionData.studentBirthdate);
-      
-      if (studentAge < subject.ageRange.min || studentAge > subject.ageRange.max) {
-        throw new Error(`อายุนักเรียนไม่อยู่ในช่วงที่กำหนดสำหรับวิชานี้ (${subject.ageRange.min}-${subject.ageRange.max} ปี)`);
-      }
     }
     
     // Create enrollment
@@ -647,7 +631,7 @@ export async function convertTrialToEnrollment(
       status: 'active',
       pricing: conversionData.pricing,
       payment: {
-        method: 'cash', // Default to cash, can be changed later
+        method: 'cash',
         status: 'pending',
         paidAmount: 0,
       },
@@ -671,52 +655,13 @@ export async function convertTrialToEnrollment(
       studentId,
       enrollmentId,
       classId: conversionData.classId,
+      useExistingParent: conversionData.useExistingParent,
+      useExistingStudent: conversionData.useExistingStudent,
     });
     
     return { parentId, studentId, enrollmentId };
   } catch (error) {
     console.error('Error converting trial to enrollment:', error);
-    throw error;
-  }
-}
-
-// Get upcoming trial sessions
-export async function getUpcomingTrialSessions(
-  startDate: Date,
-  endDate: Date,
-  branchId?: string
-): Promise<TrialSession[]> {
-  try {
-    let q = query(
-      collection(db, SESSIONS_COLLECTION),
-      where('scheduledDate', '>=', Timestamp.fromDate(startDate)),
-      where('scheduledDate', '<=', Timestamp.fromDate(endDate)),
-      where('status', '==', 'scheduled'),
-      orderBy('scheduledDate', 'asc')
-    );
-    
-    if (branchId) {
-      q = query(
-        collection(db, SESSIONS_COLLECTION),
-        where('branchId', '==', branchId),
-        where('scheduledDate', '>=', Timestamp.fromDate(startDate)),
-        where('scheduledDate', '<=', Timestamp.fromDate(endDate)),
-        where('status', '==', 'scheduled'),
-        orderBy('scheduledDate', 'asc')
-      );
-    }
-    
-    const querySnapshot = await getDocs(q);
-    
-    return querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      scheduledDate: doc.data().scheduledDate?.toDate() || new Date(),
-      createdAt: doc.data().createdAt?.toDate() || new Date(),
-      completedAt: doc.data().completedAt?.toDate(),
-    } as TrialSession));
-  } catch (error) {
-    console.error('Error getting upcoming trial sessions:', error);
     throw error;
   }
 }

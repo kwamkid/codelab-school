@@ -10,6 +10,7 @@ import {
   orderBy,
   Timestamp,
   deleteField,
+  limit,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { Parent, Student } from '@/types/models';
@@ -229,48 +230,36 @@ export async function getStudent(parentId: string, studentId: string): Promise<S
 }
 
 // Create new student
+// Create new student
 export async function createStudent(
   parentId: string, 
   studentData: Omit<Student, 'id' | 'parentId'>
 ): Promise<string> {
   try {
     const studentsRef = collection(db, COLLECTION_NAME, parentId, 'students');
-    const docRef = await addDoc(studentsRef, {
-      ...studentData,
+    
+    // Prepare data without undefined values
+    const dataToSave: any = {
+      name: studentData.name,
+      nickname: studentData.nickname,
       birthdate: Timestamp.fromDate(studentData.birthdate),
-    });
+      gender: studentData.gender,
+      isActive: studentData.isActive ?? true,
+    };
+    
+    // Add optional fields only if they have values
+    if (studentData.schoolName) dataToSave.schoolName = studentData.schoolName;
+    if (studentData.gradeLevel) dataToSave.gradeLevel = studentData.gradeLevel;
+    if (studentData.profileImage) dataToSave.profileImage = studentData.profileImage;
+    if (studentData.allergies) dataToSave.allergies = studentData.allergies;
+    if (studentData.specialNeeds) dataToSave.specialNeeds = studentData.specialNeeds;
+    if (studentData.emergencyContact) dataToSave.emergencyContact = studentData.emergencyContact;
+    if (studentData.emergencyPhone) dataToSave.emergencyPhone = studentData.emergencyPhone;
+    
+    const docRef = await addDoc(studentsRef, dataToSave);
     return docRef.id;
   } catch (error) {
     console.error('Error creating student:', error);
-    throw error;
-  }
-}
-
-// Update student
-export async function updateStudent(
-  parentId: string,
-  studentId: string,
-  studentData: Partial<Student>
-): Promise<void> {
-  try {
-    const docRef = doc(db, COLLECTION_NAME, parentId, 'students', studentId);
-    
-    // Build the update data without id and parentId
-    const updateData: Partial<Student> = { ...studentData };
-    delete updateData.id;
-    delete updateData.parentId;
-    
-    // Convert birthdate to Timestamp if it exists
-    if (updateData.birthdate instanceof Date) {
-      await updateDoc(docRef, {
-        ...updateData,
-        birthdate: Timestamp.fromDate(updateData.birthdate)
-      });
-    } else {
-      await updateDoc(docRef, updateData);
-    }
-  } catch (error) {
-    console.error('Error updating student:', error);
     throw error;
   }
 }
@@ -454,5 +443,34 @@ export async function checkLineUserIdExists(lineUserId: string): Promise<{ exist
   } catch (error) {
     console.error('Error checking LINE User ID:', error);
     throw error;
+  }
+}
+
+// Get parent by phone number
+export async function getParentByPhone(phone: string): Promise<Parent | null> {
+  try {
+    const cleanPhone = phone.replace(/[-\s]/g, '');
+    const q = query(
+      collection(db, COLLECTION_NAME),
+      where('phone', '==', cleanPhone),
+      limit(1)
+    );
+    
+    const querySnapshot = await getDocs(q);
+    
+    if (querySnapshot.empty) {
+      return null;
+    }
+    
+    const doc = querySnapshot.docs[0];
+    return {
+      id: doc.id,
+      ...doc.data(),
+      createdAt: doc.data().createdAt?.toDate() || new Date(),
+      lastLoginAt: doc.data().lastLoginAt?.toDate() || new Date(),
+    } as Parent;
+  } catch (error) {
+    console.error('Error getting parent by phone:', error);
+    return null;
   }
 }

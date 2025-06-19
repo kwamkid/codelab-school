@@ -12,6 +12,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { 
   User,
   GraduationCap,
@@ -29,13 +30,16 @@ import {
   Baby,
   School,
   Heart,
-  Edit
+  CheckCircle,
+  Users,
+  UserPlus
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { TrialBooking, TrialSession, Class, Subject } from '@/types/models';
+import { TrialBooking, TrialSession, Class, Subject, Parent, Student } from '@/types/models';
 import { convertTrialToEnrollment } from '@/lib/services/trial-bookings';
 import { getClasses } from '@/lib/services/classes';
 import { getSubjects } from '@/lib/services/subjects';
+import { getParentByPhone, getStudentsByParent } from '@/lib/services/parents';
 import { formatCurrency, calculateAge } from '@/lib/utils';
 import { GradeLevelCombobox } from '@/components/ui/grade-level-combobox';
 
@@ -47,7 +51,9 @@ interface ConvertToStudentFormProps {
 }
 
 interface FormData {
-  // Parent info (เพิ่มข้อมูลพื้นฐานที่แก้ไขได้)
+  // Parent info
+  useExistingParent: boolean;
+  existingParentId?: string;
   parentName: string;
   parentPhone: string;
   parentEmail: string;
@@ -61,8 +67,12 @@ interface FormData {
     postalCode: string;
   };
   
-  // Student additional info
-  studentName: string; // เพิ่ม field ให้แก้ไขชื่อนักเรียนได้
+  // Student selection
+  studentSelection: 'existing' | 'new';
+  selectedExistingStudentId?: string;
+  
+  // New student info
+  studentName: string;
   studentNickname: string;
   studentBirthdate: string;
   studentGender: 'M' | 'F';
@@ -95,12 +105,16 @@ export default function ConvertToStudentForm({
   const [currentStep, setCurrentStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [loadingClasses, setLoadingClasses] = useState(true);
+  const [checkingPhone, setCheckingPhone] = useState(false);
+  const [existingParent, setExistingParent] = useState<Parent | null>(null);
+  const [existingStudents, setExistingStudents] = useState<Student[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   
-  // Form state - initialize with booking data
+  // Form state
   const [formData, setFormData] = useState<FormData>({
-    // Parent (สามารถแก้ไขข้อมูลพื้นฐานได้)
+    // Parent
+    useExistingParent: false,
     parentName: booking.parentName,
     parentPhone: booking.parentPhone,
     parentEmail: booking.parentEmail || '',
@@ -114,8 +128,9 @@ export default function ConvertToStudentForm({
       postalCode: ''
     },
     
-    // Student - เพิ่มการ initialize ชื่อนักเรียน
-    studentName: session.studentName, // เพิ่มการใส่ชื่อจาก session
+    // Student
+    studentSelection: 'new',
+    studentName: session.studentName,
     studentNickname: '',
     studentBirthdate: '',
     studentGender: 'M',
@@ -128,7 +143,7 @@ export default function ConvertToStudentForm({
     
     // Class
     selectedClass: '',
-    discount: 5, // Default 5% for trial conversion
+    discount: 5,
     discountType: 'percentage',
     promotionCode: 'TRIAL5'
   });
@@ -145,7 +160,38 @@ export default function ConvertToStudentForm({
 
   useEffect(() => {
     loadData();
+    checkExistingParent();
   }, []);
+
+  // Check for existing parent
+  const checkExistingParent = async () => {
+    setCheckingPhone(true);
+    try {
+      const cleanPhone = booking.parentPhone.replace(/[-\s]/g, '');
+      const parent = await getParentByPhone(cleanPhone);
+      
+      if (parent) {
+        setExistingParent(parent);
+        setFormData(prev => ({
+          ...prev,
+          useExistingParent: true,
+          existingParentId: parent.id,
+          parentName: parent.displayName,
+          parentEmail: parent.email || '',
+          emergencyPhone: parent.emergencyPhone || '',
+          address: parent.address || prev.address
+        }));
+        
+        // Load existing students
+        const students = await getStudentsByParent(parent.id);
+        setExistingStudents(students.filter(s => s.isActive));
+      }
+    } catch (error) {
+      console.error('Error checking parent:', error);
+    } finally {
+      setCheckingPhone(false);
+    }
+  };
 
   useEffect(() => {
     calculatePricing();
@@ -161,7 +207,7 @@ export default function ConvertToStudentForm({
       
       setSubjects(subjectsData);
       
-      // Filter classes for the same subject and branch
+      // Filter classes
       const eligibleClasses = classesData.filter(cls => 
         cls.subjectId === session.subjectId &&
         cls.branchId === session.branchId &&
@@ -170,11 +216,6 @@ export default function ConvertToStudentForm({
       );
       
       setClasses(eligibleClasses);
-      
-      // Auto-select if only one class available
-      if (eligibleClasses.length === 1) {
-        setFormData(prev => ({ ...prev, selectedClass: eligibleClasses[0].id }));
-      }
       
       // Pre-fill student data if available
       const studentData = booking.students.find(s => s.name === session.studentName);
@@ -225,60 +266,56 @@ export default function ConvertToStudentForm({
     
     switch (step) {
       case 1: // Parent info
-        if (!formData.parentName.trim()) {
-          newErrors.parentName = 'กรุณากรอกชื่อผู้ปกครอง';
-        }
-        
-        if (!formData.parentPhone.trim()) {
-          newErrors.parentPhone = 'กรุณากรอกเบอร์โทรศัพท์';
-        } else if (!/^0[0-9]{8,9}$/.test(formData.parentPhone.replace(/-/g, ''))) {
-          newErrors.parentPhone = 'เบอร์โทรไม่ถูกต้อง';
-        }
-        
-        // เบอร์ฉุกเฉินไม่บังคับ แต่ถ้ากรอกต้องถูกต้อง
-        if (formData.emergencyPhone && !/^0[0-9]{8,9}$/.test(formData.emergencyPhone.replace(/-/g, ''))) {
-          newErrors.emergencyPhone = 'เบอร์โทรฉุกเฉินไม่ถูกต้อง';
-        }
-        
-        if (formData.parentEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.parentEmail)) {
-          newErrors.parentEmail = 'อีเมลไม่ถูกต้อง';
-        }
-        
-        // Check if at least partial address is provided
-        const hasAddressData = Object.values(formData.address).some(v => v.trim() !== '');
-        if (hasAddressData) {
-          if (!formData.address.houseNumber) newErrors['address.houseNumber'] = 'กรุณากรอกบ้านเลขที่';
-          if (!formData.address.subDistrict) newErrors['address.subDistrict'] = 'กรุณากรอกแขวง/ตำบล';
-          if (!formData.address.district) newErrors['address.district'] = 'กรุณากรอกเขต/อำเภอ';
-          if (!formData.address.province) newErrors['address.province'] = 'กรุณากรอกจังหวัด';
+        if (!existingParent) {
+          if (!formData.parentName.trim()) {
+            newErrors.parentName = 'กรุณากรอกชื่อผู้ปกครอง';
+          }
+          
+          if (!formData.parentPhone.trim()) {
+            newErrors.parentPhone = 'กรุณากรอกเบอร์โทรศัพท์';
+          } else if (!/^0[0-9]{8,9}$/.test(formData.parentPhone.replace(/-/g, ''))) {
+            newErrors.parentPhone = 'เบอร์โทรไม่ถูกต้อง';
+          }
+          
+          if (formData.emergencyPhone && !/^0[0-9]{8,9}$/.test(formData.emergencyPhone.replace(/-/g, ''))) {
+            newErrors.emergencyPhone = 'เบอร์โทรฉุกเฉินไม่ถูกต้อง';
+          }
+          
+          if (formData.parentEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.parentEmail)) {
+            newErrors.parentEmail = 'อีเมลไม่ถูกต้อง';
+          }
         }
         break;
         
       case 2: // Student info
-        if (!formData.studentName.trim()) {
-          newErrors.studentName = 'กรุณากรอกชื่อ-นามสกุลนักเรียน';
-        }
-        
-        if (!formData.studentNickname.trim()) {
-          newErrors.studentNickname = 'กรุณากรอกชื่อเล่น';
-        }
-        
-        if (!formData.studentBirthdate) {
-          newErrors.studentBirthdate = 'กรุณาเลือกวันเกิด';
-        } else {
-          const age = calculateAge(new Date(formData.studentBirthdate));
-          if (age < 4 || age > 18) {
-            newErrors.studentBirthdate = 'นักเรียนต้องมีอายุระหว่าง 4-18 ปี';
+        if (formData.studentSelection === 'new') {
+          if (!formData.studentName.trim()) {
+            newErrors.studentName = 'กรุณากรอกชื่อ-นามสกุลนักเรียน';
           }
-        }
-        
-        if (!formData.studentGender) {
-          newErrors.studentGender = 'กรุณาเลือกเพศ';
-        }
-        
-        if (formData.emergencyContactPhone && 
-            !/^0[0-9]{8,9}$/.test(formData.emergencyContactPhone.replace(/-/g, ''))) {
-          newErrors.emergencyContactPhone = 'เบอร์โทรไม่ถูกต้อง';
+          
+          if (!formData.studentNickname.trim()) {
+            newErrors.studentNickname = 'กรุณากรอกชื่อเล่น';
+          }
+          
+          if (!formData.studentBirthdate) {
+            newErrors.studentBirthdate = 'กรุณาเลือกวันเกิด';
+          } else {
+            const age = calculateAge(new Date(formData.studentBirthdate));
+            if (age < 4 || age > 18) {
+              newErrors.studentBirthdate = 'นักเรียนต้องมีอายุระหว่าง 4-18 ปี';
+            }
+          }
+          
+          if (!formData.studentGender) {
+            newErrors.studentGender = 'กรุณาเลือกเพศ';
+          }
+          
+          if (formData.emergencyContactPhone && 
+              !/^0[0-9]{8,9}$/.test(formData.emergencyContactPhone.replace(/-/g, ''))) {
+            newErrors.emergencyContactPhone = 'เบอร์โทรไม่ถูกต้อง';
+          }
+        } else if (formData.studentSelection === 'existing' && !formData.selectedExistingStudentId) {
+          newErrors.studentSelection = 'กรุณาเลือกนักเรียน';
         }
         break;
         
@@ -312,25 +349,15 @@ export default function ConvertToStudentForm({
 
     try {
       // Prepare conversion data
-      const conversionData = {
+      const conversionData: any = {
         // Parent info
+        useExistingParent: formData.useExistingParent,
+        existingParentId: formData.existingParentId,
         parentName: formData.parentName,
         parentPhone: formData.parentPhone.replace(/-/g, ''),
         parentEmail: formData.parentEmail || undefined,
         emergencyPhone: formData.emergencyPhone ? formData.emergencyPhone.replace(/-/g, '') : undefined,
         address: formData.address.houseNumber ? formData.address : undefined,
-        
-        // Student info - ใช้ชื่อที่แก้ไขแล้ว
-        studentName: formData.studentName,
-        studentNickname: formData.studentNickname,
-        studentBirthdate: new Date(formData.studentBirthdate),
-        studentGender: formData.studentGender,
-        studentSchoolName: formData.studentSchoolName || undefined,
-        studentGradeLevel: formData.studentGradeLevel || undefined,
-        studentAllergies: formData.studentAllergies || undefined,
-        studentSpecialNeeds: formData.studentSpecialNeeds || undefined,
-        emergencyContact: formData.emergencyContact || undefined,
-        emergencyContactPhone: formData.emergencyContactPhone || undefined,
         
         // Class and pricing
         classId: formData.selectedClass,
@@ -343,6 +370,24 @@ export default function ConvertToStudentForm({
         }
       };
       
+      // Add student data based on selection
+      if (formData.studentSelection === 'existing' && formData.selectedExistingStudentId) {
+        conversionData.useExistingStudent = true;
+        conversionData.existingStudentId = formData.selectedExistingStudentId;
+      } else {
+        conversionData.useExistingStudent = false;
+        conversionData.studentName = formData.studentName;
+        conversionData.studentNickname = formData.studentNickname;
+        conversionData.studentBirthdate = new Date(formData.studentBirthdate);
+        conversionData.studentGender = formData.studentGender;
+        conversionData.studentSchoolName = formData.studentSchoolName || undefined;
+        conversionData.studentGradeLevel = formData.studentGradeLevel || undefined;
+        conversionData.studentAllergies = formData.studentAllergies || undefined;
+        conversionData.studentSpecialNeeds = formData.studentSpecialNeeds || undefined;
+        conversionData.emergencyContact = formData.emergencyContact || undefined;
+        conversionData.emergencyContactPhone = formData.emergencyContactPhone || undefined;
+      }
+      
       // Call enhanced conversion function
       const result = await convertTrialToEnrollment(
         booking.id,
@@ -354,26 +399,15 @@ export default function ConvertToStudentForm({
       onSuccess();
     } catch (error: any) {
       console.error('Error converting to student:', error);
-      if (error.message?.includes('เบอร์โทรหลักนี้มีอยู่ในระบบแล้ว')) {
-        toast.error('เบอร์โทรนี้มีอยู่ในระบบแล้ว กรุณาตรวจสอบข้อมูล');
-      } else if (error.message?.includes('เบอร์โทรฉุกเฉินนี้มีอยู่ในระบบแล้ว')) {
-        toast.error('เบอร์โทรฉุกเฉินนี้มีอยู่ในระบบแล้ว กรุณาใช้เบอร์อื่น');
-      } else {
-        toast.error('เกิดข้อผิดพลาดในการแปลงเป็นนักเรียน');
-      }
+      toast.error(error.message || 'เกิดข้อผิดพลาดในการแปลงเป็นนักเรียน');
     } finally {
       setLoading(false);
     }
   };
 
-  const getStudentData = () => {
-    return booking.students.find(s => s.name === session.studentName);
-  };
-
-  const studentData = getStudentData();
   const subject = subjects.find(s => s.id === session.subjectId);
 
-  if (loadingClasses) {
+  if (loadingClasses || checkingPhone) {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="h-8 w-8 animate-spin text-gray-500" />
@@ -395,19 +429,85 @@ export default function ConvertToStudentForm({
       {/* Step 1: Parent Information */}
       {currentStep === 1 && (
         <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">ข้อมูลผู้ปกครอง</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Basic parent info - Editable */}
-              <div className="space-y-4">
-                <h4 className="font-medium text-sm flex items-center gap-2">
-                  <Edit className="h-4 w-4" />
-                  ข้อมูลพื้นฐาน (แก้ไขได้)
-                </h4>
-                
+          {existingParent ? (
+            <>
+              <Alert className="border-blue-200 bg-blue-50">
+                <Users className="h-4 w-4 text-blue-600" />
+                <AlertDescription className="text-blue-800">
+                  <div className="font-medium mb-1">พบข้อมูลผู้ปกครองในระบบ</div>
+                  <div className="text-sm">
+                    ระบบจะใช้ข้อมูลผู้ปกครองนี้ในการลงทะเบียน
+                  </div>
+                </AlertDescription>
+              </Alert>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">ข้อมูลผู้ปกครอง</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <Label className="text-sm text-gray-600">ชื่อ-นามสกุล</Label>
+                        <p className="font-medium">{existingParent.displayName}</p>
+                      </div>
+                      <div>
+                        <Label className="text-sm text-gray-600">เบอร์โทรศัพท์</Label>
+                        <p className="font-medium">{existingParent.phone}</p>
+                      </div>
+                      {existingParent.email && (
+                        <div>
+                          <Label className="text-sm text-gray-600">อีเมล</Label>
+                          <p className="font-medium">{existingParent.email}</p>
+                        </div>
+                      )}
+                      {existingParent.emergencyPhone && (
+                        <div>
+                          <Label className="text-sm text-gray-600">เบอร์โทรฉุกเฉิน</Label>
+                          <p className="font-medium">{existingParent.emergencyPhone}</p>
+                        </div>
+                      )}
+                    </div>
+                    {existingParent.address && (
+                      <div>
+                        <Label className="text-sm text-gray-600">ที่อยู่</Label>
+                        <p className="font-medium">
+                          {existingParent.address.houseNumber} 
+                          {existingParent.address.street && ` ${existingParent.address.street}`}
+                          {` ${existingParent.address.subDistrict} ${existingParent.address.district} ${existingParent.address.province} ${existingParent.address.postalCode}`}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </>
+          ) : (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">ข้อมูลผู้ปกครอง</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="parentPhone">
+                      <Phone className="inline h-4 w-4 mr-1" />
+                      เบอร์โทร <span className="text-red-500">*</span>
+                    </Label>
+                    <Input
+                      id="parentPhone"
+                      value={formData.parentPhone}
+                      onChange={(e) => setFormData(prev => ({ ...prev, parentPhone: e.target.value }))}
+                      placeholder="08x-xxx-xxxx"
+                      className={errors.parentPhone ? 'border-red-500' : ''}
+                      required
+                    />
+                    {errors.parentPhone && (
+                      <p className="text-sm text-red-500">{errors.parentPhone}</p>
+                    )}
+                  </div>
+                  
                   <div className="space-y-2">
                     <Label htmlFor="parentName">
                       <User className="inline h-4 w-4 mr-1" />
@@ -426,31 +526,6 @@ export default function ConvertToStudentForm({
                     )}
                   </div>
                   
-                  <div className="space-y-2">
-                    <Label htmlFor="parentPhone">
-                      <Phone className="inline h-4 w-4 mr-1" />
-                      เบอร์โทร <span className="text-red-500">*</span>
-                    </Label>
-                    <Input
-                      id="parentPhone"
-                      value={formData.parentPhone}
-                      onChange={(e) => setFormData(prev => ({ ...prev, parentPhone: e.target.value }))}
-                      placeholder="08x-xxx-xxxx"
-                      className={errors.parentPhone ? 'border-red-500' : ''}
-                      required
-                    />
-                    {errors.parentPhone && (
-                      <p className="text-sm text-red-500">{errors.parentPhone}</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Additional parent info */}
-              <div className="space-y-4 pt-4 border-t">
-                <h4 className="font-medium text-sm">ข้อมูลเพิ่มเติม</h4>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="parentEmail">
                       <Mail className="inline h-4 w-4 mr-1" />
@@ -484,12 +559,11 @@ export default function ConvertToStudentForm({
                     {errors.emergencyPhone && (
                       <p className="text-sm text-red-500">{errors.emergencyPhone}</p>
                     )}
-                    <p className="text-xs text-gray-500">กรณีติดต่อเบอร์หลักไม่ได้</p>
                   </div>
                 </div>
 
                 {/* Address */}
-                <div className="space-y-4">
+                <div className="space-y-4 pt-4 border-t">
                   <h4 className="font-medium text-sm flex items-center gap-2">
                     <MapPin className="h-4 w-4" />
                     ที่อยู่ (ถ้ามี)
@@ -506,7 +580,6 @@ export default function ConvertToStudentForm({
                           address: { ...prev.address, houseNumber: e.target.value }
                         }))}
                         placeholder="123/45"
-                        className={errors['address.houseNumber'] ? 'border-red-500' : ''}
                       />
                     </div>
                     
@@ -533,7 +606,6 @@ export default function ConvertToStudentForm({
                           address: { ...prev.address, subDistrict: e.target.value }
                         }))}
                         placeholder="คลองเตย"
-                        className={errors['address.subDistrict'] ? 'border-red-500' : ''}
                       />
                     </div>
                     
@@ -547,7 +619,6 @@ export default function ConvertToStudentForm({
                           address: { ...prev.address, district: e.target.value }
                         }))}
                         placeholder="คลองเตย"
-                        className={errors['address.district'] ? 'border-red-500' : ''}
                       />
                     </div>
                     
@@ -561,7 +632,6 @@ export default function ConvertToStudentForm({
                           address: { ...prev.address, province: e.target.value }
                         }))}
                         placeholder="กรุงเทพมหานคร"
-                        className={errors['address.province'] ? 'border-red-500' : ''}
                       />
                     </div>
                     
@@ -580,27 +650,89 @@ export default function ConvertToStudentForm({
                     </div>
                   </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          )}
         </div>
       )}
 
       {/* Step 2: Student Information */}
       {currentStep === 2 && (
         <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">ข้อมูลนักเรียน</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Student name - now editable */}
-              <div className="space-y-4">
-                <h4 className="font-medium text-sm flex items-center gap-2">
-                  <Edit className="h-4 w-4" />
-                  ข้อมูลพื้นฐาน
-                </h4>
-                
+          {existingStudents.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">เลือกนักเรียน</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <RadioGroup
+                  value={formData.studentSelection}
+                  onValueChange={(value: 'existing' | 'new') => 
+                    setFormData(prev => ({ ...prev, studentSelection: value }))
+                  }
+                >
+                  <div className="space-y-4">
+                    {/* Existing Students */}
+                    {existingStudents.map((student) => (
+                      <label 
+                        key={student.id} 
+                        className={`flex items-start space-x-3 p-4 border rounded-lg cursor-pointer hover:bg-gray-50 ${
+                          formData.studentSelection === 'existing' && formData.selectedExistingStudentId === student.id
+                            ? 'border-red-500 bg-red-50'
+                            : ''
+                        }`}
+                      >
+                        <RadioGroupItem 
+                          value="existing" 
+                          checked={formData.studentSelection === 'existing' && formData.selectedExistingStudentId === student.id}
+                          onClick={() => setFormData(prev => ({ 
+                            ...prev, 
+                            studentSelection: 'existing',
+                            selectedExistingStudentId: student.id
+                          }))}
+                        />
+                        <div className="flex-1 grid gap-1">
+                          <div className="font-medium">{student.nickname} ({student.name})</div>
+                          <div className="text-sm text-gray-600">
+                            <span>อายุ {calculateAge(student.birthdate)} ปี</span>
+                            {student.schoolName && <span> • {student.schoolName}</span>}
+                            {student.gradeLevel && <span> ({student.gradeLevel})</span>}
+                          </div>
+                        </div>
+                      </label>
+                    ))}
+
+                    {/* New Student Option */}
+                    <label className={`flex items-start space-x-3 p-4 border rounded-lg cursor-pointer hover:bg-gray-50 ${
+                      formData.studentSelection === 'new' ? 'border-red-500 bg-red-50' : ''
+                    }`}>
+                      <RadioGroupItem value="new" />
+                      <div className="flex-1">
+                        <div className="font-medium flex items-center gap-2">
+                          <UserPlus className="h-4 w-4" />
+                          เพิ่มนักเรียนใหม่
+                        </div>
+                        <div className="text-sm text-gray-600">
+                          ลงทะเบียนนักเรียนใหม่สำหรับผู้ปกครองนี้
+                        </div>
+                      </div>
+                    </label>
+                  </div>
+                </RadioGroup>
+                {errors.studentSelection && (
+                  <p className="text-sm text-red-500 mt-2">{errors.studentSelection}</p>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* New Student Form */}
+          {(formData.studentSelection === 'new' || existingStudents.length === 0) && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">ข้อมูลนักเรียนใหม่</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="studentName">
@@ -769,9 +901,9 @@ export default function ConvertToStudentForm({
                     </div>
                   </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          )}
         </div>
       )}
 
@@ -932,8 +1064,15 @@ export default function ConvertToStudentForm({
       <Alert>
         <Info className="h-4 w-4" />
         <AlertDescription>
-          หลังจากแปลงเป็นนักเรียนแล้ว ระบบจะสร้างข้อมูลผู้ปกครองและนักเรียนอัตโนมัติ
-          พร้อมลงทะเบียนในคลาสที่เลือก (สถานะรอชำระเงิน)
+          {existingParent ? (
+            <>
+              ระบบจะ{formData.studentSelection === 'existing' ? 'ลงทะเบียน' : 'เพิ่ม'}นักเรียน
+              {formData.studentSelection === 'existing' ? 'ที่เลือก' : 'ใหม่'}
+              ให้กับผู้ปกครอง "{existingParent.displayName}" และลงทะเบียนในคลาสที่เลือก
+            </>
+          ) : (
+            <>หลังจากแปลงเป็นนักเรียนแล้ว ระบบจะสร้างข้อมูลผู้ปกครองและนักเรียนอัตโนมัติ พร้อมลงทะเบียนในคลาสที่เลือก (สถานะรอชำระเงิน)</>
+          )}
         </AlertDescription>
       </Alert>
 
