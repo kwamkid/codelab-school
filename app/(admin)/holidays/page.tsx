@@ -432,17 +432,19 @@ export default function HolidaysPage() {
                 ยืนยันการลบวันหยุด
               </AlertDialogTitle>
             </div>
-            <AlertDialogDescription className="mt-4">
-              <p>
-                คุณแน่ใจหรือไม่ที่จะลบวันหยุด <strong>&quot;{holidayToDelete?.name}&quot;</strong>?
-                <br />
-                วันที่ {holidayToDelete && formatDate(holidayToDelete.date, 'long')}
-              </p>
-              <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3">
-                <p className="text-sm text-amber-800">
-                  <strong>หมายเหตุ:</strong> หลังจากลบวันหยุดแล้ว คุณสามารถใช้ปุ่ม &quot;จัดตารางใหม่ทั้งหมด&quot; 
-                  เพื่อปรับตารางเรียนให้ถูกต้อง
+            <AlertDialogDescription asChild>
+              <div className="mt-4">
+                <p>
+                  คุณแน่ใจหรือไม่ที่จะลบวันหยุด <strong>&quot;{holidayToDelete?.name}&quot;</strong>?
+                  <br />
+                  วันที่ {holidayToDelete && formatDate(holidayToDelete.date, 'long')}
                 </p>
+                <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  <p className="text-sm text-amber-800">
+                    <strong>หมายเหตุ:</strong> หลังจากลบวันหยุดแล้ว คุณสามารถใช้ปุ่ม &quot;จัดตารางใหม่ทั้งหมด&quot; 
+                    เพื่อปรับตารางเรียนให้ถูกต้อง
+                  </p>
+                </div>
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>

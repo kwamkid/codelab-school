@@ -604,17 +604,49 @@ export async function checkTrialRoomAvailability(
   }
 }
 
-// Convert trial to enrollment
+// lib/services/trial-bookings.ts
+// (แสดงเฉพาะส่วนที่ต้องแก้ไข - ค้นหาฟังก์ชัน convertTrialToEnrollment และแทนที่ด้วยโค้ดนี้)
+
+// Convert trial to enrollment with enhanced data
 export async function convertTrialToEnrollment(
   bookingId: string,
   sessionId: string,
-  classId: string,
-  pricing: {
-    originalPrice: number;
-    discount: number;
-    discountType: 'percentage' | 'fixed';
-    finalPrice: number;
-    promotionCode?: string;
+  conversionData: {
+    // Parent info
+    parentName: string;
+    parentPhone: string;
+    parentEmail?: string;
+    emergencyPhone: string;
+    address?: {
+      houseNumber: string;
+      street?: string;
+      subDistrict: string;
+      district: string;
+      province: string;
+      postalCode: string;
+    };
+    
+    // Student info
+    studentName: string;
+    studentNickname: string;
+    studentBirthdate: Date;
+    studentGender: 'M' | 'F';
+    studentSchoolName?: string;
+    studentGradeLevel?: string;
+    studentAllergies?: string;
+    studentSpecialNeeds?: string;
+    emergencyContact?: string;
+    emergencyContactPhone?: string;
+    
+    // Class and pricing
+    classId: string;
+    pricing: {
+      originalPrice: number;
+      discount: number;
+      discountType: 'percentage' | 'fixed';
+      finalPrice: number;
+      promotionCode?: string;
+    };
   }
 ): Promise<{
   parentId: string;
@@ -632,62 +664,82 @@ export async function convertTrialToEnrollment(
       throw new Error('Booking or session not found');
     }
     
-    // Find the student data from booking
-    const studentData = booking.students.find(s => s.name === session.studentName);
-    if (!studentData) {
-      throw new Error('Student not found in booking');
-    }
-    
     // Import required services
-    const { createParent, createStudent } = await import('./parents');
+    const { createParent, createStudent, checkParentPhoneExists } = await import('./parents');
     const { createEnrollment } = await import('./enrollments');
     const { getClass } = await import('./classes');
     
     // Check if parent exists by phone
     let parentId: string;
-    const { checkParentPhoneExists } = await import('./parents');
-    const parentExists = await checkParentPhoneExists(booking.parentPhone);
     
-    if (parentExists) {
-      // If phone exists, we need to find the parent
-      // For now, we'll create new parent (in real app, might want to handle differently)
-      throw new Error('Phone number already exists. Please handle this case.');
-    } else {
-      // Create new parent
-      parentId = await createParent({
-        displayName: booking.parentName,
-        phone: booking.parentPhone,
-        email: booking.parentEmail,
-      });
+    // Check both main phone and emergency phone
+    const mainPhoneExists = await checkParentPhoneExists(conversionData.parentPhone);
+    const emergencyPhoneExists = await checkParentPhoneExists(conversionData.emergencyPhone);
+    
+    if (mainPhoneExists) {
+      throw new Error('เบอร์โทรหลักนี้มีอยู่ในระบบแล้ว กรุณาตรวจสอบข้อมูลผู้ปกครอง');
     }
     
-    // Create student
+    if (emergencyPhoneExists && conversionData.emergencyPhone !== conversionData.parentPhone) {
+      throw new Error('เบอร์โทรฉุกเฉินนี้มีอยู่ในระบบแล้ว กรุณาตรวจสอบข้อมูล');
+    }
+    
+    // Create new parent with complete data
+    parentId = await createParent({
+      displayName: conversionData.parentName,
+      phone: conversionData.parentPhone,
+      emergencyPhone: conversionData.emergencyPhone,
+      email: conversionData.parentEmail,
+      address: conversionData.address,
+      // Optional: If you want to set preferred branch from trial session
+      preferredBranchId: session.branchId,
+    });
+    
+    // Create student with complete data
     const studentId = await createStudent(parentId, {
-      name: studentData.name,
-      nickname: studentData.name.split(' ')[0], // Use first name as nickname
-      birthdate: new Date(), // This should be collected during trial booking
-      gender: 'M', // This should be collected during trial booking
-      schoolName: studentData.schoolName,
-      gradeLevel: studentData.gradeLevel,
+      name: conversionData.studentName,
+      nickname: conversionData.studentNickname,
+      birthdate: conversionData.studentBirthdate,
+      gender: conversionData.studentGender,
+      schoolName: conversionData.studentSchoolName,
+      gradeLevel: conversionData.studentGradeLevel,
+      allergies: conversionData.studentAllergies,
+      specialNeeds: conversionData.studentSpecialNeeds,
+      emergencyContact: conversionData.emergencyContact,
+      emergencyPhone: conversionData.emergencyContactPhone,
       isActive: true,
     });
     
     // Get class data for branch ID
-    const classData = await getClass(classId);
+    const classData = await getClass(conversionData.classId);
     if (!classData) {
       throw new Error('Class not found');
+    }
+    
+    // Validate student age against subject requirements
+    const { getSubjects } = await import('./subjects');
+    const subjects = await getSubjects();
+    const subject = subjects.find(s => s.id === classData.subjectId);
+    
+    if (subject) {
+      const { calculateAge } = await import('../utils');
+      const studentAge = calculateAge(conversionData.studentBirthdate);
+      
+      if (studentAge < subject.ageRange.min || studentAge > subject.ageRange.max) {
+        throw new Error(`อายุนักเรียนไม่อยู่ในช่วงที่กำหนดสำหรับวิชานี้ (${subject.ageRange.min}-${subject.ageRange.max} ปี)`);
+      }
     }
     
     // Create enrollment
     const enrollmentId = await createEnrollment({
       studentId,
-      classId,
+      classId: conversionData.classId,
       parentId,
       branchId: classData.branchId,
       status: 'active',
-      pricing,
+      pricing: conversionData.pricing,
       payment: {
-        method: 'cash',
+        method: 'cash', // Default to cash, can be changed later
         status: 'pending',
         paidAmount: 0,
       },
@@ -696,12 +748,22 @@ export async function convertTrialToEnrollment(
     // Update trial session as converted
     await updateTrialSession(sessionId, {
       converted: true,
-      convertedToClassId: classId,
+      convertedToClassId: conversionData.classId,
       conversionNote: `Converted to ${classData.name}`,
     });
     
     // Check and update booking status
     await checkAndUpdateBookingStatus(bookingId);
+    
+    // Log conversion for tracking
+    console.log('Trial conversion successful:', {
+      bookingId,
+      sessionId,
+      parentId,
+      studentId,
+      enrollmentId,
+      classId: conversionData.classId,
+    });
     
     return { parentId, studentId, enrollmentId };
   } catch (error) {

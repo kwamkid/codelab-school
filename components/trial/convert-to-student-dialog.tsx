@@ -32,7 +32,7 @@ export default function ConvertToStudentDialog({
         <DialogHeader>
           <DialogTitle>แปลงเป็นนักเรียน</DialogTitle>
           <DialogDescription>
-            แปลง {session.studentName} จากผู้ทดลองเรียนเป็นนักเรียนจริง
+            กรอกข้อมูลเพิ่มเติมเพื่อแปลง {session.studentName} จากผู้ทดลองเรียนเป็นนักเรียนจริง
           </DialogDescription>
         </DialogHeader>
         
