@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState, useRef } from 'react'
 import type { Liff, Profile as LiffProfile } from '@line/liff'
 import { initializeLiff } from '@/lib/line/liff-client'
 import { LiffLoading } from '@/components/liff/loading'
@@ -23,7 +23,7 @@ const LiffContext = createContext<LiffContextType>({
   isLoading: true,
   error: null,
   isLoggedIn: false,
-  isInClient: false,
+  isInClient: false
 })
 
 export function useLiff() {
@@ -46,79 +46,88 @@ export function LiffProvider({ children, requireLogin = true }: LiffProviderProp
   const [error, setError] = useState<Error | null>(null)
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [isInClient, setIsInClient] = useState(false)
-
-  // Debug log
-  console.log('[LiffProvider] Current state:', { isLoading, isLoggedIn, error, profile })
+  const initialized = useRef(false)
 
   useEffect(() => {
+    // Prevent double initialization
+    if (initialized.current) {
+      console.log('[LiffProvider] Already initialized, skipping...')
+      return
+    }
+    initialized.current = true
+
     const init = async () => {
+      console.log('[LiffProvider] Starting initialization...')
+      
       try {
-        console.log('[LiffProvider] Starting initialization...')
-        setIsLoading(true)
-        setError(null)
-        
+        // Initialize LIFF
         const liffInstance = await initializeLiff()
-        console.log('[LiffProvider] LIFF instance received')
+        console.log('[LiffProvider] LIFF initialized')
+        
         setLiff(liffInstance)
         setIsInClient(liffInstance.isInClient())
         
+        // Check login status
         const loggedIn = liffInstance.isLoggedIn()
-        console.log('[LiffProvider] Login status:', loggedIn)
+        console.log('[LiffProvider] Logged in:', loggedIn)
         setIsLoggedIn(loggedIn)
         
         if (loggedIn) {
-          console.log('[LiffProvider] Getting user profile...')
-          const userProfile = await liffInstance.getProfile()
-          console.log('[LiffProvider] User profile:', userProfile)
-          setProfile(userProfile)
-          
-          // Check if parent exists (DO NOT auto-create)
           try {
-            const { getParentByLineId } = await import('@/lib/services/parents')
+            // Get user profile
+            console.log('[LiffProvider] Getting profile...')
+            const userProfile = await liffInstance.getProfile()
+            console.log('[LiffProvider] Got profile:', userProfile.displayName)
+            setProfile(userProfile)
             
-            // Check if parent exists
-            const parent = await getParentByLineId(userProfile.userId)
-            console.log('[LiffProvider] Existing parent:', parent)
-            
-            // Only update last login if parent already exists
-            if (parent) {
-              const { updateParent } = await import('@/lib/services/parents')
-              console.log('[LiffProvider] Updating parent last login')
-              await updateParent(parent.id, {
-                lastLoginAt: new Date()
-              })
+            // Update parent last login if exists
+            try {
+              const { getParentByLineId, updateParent } = await import('@/lib/services/parents')
+              const parent = await getParentByLineId(userProfile.userId)
+              if (parent) {
+                await updateParent(parent.id, {
+                  lastLoginAt: new Date()
+                })
+              }
+            } catch (error) {
+              console.error('[LiffProvider] Error updating parent:', error)
             }
-            // DO NOT create parent automatically - let them register
-          } catch (error) {
-            console.error('[LiffProvider] Error checking parent:', error)
+          } catch (profileError: any) {
+            console.error('[LiffProvider] Error getting profile:', profileError)
+            
+            // If token expired, trigger login
+            if (profileError.message?.includes('expired') || 
+                profileError.message?.includes('401')) {
+              console.log('[LiffProvider] Token expired, need to login again')
+              if (requireLogin) {
+                liffInstance.login()
+              }
+            } else {
+              setError(profileError)
+            }
           }
         } else if (requireLogin) {
           console.log('[LiffProvider] Not logged in, redirecting to login...')
-          // Redirect to login if required
           liffInstance.login()
-          return
         }
         
-        console.log('[LiffProvider] Initialization complete')
       } catch (err) {
-        console.error('[LiffProvider] Initialization error:', err)
+        console.error('[LiffProvider] Init error:', err)
         setError(err instanceof Error ? err : new Error('Failed to initialize LIFF'))
       } finally {
-        console.log('[LiffProvider] Setting isLoading to false')
+        console.log('[LiffProvider] Initialization complete, setting loading to false')
         setIsLoading(false)
       }
     }
 
     init()
-  }, [requireLogin])
+  }, []) // Remove requireLogin from dependencies
 
   if (isLoading) {
-    console.log('[LiffProvider] Rendering loading state')
     return <LiffLoading />
   }
 
   if (error) {
-    console.log('[LiffProvider] Rendering error state:', error)
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <Card className="w-full max-w-md">
@@ -129,14 +138,9 @@ export function LiffProvider({ children, requireLogin = true }: LiffProviderProp
               <p className="text-sm text-muted-foreground">
                 {error.message}
               </p>
-              <div className="flex gap-2">
-                <Button onClick={() => window.location.reload()}>
-                  ลองใหม่
-                </Button>
-                <Button variant="outline" onClick={() => window.history.back()}>
-                  ย้อนกลับ
-                </Button>
-              </div>
+              <Button onClick={() => window.location.reload()}>
+                ลองใหม่
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -144,7 +148,6 @@ export function LiffProvider({ children, requireLogin = true }: LiffProviderProp
     )
   }
 
-  console.log('[LiffProvider] Rendering children, isLoading:', isLoading)
   return (
     <LiffContext.Provider 
       value={{ 
@@ -153,7 +156,7 @@ export function LiffProvider({ children, requireLogin = true }: LiffProviderProp
         isLoading, 
         error, 
         isLoggedIn,
-        isInClient 
+        isInClient
       }}
     >
       {children}

@@ -62,6 +62,7 @@ interface FormData {
   };
   
   // Student additional info
+  studentName: string; // เพิ่ม field ให้แก้ไขชื่อนักเรียนได้
   studentNickname: string;
   studentBirthdate: string;
   studentGender: 'M' | 'F';
@@ -113,7 +114,8 @@ export default function ConvertToStudentForm({
       postalCode: ''
     },
     
-    // Student
+    // Student - เพิ่มการ initialize ชื่อนักเรียน
+    studentName: session.studentName, // เพิ่มการใส่ชื่อจาก session
     studentNickname: '',
     studentBirthdate: '',
     studentGender: 'M',
@@ -253,6 +255,10 @@ export default function ConvertToStudentForm({
         break;
         
       case 2: // Student info
+        if (!formData.studentName.trim()) {
+          newErrors.studentName = 'กรุณากรอกชื่อ-นามสกุลนักเรียน';
+        }
+        
         if (!formData.studentNickname.trim()) {
           newErrors.studentNickname = 'กรุณากรอกชื่อเล่น';
         }
@@ -314,8 +320,8 @@ export default function ConvertToStudentForm({
         emergencyPhone: formData.emergencyPhone ? formData.emergencyPhone.replace(/-/g, '') : undefined,
         address: formData.address.houseNumber ? formData.address : undefined,
         
-        // Student info
-        studentName: session.studentName,
+        // Student info - ใช้ชื่อที่แก้ไขแล้ว
+        studentName: formData.studentName,
         studentNickname: formData.studentNickname,
         studentBirthdate: new Date(formData.studentBirthdate),
         studentGender: formData.studentGender,
@@ -588,21 +594,31 @@ export default function ConvertToStudentForm({
               <CardTitle className="text-lg">ข้อมูลนักเรียน</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Existing student info */}
-              <div className="bg-gray-50 rounded-lg p-4">
-                <h4 className="font-medium text-sm text-gray-700 mb-2">ข้อมูลพื้นฐาน</h4>
-                <div className="text-sm">
-                  <span className="text-gray-500">ชื่อ-นามสกุล:</span>
-                  <p className="font-medium">{session.studentName}</p>
-                </div>
-              </div>
-
-              {/* Additional student info */}
-              <div className="space-y-4 pt-4 border-t">
-                <h4 className="font-medium text-sm">ข้อมูลเพิ่มเติม</h4>
+              {/* Student name - now editable */}
+              <div className="space-y-4">
+                <h4 className="font-medium text-sm flex items-center gap-2">
+                  <Edit className="h-4 w-4" />
+                  ข้อมูลพื้นฐาน
+                </h4>
                 
-                {/* Basic Info */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="studentName">
+                      ชื่อ-นามสกุล <span className="text-red-500">*</span>
+                    </Label>
+                    <Input
+                      id="studentName"
+                      value={formData.studentName}
+                      onChange={(e) => setFormData(prev => ({ ...prev, studentName: e.target.value }))}
+                      placeholder="ชื่อ-นามสกุลนักเรียน"
+                      className={errors.studentName ? 'border-red-500' : ''}
+                      required
+                    />
+                    {errors.studentName && (
+                      <p className="text-sm text-red-500">{errors.studentName}</p>
+                    )}
+                  </div>
+                  
                   <div className="space-y-2">
                     <Label htmlFor="studentNickname">
                       ชื่อเล่น <span className="text-red-500">*</span>

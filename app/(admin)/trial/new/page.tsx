@@ -29,6 +29,7 @@ import { toast } from 'sonner';
 import { Subject } from '@/types/models';
 import { getSubjects } from '@/lib/services/subjects';
 import { createTrialBooking } from '@/lib/services/trial-bookings';
+import { GradeLevelCombobox } from '@/components/ui/grade-level-combobox';
 
 interface StudentForm {
   name: string;
@@ -345,16 +346,15 @@ export default function CreateTrialBookingPage() {
                   </div>
                   
                   <div className="space-y-2 md:col-span-2">
-                    <Label>ระดับชั้น</Label>
-                    <div className="relative">
-                      <GraduationCap className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                      <Input
-                        value={student.gradeLevel}
-                        onChange={(e) => updateStudent(idx, 'gradeLevel', e.target.value)}
-                        placeholder="เช่น ป.4, ม.2"
-                        className="pl-10"
-                      />
-                    </div>
+                    <Label>
+                      <GraduationCap className="inline h-4 w-4 mr-1" />
+                      ระดับชั้น
+                    </Label>
+                    <GradeLevelCombobox
+                      value={student.gradeLevel}
+                      onChange={(value) => updateStudent(idx, 'gradeLevel', value)}
+                      placeholder="พิมพ์ระดับชั้น เช่น ป.4, Grade 3..."
+                    />
                   </div>
                 </div>
                 
