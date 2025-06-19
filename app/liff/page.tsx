@@ -10,6 +10,7 @@ import { getParentByLineId } from '@/lib/services/parents'
 import { LiffProvider } from '@/components/liff/liff-provider'
 import { useLiff } from '@/components/liff/liff-provider'
 import Image from 'next/image'
+import TechLoadingAnimation from '@/components/liff/tech-loading-animation'
 
 // Loading Animation Component
 function TechLoadingAnimation() {
@@ -98,7 +99,7 @@ function LiffHome() {
       icon: Calendar,
       path: '/liff/schedule',
       description: 'ดูตารางเรียนของนักเรียน',
-      color: 'bg-blue-500',
+      color: 'bg-red-500',
       requireAuth: true
     },
     {

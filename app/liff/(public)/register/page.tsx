@@ -14,6 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { GradeLevelCombobox } from "@/components/ui/grade-level-combobox";
 import { Loader2, ChevronRight, User, Phone, Mail, MapPin, Plus, X } from 'lucide-react';
 import { createParent, createStudent } from '@/lib/services/parents';
 import { toast } from 'sonner';
@@ -417,11 +418,14 @@ export default function LiffRegisterPage() {
                     </div>
                     <div>
                       <Label>ระดับชั้น</Label>
-                      <Input
-                        placeholder="เช่น ป.4, ม.2"
+                      <GradeLevelCombobox
                         value={student.gradeLevel}
-                        onChange={(e) => handleStudentChange(index, 'gradeLevel', e.target.value)}
+                        onChange={(value) => handleStudentChange(index, 'gradeLevel', value)}
+                        placeholder="เลือกระดับชั้น..."
                       />
+                      <p className="text-xs text-gray-500 mt-1">
+                        เริ่มพิมพ์เพื่อค้นหา เช่น "ป", "ประถม", "Grade"
+                      </p>
                     </div>
                   </div>
                   

@@ -19,6 +19,8 @@ import {
 } from 'lucide-react';
 import { useLiff } from '@/components/liff/liff-provider';
 import { toast } from 'sonner';
+import TechLoadingAnimation from '@/components/liff/tech-loading-animation'
+
 
 function LinkAccountContent() {
   const router = useRouter();
@@ -401,13 +403,10 @@ function LinkAccountContent() {
   );
 }
 
+// แก้ในส่วน Suspense fallback
 export default function LinkAccountPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-gray-50 p-4 flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    }>
+    <Suspense fallback={<TechLoadingAnimation />}>
       <LinkAccountContent />
     </Suspense>
   );

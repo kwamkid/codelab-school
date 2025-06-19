@@ -16,7 +16,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
-import { gradeLevels } from "@/lib/constants/grade-levels"
+import { gradeLevels, searchGradeLevels } from "@/lib/constants/grade-levels"
 
 interface GradeLevelComboboxProps {
   value: string
@@ -28,7 +28,7 @@ interface GradeLevelComboboxProps {
 export function GradeLevelCombobox({ 
   value, 
   onChange, 
-  placeholder = "พิมพ์ระดับชั้น เช่น ป.4, Grade 3...",
+  placeholder = "พิมพ์ ป.4, ม1, Grade 3...",
   allowCustom = true 
 }: GradeLevelComboboxProps) {
   const [open, setOpen] = React.useState(false)
@@ -40,11 +40,7 @@ export function GradeLevelCombobox({
       return []
     }
     
-    const search = searchValue.toLowerCase()
-    return gradeLevels.filter(grade => 
-      grade.value.toLowerCase().includes(search) ||
-      grade.label.toLowerCase().includes(search)
-    )
+    return searchGradeLevels(searchValue)
   }, [searchValue])
 
   // Group filtered grades by category
@@ -94,7 +90,7 @@ export function GradeLevelCombobox({
       <PopoverContent className="w-full p-0" align="start" style={{ maxHeight: '300px' }}>
         <Command>
           <CommandInput 
-            placeholder="พิมพ์ ป.4, Grade 3, Year 5..." 
+            placeholder="พิมพ์ ป.4, ม1, Grade 3..." 
             value={searchValue}
             onValueChange={setSearchValue}
           />
@@ -102,7 +98,7 @@ export function GradeLevelCombobox({
             {searchValue.length < 1 ? (
               <div className="px-4 py-6 text-center text-sm text-muted-foreground">
                 <p className="font-medium">พิมพ์เพื่อค้นหาระดับชั้น</p>
-                <p className="text-xs mt-1">เช่น: ป.4, ประถม, Grade 3, Year 5</p>
+                <p className="text-xs mt-1">เช่น: ป4, ม1, ประถม, Grade 3</p>
               </div>
             ) : allowCustom && searchValue && !filteredGrades.length ? (
               <div 

@@ -29,6 +29,8 @@ import { getBranch } from '@/lib/services/branches'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
 import { th } from 'date-fns/locale'
+import TechLoadingAnimation from '@/components/liff/tech-loading-animation'
+
 
 interface MakeupData {
   makeup: any
@@ -190,9 +192,8 @@ export default function MakeupPage() {
 
       <div className="p-4 space-y-4">
         {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          </div>
+           <TechLoadingAnimation />
+
         ) : students.length === 0 ? (
           <Card>
             <CardContent className="pt-6">

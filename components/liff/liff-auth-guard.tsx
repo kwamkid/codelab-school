@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';  // เพิ่ม useState ตรงนี้
 import { useRouter } from 'next/navigation';
 import { useLiff } from '@/components/liff/liff-provider';
 import { getParentByLineId } from '@/lib/services/parents';
@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import Link from 'next/link';
+import TechLoadingAnimation from '@/components/liff/tech-loading-animation';
 
 interface LiffAuthGuardProps {
   children: React.ReactNode;
@@ -54,14 +55,7 @@ export default function LiffAuthGuard({
 
   // Loading state (including LIFF loading)
   if (isLoading || checking) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
-          <p className="text-gray-600">กำลังตรวจสอบข้อมูล...</p>
-        </div>
-      </div>
-    );
+      return <TechLoadingAnimation />
   }
 
   // Not logged in

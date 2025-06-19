@@ -12,6 +12,8 @@ import { toast } from 'sonner'
 import { DatesSetArg } from '@fullcalendar/core'
 import ScheduleCalendar, { ScheduleEvent } from '@/components/liff/schedule-calendar'
 import { Badge } from '@/components/ui/badge'
+import TechLoadingAnimation from '@/components/liff/tech-loading-animation'
+
 
 export default function SchedulePage() {
   const router = useRouter()
@@ -112,6 +114,10 @@ export default function SchedulePage() {
       loadOverallStats()
     }
   }, [students, loadOverallStats])
+
+  if (loading && !dataLoaded) {
+  return <TechLoadingAnimation />
+}
 
   // Get stats for selected student
   const selectedStudentStats = selectedStudentId && overallStats[selectedStudentId]
@@ -290,11 +296,8 @@ export default function SchedulePage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="relative">
-            {loading && (
-              <div className="absolute inset-0 bg-white/50 flex items-center justify-center z-10">
-                <Loader2 className="h-8 w-8 text-primary animate-spin" />
-              </div>
-            )}
+            {loading && <TechLoadingAnimation />}
+
             
             {students.length === 0 && !loading ? (
               <div className="text-center py-8">

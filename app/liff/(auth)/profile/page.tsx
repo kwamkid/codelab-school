@@ -175,7 +175,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg--50">
       {/* Header with Back Button */}
       <div className="bg-primary text-white p-4">
         <div className="flex items-center justify-between">
@@ -353,12 +353,11 @@ export default function ProfilePage() {
                 ))}
 
                 <Button 
-                  variant="outline" 
-                  className="w-full mt-4"
-                  onClick={() => router.push(`/liff/profile/${parentId}/students/new`)}
-                >
-                  เพิ่มนักเรียน
-                </Button>
+  className="w-full mt-4 bg-red-500 hover:bg-red-600"
+  onClick={() => router.push(`/liff/profile/${parentId}/students/new`)}
+>
+  เพิ่มนักเรียน
+</Button>
               </div>
             )}
           </CardContent>

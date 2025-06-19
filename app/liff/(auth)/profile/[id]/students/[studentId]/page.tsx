@@ -16,6 +16,8 @@ import { toast } from 'sonner'
 import { z } from 'zod'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import TechLoadingAnimation from '@/components/liff/tech-loading-animation'
+
 
 // Form schema
 const formSchema = z.object({
@@ -138,11 +140,7 @@ export default function EditStudentPage() {
   const minDateStr = minDate.toISOString().split('T')[0]
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    )
+      return <TechLoadingAnimation />
   }
 
   return (

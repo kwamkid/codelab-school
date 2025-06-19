@@ -15,6 +15,8 @@ import { toast } from 'sonner'
 import { z } from 'zod'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import TechLoadingAnimation from '@/components/liff/tech-loading-animation'
+
 
 // Thai provinces data
 const provinces = [
@@ -151,11 +153,8 @@ export default function EditParentProfilePage() {
   }
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    )
+      return <TechLoadingAnimation />
+
   }
 
   return (

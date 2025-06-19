@@ -193,6 +193,7 @@ export default function AddStudentPage() {
                 placeholder="ชื่อโรงเรียน (ไม่บังคับ)"
               />
             </div>
+            
             <div>
               <Label htmlFor="gradeLevel">ระดับชั้น</Label>
               <GradeLevelCombobox
@@ -204,8 +205,6 @@ export default function AddStudentPage() {
                 เริ่มพิมพ์เพื่อค้นหา เช่น "ป", "ประถม", "Grade", "Year"
               </p>
             </div>
-
-          
           </CardContent>
         </Card>
 
