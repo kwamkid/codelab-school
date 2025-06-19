@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Popover,
   PopoverContent,
@@ -35,7 +37,9 @@ import {
   CalendarCheck,
   UserPlus,
   MoreVertical,
-  History
+  History,
+  Save,
+  X as XIcon
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useSearchParams } from 'next/navigation';
@@ -45,7 +49,8 @@ import {
   getTrialSessionsByBooking,
   updateBookingStatus,
   updateTrialSession,
-  cancelTrialSession
+  cancelTrialSession,
+  updateTrialBooking
 } from '@/lib/services/trial-bookings';
 import { getSubjects } from '@/lib/services/subjects';
 import { getTeachers } from '@/lib/services/teachers';
@@ -99,6 +104,12 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
   const [branches, setBranches] = useState<Branch[]>([]);
   const [rooms, setRooms] = useState<Record<string, Room[]>>({});
   const [loading, setLoading] = useState(true);
+  
+  // Edit states
+  const [editingParent, setEditingParent] = useState(false);
+  const [editingStudent, setEditingStudent] = useState<number | null>(null);
+  const [tempParentData, setTempParentData] = useState({ name: '', phone: '' });
+  const [tempStudentData, setTempStudentData] = useState<any>({});
   
   // Modal states
   const [sessionModalOpen, setSessionModalOpen] = useState(false);
@@ -178,6 +189,62 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
     } catch (error) {
       console.error('Error updating status:', error);
       toast.error('ไม่สามารถอัพเดทสถานะได้');
+    }
+  };
+
+  const handleParentEdit = () => {
+    if (!booking) return;
+    setTempParentData({ name: booking.parentName, phone: booking.parentPhone });
+    setEditingParent(true);
+  };
+
+  const handleParentSave = async () => {
+    if (!booking) return;
+    
+    try {
+      await updateTrialBooking(booking.id, {
+        parentName: tempParentData.name,
+        parentPhone: tempParentData.phone
+      });
+      
+      setBooking({ ...booking, parentName: tempParentData.name, parentPhone: tempParentData.phone });
+      setEditingParent(false);
+      toast.success('บันทึกข้อมูลผู้ปกครองเรียบร้อย');
+    } catch (error) {
+      console.error('Error updating parent:', error);
+      toast.error('ไม่สามารถบันทึกข้อมูลได้');
+    }
+  };
+
+  const handleStudentEdit = (idx: number) => {
+    if (!booking) return;
+    const student = booking.students[idx];
+    setTempStudentData({
+      name: student.name,
+      schoolName: student.schoolName || '',
+      gradeLevel: student.gradeLevel || ''
+    });
+    setEditingStudent(idx);
+  };
+
+  const handleStudentSave = async () => {
+    if (!booking || editingStudent === null) return;
+    
+    try {
+      const updatedStudents = [...booking.students];
+      updatedStudents[editingStudent] = {
+        ...updatedStudents[editingStudent],
+        ...tempStudentData
+      };
+      
+      await updateTrialBooking(booking.id, { students: updatedStudents });
+      
+      setBooking({ ...booking, students: updatedStudents });
+      setEditingStudent(null);
+      toast.success('บันทึกข้อมูลนักเรียนเรียบร้อย');
+    } catch (error) {
+      console.error('Error updating student:', error);
+      toast.error('ไม่สามารถบันทึกข้อมูลได้');
     }
   };
 
@@ -277,28 +344,68 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
           {/* Parent Info */}
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <User className="h-5 w-5 text-gray-400" />
-                ข้อมูลผู้ปกครอง
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="bg-gray-50 rounded-lg p-4 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600">ชื่อ-นามสกุล</span>
-                  <span className="font-medium">{booking.parentName}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600">เบอร์โทรศัพท์</span>
-                  <span className="font-medium">{booking.parentPhone}</span>
-                </div>
-                {booking.parentEmail && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600">อีเมล</span>
-                    <span className="font-medium">{booking.parentEmail}</span>
-                  </div>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <User className="h-5 w-5 text-gray-400" />
+                  ข้อมูลผู้ปกครอง
+                </CardTitle>
+                {!editingParent && (
+                  <Button variant="ghost" size="sm" onClick={handleParentEdit}>
+                    <Edit className="h-4 w-4" />
+                  </Button>
                 )}
               </div>
+            </CardHeader>
+            <CardContent>
+              {editingParent ? (
+                <div className="space-y-4">
+                  <div>
+                    <Label>ชื่อ-นามสกุล</Label>
+                    <Input
+                      value={tempParentData.name}
+                      onChange={(e) => setTempParentData(prev => ({ ...prev, name: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <Label>เบอร์โทรศัพท์</Label>
+                    <Input
+                      value={tempParentData.phone}
+                      onChange={(e) => setTempParentData(prev => ({ ...prev, phone: e.target.value }))}
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={handleParentSave}>
+                      <Save className="h-4 w-4 mr-1" />
+                      บันทึก
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      onClick={() => setEditingParent(false)}
+                    >
+                      <XIcon className="h-4 w-4 mr-1" />
+                      ยกเลิก
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600">ชื่อ-นามสกุล</span>
+                    <span className="font-medium">{booking.parentName}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600">เบอร์โทรศัพท์</span>
+                    <span className="font-medium">{booking.parentPhone}</span>
+                  </div>
+                  {booking.parentEmail && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-600">อีเมล</span>
+                      <span className="font-medium">{booking.parentEmail}</span>
+                    </div>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -314,42 +421,77 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {booking.students.map((student, idx) => (
                   <div key={idx} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
-                    <div className="flex items-start justify-between mb-2">
-                      <div>
-                        <h4 className="font-medium text-base">{student.name}</h4>
-                        {student.schoolName && (
-                          <p className="text-sm text-gray-600">
-                            <School className="inline h-3 w-3 mr-1" />
-                            {student.schoolName}
-                            {student.gradeLevel && ` (${student.gradeLevel})`}
-                          </p>
-                        )}
+                    {editingStudent === idx ? (
+                      <div className="space-y-3">
+                        <Input
+                          placeholder="ชื่อ-นามสกุล"
+                          value={tempStudentData.name}
+                          onChange={(e) => setTempStudentData(prev => ({ ...prev, name: e.target.value }))}
+                        />
+                        <Input
+                          placeholder="โรงเรียน"
+                          value={tempStudentData.schoolName}
+                          onChange={(e) => setTempStudentData(prev => ({ ...prev, schoolName: e.target.value }))}
+                        />
+                        <Input
+                          placeholder="ระดับชั้น"
+                          value={tempStudentData.gradeLevel}
+                          onChange={(e) => setTempStudentData(prev => ({ ...prev, gradeLevel: e.target.value }))}
+                        />
+                        <div className="flex gap-2">
+                          <Button size="sm" onClick={handleStudentSave}>บันทึก</Button>
+                          <Button size="sm" variant="outline" onClick={() => setEditingStudent(null)}>ยกเลิก</Button>
+                        </div>
                       </div>
-                      <Badge variant="outline" className="text-xs">
-                        คนที่ {idx + 1}
-                      </Badge>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-xs text-gray-500">วิชาที่สนใจ:</p>
-                      <div className="flex flex-wrap gap-1">
-                        {student.subjectInterests.map(subjectId => {
-                          const subject = subjects.find(s => s.id === subjectId);
-                          return subject ? (
-                            <Badge 
-                              key={subjectId} 
-                              className="text-xs"
-                              style={{ 
-                                backgroundColor: `${subject.color}20`,
-                                color: subject.color,
-                                borderColor: subject.color
-                              }}
+                    ) : (
+                      <>
+                        <div className="flex items-start justify-between mb-2">
+                          <div>
+                            <h4 className="font-medium text-base">{student.name}</h4>
+                            {student.schoolName && (
+                              <p className="text-sm text-gray-600">
+                                <School className="inline h-3 w-3 mr-1" />
+                                {student.schoolName}
+                                {student.gradeLevel && ` (${student.gradeLevel})`}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleStudentEdit(idx)}
                             >
-                              {subject.name}
+                              <Edit className="h-3 w-3" />
+                            </Button>
+                            <Badge variant="outline" className="text-xs">
+                              คนที่ {idx + 1}
                             </Badge>
-                          ) : null;
-                        })}
-                      </div>
-                    </div>
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-xs text-gray-500">วิชาที่สนใจ:</p>
+                          <div className="flex flex-wrap gap-1">
+                            {student.subjectInterests.map(subjectId => {
+                              const subject = subjects.find(s => s.id === subjectId);
+                              return subject ? (
+                                <Badge 
+                                  key={subjectId} 
+                                  className="text-xs"
+                                  style={{ 
+                                    backgroundColor: `${subject.color}20`,
+                                    color: subject.color,
+                                    borderColor: subject.color
+                                  }}
+                                >
+                                  {subject.name}
+                                </Badge>
+                              ) : null;
+                            })}
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
                 ))}
               </div>
@@ -528,6 +670,10 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
                                     <Badge className="bg-purple-100 text-purple-700">
                                       รอถึงวัน
                                     </Badge>
+                                  ) : session.status === 'cancelled' ? (
+                                    <Badge className="bg-gray-100 text-gray-700">
+                                      ยกเลิก
+                                    </Badge>
                                   ) : (
                                     <Badge className={
                                       session.status === 'attended' ? 'bg-green-100 text-green-700' :
@@ -659,7 +805,8 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
                                         </DropdownMenuItem>
                                       )}
                                       
-                                      {session.status === 'attended' && !session.converted && (
+                                      {/* สามารถแปลงเป็นนักเรียนได้ แม้จะยกเลิกหรือยังไม่ได้เรียน */}
+                                      {!session.converted && (
                                         <DropdownMenuItem 
                                           onSelect={() => {
                                             setSelectedSession(session);
@@ -672,7 +819,10 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
                                         </DropdownMenuItem>
                                       )}
                                       
-                                      {session.status === 'scheduled' && !isPast && (
+                                      {/* สามารถนัดใหม่ได้ แม้จะยกเลิก */}
+                                      {(session.status === 'scheduled' && !isPast) || 
+                                       session.status === 'cancelled' || 
+                                       session.status === 'absent' ? (
                                         <>
                                           <DropdownMenuItem
                                             onSelect={() => {
@@ -681,8 +831,13 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
                                             }}
                                           >
                                             <Edit className="h-4 w-4 mr-2" />
-                                            เปลี่ยนวันนัดหมาย
+                                            {session.status === 'cancelled' ? 'นัดวันใหม่' : 'เปลี่ยนวันนัดหมาย'}
                                           </DropdownMenuItem>
+                                        </>
+                                      ) : null}
+                                      
+                                      {session.status === 'scheduled' && !isPast && (
+                                        <>
                                           <DropdownMenuSeparator />
                                           <DropdownMenuItem 
                                             className="text-red-600 focus:text-red-600"
@@ -702,19 +857,6 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
                                             ยกเลิกนัดหมาย
                                           </DropdownMenuItem>
                                         </>
-                                      )}
-                                      
-                                      {session.status === 'absent' && (
-                                        <DropdownMenuItem
-                                          onSelect={() => {
-                                            setSelectedSession(session);
-                                            setRescheduleModalOpen(true);
-                                          }}
-                                          className="text-blue-600 focus:text-blue-600"
-                                        >
-                                          <Calendar className="h-4 w-4 mr-2" />
-                                          นัดวันใหม่
-                                        </DropdownMenuItem>
                                       )}
                                     </>
                                   )}
