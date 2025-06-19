@@ -1,8 +1,4 @@
 import type { Metadata, Viewport } from 'next'
-import { LiffErrorBoundary } from '@/components/liff/error-boundary'
-import { LiffProvider } from '@/components/liff/liff-provider'
-import LiffAuthGuard from '@/components/liff/liff-auth-guard';
-
 import { Toaster } from 'sonner'
 
 export const metadata: Metadata = {
@@ -24,10 +20,9 @@ export default function LiffLayout({
   children: React.ReactNode;
 }) {
   return (
-    <LiffProvider>
-      <LiffAuthGuard>
-        {children}
-      </LiffAuthGuard>
-    </LiffProvider>
+    <>
+      {children}
+      <Toaster position="top-center" />
+    </>
   );
 }

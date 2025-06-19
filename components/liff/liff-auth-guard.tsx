@@ -8,6 +8,7 @@ import { Loader2, UserPlus, Link as LinkIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import Link from 'next/link';
 
 interface LiffAuthGuardProps {
   children: React.ReactNode;
@@ -19,15 +20,22 @@ export default function LiffAuthGuard({
   requireRegistration = true 
 }: LiffAuthGuardProps) {
   const router = useRouter();
-  const { profile, isLoggedIn, liff } = useLiff();
+  const { profile, isLoggedIn, liff, isLoading } = useLiff();
   const [checking, setChecking] = useState(true);
   const [hasParent, setHasParent] = useState(false);
 
   useEffect(() => {
-    checkParentStatus();
-  }, [isLoggedIn, profile]);
+    if (!isLoading) {
+      checkParentStatus();
+    }
+  }, [isLoading, isLoggedIn, profile]);
 
   const checkParentStatus = async () => {
+    // Wait if LIFF is still loading
+    if (isLoading) {
+      return;
+    }
+
     if (!isLoggedIn || !profile?.userId) {
       setChecking(false);
       return;
@@ -44,12 +52,12 @@ export default function LiffAuthGuard({
     }
   };
 
-  // Loading state
-  if (checking) {
+  // Loading state (including LIFF loading)
+  if (isLoading || checking) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
           <p className="text-gray-600">กำลังตรวจสอบข้อมูล...</p>
         </div>
       </div>
@@ -103,20 +111,21 @@ export default function LiffAuthGuard({
               </Alert>
 
               <div className="space-y-3">
-                <Button 
-                  className="w-full bg-red-500 hover:bg-red-600"
-                  onClick={() => router.push('/liff/register')}
-                >
-                  <UserPlus className="h-4 w-4 mr-2" />
-                  ลงทะเบียนออนไลน์
-                </Button>
+                <Link href="/liff/register" className="w-full">
+                  <Button 
+                    className="w-full bg-red-500 hover:bg-red-600"
+                  >
+                    <UserPlus className="h-4 w-4 mr-2" />
+                    ลงทะเบียนออนไลน์
+                  </Button>
+                </Link>
 
                 <div className="relative">
                   <div className="absolute inset-0 flex items-center">
                     <span className="w-full border-t" />
                   </div>
                   <div className="relative flex justify-center text-xs uppercase">
-                    <span className="bg-white px-2 text-gray-500">หรือ</span>
+                    <span className="bg-gray-50 px-2 text-gray-500">หรือ</span>
                   </div>
                 </div>
 
@@ -137,13 +146,22 @@ export default function LiffAuthGuard({
               <div className="pt-4 border-t text-center">
                 <p className="text-sm text-gray-600">
                   ติดต่อสอบถาม: 
-                  <a href="tel:0812345678" className="text-red-600 font-medium">
+                  <a href="tel:0812345678" className="text-red-600 font-medium ml-1">
                     081-234-5678
                   </a>
                 </p>
               </div>
             </CardContent>
           </Card>
+
+          {/* Back to home button */}
+          <div className="mt-4 text-center">
+            <Link href="/liff">
+              <Button variant="ghost" className="text-gray-600">
+                กลับหน้าหลัก
+              </Button>
+            </Link>
+          </div>
         </div>
       </div>
     );

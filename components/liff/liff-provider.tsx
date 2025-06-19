@@ -72,34 +72,25 @@ export function LiffProvider({ children, requireLogin = true }: LiffProviderProp
           console.log('[LiffProvider] User profile:', userProfile)
           setProfile(userProfile)
           
-          // Check or create parent document
+          // Check if parent exists (DO NOT auto-create)
           try {
-            const { getParentByLineId, createParent, updateParent } = await import('@/lib/services/parents')
+            const { getParentByLineId } = await import('@/lib/services/parents')
             
             // Check if parent exists
-            let parent = await getParentByLineId(userProfile.userId)
+            const parent = await getParentByLineId(userProfile.userId)
             console.log('[LiffProvider] Existing parent:', parent)
             
-            if (!parent) {
-              // Create new parent
-              console.log('[LiffProvider] Creating new parent')
-              const parentId = await createParent({
-                lineUserId: userProfile.userId,
-                displayName: userProfile.displayName,
-                pictureUrl: userProfile.pictureUrl,
-                phone: '-', // ใส่ค่า default ไปก่อน
-              })
-              console.log('[LiffProvider] Parent created with ID:', parentId)
-            } else {
-              // Update last login and profile picture
+            // Only update last login if parent already exists
+            if (parent) {
+              const { updateParent } = await import('@/lib/services/parents')
               console.log('[LiffProvider] Updating parent last login')
               await updateParent(parent.id, {
-                displayName: userProfile.displayName,
-                pictureUrl: userProfile.pictureUrl,
+                lastLoginAt: new Date()
               })
             }
+            // DO NOT create parent automatically - let them register
           } catch (error) {
-            console.error('[LiffProvider] Error managing parent:', error)
+            console.error('[LiffProvider] Error checking parent:', error)
           }
         } else if (requireLogin) {
           console.log('[LiffProvider] Not logged in, redirecting to login...')
