@@ -10,7 +10,7 @@ import listPlugin from '@fullcalendar/list';
 import interactionPlugin from '@fullcalendar/interaction';
 import { CalendarEvent } from '@/lib/services/dashboard';
 import { DatesSetArg, EventClickArg, EventContentArg } from '@fullcalendar/core';
-import { Clock, Users, MapPin, User } from 'lucide-react';
+import { Clock, Users, MapPin, User, Calendar } from 'lucide-react';
 
 interface DashboardCalendarProps {
   events: CalendarEvent[];
@@ -43,9 +43,27 @@ export default function DashboardCalendar({
     const isListView = eventInfo.view.type.includes('list');
     const isMakeup = props.type === 'makeup';
     const isTrial = props.type === 'trial';
+    const isHoliday = props.type === 'holiday';
     const isMonthView = eventInfo.view.type === 'dayGridMonth';
     const isDayView = eventInfo.view.type === 'timeGridDay';
     const isWeekView = eventInfo.view.type === 'timeGridWeek';
+    
+    // Don't render holiday content in list/time views (they're background events)
+    if (isHoliday && !isMonthView) {
+      return null;
+    }
+    
+    // For holidays in month view
+    if (isHoliday && isMonthView) {
+      return (
+        <div className="px-1 py-0.5 text-xs text-red-700 font-medium">
+          <div className="flex items-center gap-1">
+            <Calendar className="h-3 w-3" />
+            <span>{eventInfo.event.title}</span>
+          </div>
+        </div>
+      );
+    }
     
     // For list view
     if (isListView) {
@@ -229,11 +247,17 @@ export default function DashboardCalendar({
             ? `[Makeup] ${event.extendedProps.studentNickname} - ${event.extendedProps.originalClassName}`
             : event.extendedProps.type === 'trial'
             ? `[ทดลอง] ${event.extendedProps.trialStudentName} - ${event.extendedProps.trialSubjectName}`
+            : event.extendedProps.type === 'holiday'
+            ? `วันหยุด: ${event.title}`
             : event.title,
           // Add extended props for tooltip
           extendedProps: {
             ...event.extendedProps,
-            tooltip: {
+            tooltip: event.extendedProps.type === 'holiday' ? {
+              type: 'holiday',
+              name: event.title,
+              holidayType: event.extendedProps.holidayType
+            } : {
               time: `${new Date(event.start as Date).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} - ${new Date(event.end as Date).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}`,
               room: event.extendedProps.roomName,
               teacher: event.extendedProps.teacherName,
@@ -244,23 +268,24 @@ export default function DashboardCalendar({
           }
         }))}
         eventDidMount={(info) => {
-          // Add class based on event type and status for styling
           const props = info.event.extendedProps;
+          
+          // Skip holidays from click handlers (they're background events)
+          if (props.type === 'holiday') {
+            info.el.style.pointerEvents = 'none';
+            info.el.style.cursor = 'default';
+            return;
+          }
+          
+          // Add class based on event type and status for styling
           const eventDate = info.event.end as Date;
           const now = new Date();
           
-          // Add class for completed events (past events)
-          if (props.type === 'class' && eventDate < now) {
-            info.el.classList.add('completed-event');
-          } else if (props.type === 'makeup' && eventDate < now) {
-            info.el.classList.add('completed-makeup-event');
-          } else if (props.type === 'trial' && eventDate < now) {
-            info.el.classList.add('completed-trial-event');
-          }
-          
-          // Add class based on status
-          if (props.status === 'completed') {
+          // Add class for status
+          if (props.status === 'completed' || props.isFullyAttended) {
             info.el.classList.add('status-completed');
+          } else if (props.status === 'past_incomplete') {
+            info.el.classList.add('status-past-incomplete');
           }
           
           // Add tooltip to events
@@ -289,9 +314,11 @@ export default function DashboardCalendar({
               </div>
             `;
           } else {
+            const statusText = props.isFullyAttended ? ' (เช็คชื่อครบ)' : 
+                             props.status === 'past_incomplete' ? ' (ยังไม่เช็คชื่อ)' : '';
             tooltipContent = `
               <div class="text-xs">
-                <div class="font-semibold">${info.event.title}</div>
+                <div class="font-semibold">${info.event.title}${statusText}</div>
                 ${props.sessionNumber ? `<div>ครั้งที่ ${props.sessionNumber}</div>` : ''}
                 <div>เวลา: ${props.tooltip.time}</div>
                 <div>ห้อง: ${props.tooltip.room}</div>
@@ -342,7 +369,13 @@ export default function DashboardCalendar({
             }
           });
         }}
-        eventClick={onEventClick}
+        eventClick={(clickInfo) => {
+          // Prevent clicking on holidays
+          if (clickInfo.event.extendedProps.type === 'holiday') {
+            return;
+          }
+          onEventClick(clickInfo);
+        }}
         datesSet={onDatesSet}
         locale="th"
         firstDay={0}
@@ -361,18 +394,15 @@ export default function DashboardCalendar({
           hour12: false,
           meridiem: false,
           omitZeroMinute: false,
-          // Custom formatting based on showHalfHour
           ...(showHalfHour && {
-            minute: undefined, // Hide default minute
+            minute: undefined,
           })
         }}
         slotLabelContent={(arg) => {
-          // Custom slot label rendering
           if (showHalfHour) {
             const hour = arg.date.getHours();
             return `${hour.toString().padStart(2, '0')}:30`;
           }
-          // Default formatting for normal view
           const hour = arg.date.getHours();
           return `${hour.toString().padStart(2, '0')}:00`;
         }}
@@ -385,7 +415,7 @@ export default function DashboardCalendar({
         eventContent={renderEventContent}
         eventClassNames={(arg) => {
           const type = arg.event.extendedProps.type;
-          return `${type}-event`;
+          return type ? `${type}-event` : '';
         }}
         moreLinkContent={(args) => {
           return `อีก ${args.num} รายการ`;
@@ -455,7 +485,7 @@ export default function DashboardCalendar({
         
         /* Time grid slot height */
         .dashboard-calendar .fc-timegrid-slot {
-          height: 60px !important; /* เพิ่มความสูงของช่องเวลา */
+          height: 60px !important;
         }
         
         .dashboard-calendar .fc-timegrid-slot-lane {
@@ -477,19 +507,26 @@ export default function DashboardCalendar({
           background-color: #D1D5DB !important;
         }
         
-        /* Completed class styles - Green (using class instead of inline style) */
-        .dashboard-calendar .class-event.completed-event,
+        /* Completed class styles - Green (fully attended) */
         .dashboard-calendar .class-event.status-completed {
           background-color: #D1FAE5 !important;
           border-color: #A7F3D0 !important;
           color: #065F46 !important;
         }
         
-        .dashboard-calendar .class-event.completed-event .fc-event-title,
-        .dashboard-calendar .class-event.status-completed .fc-event-title,
-        .dashboard-calendar .class-event.completed-event .fc-event-time,
-        .dashboard-calendar .class-event.status-completed .fc-event-time {
+        .dashboard-calendar .class-event.status-completed * {
           color: #065F46 !important;
+        }
+        
+        /* Past incomplete class styles - Amber (time passed but not fully attended) */
+        .dashboard-calendar .class-event.status-past-incomplete {
+          background-color: #FEF3C7 !important;
+          border-color: #FDE68A !important;
+          color: #92400E !important;
+        }
+        
+        .dashboard-calendar .class-event.status-past-incomplete * {
+          color: #92400E !important;
         }
         
         /* Makeup event styles - Purple */
@@ -528,32 +565,18 @@ export default function DashboardCalendar({
           color: #065F46 !important;
         }
         
-        /* Force green background for elements with specific RGB values */
-        .dashboard-calendar .fc-event[style*="rgb(209, 250, 229)"] {
-          background-color: #D1FAE5 !important;
-          border-color: #A7F3D0 !important;
+        /* Holiday event styles - Red background */
+        .dashboard-calendar .holiday-event {
+          background-color: #FEE2E2 !important;
+          border: none !important;
+          opacity: 0.8;
+          pointer-events: none !important;
+          cursor: default !important;
         }
         
-        .dashboard-calendar .fc-event[style*="rgb(209, 250, 229)"] *,
-        .dashboard-calendar .fc-event[style*="#D1FAE5"] * {
-          color: #065F46 !important;
-        }
-        
-        /* Month view specific completed styles */
-        .dashboard-calendar .fc-daygrid-event.completed-event,
-        .dashboard-calendar .fc-daygrid-event.status-completed,
-        .dashboard-calendar .fc-daygrid-event.completed-makeup-event,
-        .dashboard-calendar .fc-daygrid-event.completed-trial-event {
-          background-color: #D1FAE5 !important;
-          border-color: #A7F3D0 !important;
-          color: #065F46 !important;
-        }
-        
-        .dashboard-calendar .fc-daygrid-event.completed-event *,
-        .dashboard-calendar .fc-daygrid-event.status-completed *,
-        .dashboard-calendar .fc-daygrid-event.completed-makeup-event *,
-        .dashboard-calendar .fc-daygrid-event.completed-trial-event * {
-          color: #065F46 !important;
+        /* Holiday text in month view */
+        .dashboard-calendar .fc-daygrid-day.fc-day-has-events .holiday-event {
+          margin-bottom: 2px;
         }
         
         /* Ensure calendar takes full height without scroll */
@@ -738,6 +761,20 @@ export default function DashboardCalendar({
         <div className="dashboard-calendar-legend-item">
           <div 
             className="dashboard-calendar-legend-dot" 
+            style={{ backgroundColor: '#D1FAE5', borderColor: '#A7F3D0' }}
+          />
+          <span>เช็คชื่อครบ/จบแล้ว</span>
+        </div>
+        <div className="dashboard-calendar-legend-item">
+          <div 
+            className="dashboard-calendar-legend-dot" 
+            style={{ backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }}
+          />
+          <span>เลยเวลา (ยังไม่เช็คชื่อ)</span>
+        </div>
+        <div className="dashboard-calendar-legend-item">
+          <div 
+            className="dashboard-calendar-legend-dot" 
             style={{ backgroundColor: '#E9D5FF', borderColor: '#D8B4FE' }}
           />
           <span>Makeup Class</span>
@@ -752,9 +789,9 @@ export default function DashboardCalendar({
         <div className="dashboard-calendar-legend-item">
           <div 
             className="dashboard-calendar-legend-dot" 
-            style={{ backgroundColor: '#D1FAE5', borderColor: '#A7F3D0' }}
+            style={{ backgroundColor: '#FEE2E2', borderColor: '#FECACA' }}
           />
-          <span>เรียนเสร็จแล้ว</span>
+          <span>วันหยุด</span>
         </div>
       </div>
     </div>

@@ -28,7 +28,8 @@ import {
   MapPin,
   Baby,
   School,
-  Heart
+  Heart,
+  Edit
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { TrialBooking, TrialSession, Class, Subject } from '@/types/models';
@@ -46,7 +47,9 @@ interface ConvertToStudentFormProps {
 }
 
 interface FormData {
-  // Parent additional info
+  // Parent info (เพิ่มข้อมูลพื้นฐานที่แก้ไขได้)
+  parentName: string;
+  parentPhone: string;
   parentEmail: string;
   emergencyPhone: string;
   address: {
@@ -94,9 +97,11 @@ export default function ConvertToStudentForm({
   const [classes, setClasses] = useState<Class[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   
-  // Form state
+  // Form state - initialize with booking data
   const [formData, setFormData] = useState<FormData>({
-    // Parent
+    // Parent (สามารถแก้ไขข้อมูลพื้นฐานได้)
+    parentName: booking.parentName,
+    parentPhone: booking.parentPhone,
     parentEmail: booking.parentEmail || '',
     emergencyPhone: '',
     address: {
@@ -218,10 +223,19 @@ export default function ConvertToStudentForm({
     
     switch (step) {
       case 1: // Parent info
-        if (!formData.emergencyPhone.trim()) {
-          newErrors.emergencyPhone = 'กรุณากรอกเบอร์โทรฉุกเฉิน';
-        } else if (!/^0[0-9]{8,9}$/.test(formData.emergencyPhone.replace(/-/g, ''))) {
-          newErrors.emergencyPhone = 'เบอร์โทรไม่ถูกต้อง';
+        if (!formData.parentName.trim()) {
+          newErrors.parentName = 'กรุณากรอกชื่อผู้ปกครอง';
+        }
+        
+        if (!formData.parentPhone.trim()) {
+          newErrors.parentPhone = 'กรุณากรอกเบอร์โทรศัพท์';
+        } else if (!/^0[0-9]{8,9}$/.test(formData.parentPhone.replace(/-/g, ''))) {
+          newErrors.parentPhone = 'เบอร์โทรไม่ถูกต้อง';
+        }
+        
+        // เบอร์ฉุกเฉินไม่บังคับ แต่ถ้ากรอกต้องถูกต้อง
+        if (formData.emergencyPhone && !/^0[0-9]{8,9}$/.test(formData.emergencyPhone.replace(/-/g, ''))) {
+          newErrors.emergencyPhone = 'เบอร์โทรฉุกเฉินไม่ถูกต้อง';
         }
         
         if (formData.parentEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.parentEmail)) {
@@ -294,10 +308,10 @@ export default function ConvertToStudentForm({
       // Prepare conversion data
       const conversionData = {
         // Parent info
-        parentName: booking.parentName,
-        parentPhone: booking.parentPhone,
+        parentName: formData.parentName,
+        parentPhone: formData.parentPhone.replace(/-/g, ''),
         parentEmail: formData.parentEmail || undefined,
-        emergencyPhone: formData.emergencyPhone,
+        emergencyPhone: formData.emergencyPhone ? formData.emergencyPhone.replace(/-/g, '') : undefined,
         address: formData.address.houseNumber ? formData.address : undefined,
         
         // Student info
@@ -334,8 +348,10 @@ export default function ConvertToStudentForm({
       onSuccess();
     } catch (error: any) {
       console.error('Error converting to student:', error);
-      if (error.message?.includes('Phone number already exists')) {
+      if (error.message?.includes('เบอร์โทรหลักนี้มีอยู่ในระบบแล้ว')) {
         toast.error('เบอร์โทรนี้มีอยู่ในระบบแล้ว กรุณาตรวจสอบข้อมูล');
+      } else if (error.message?.includes('เบอร์โทรฉุกเฉินนี้มีอยู่ในระบบแล้ว')) {
+        toast.error('เบอร์โทรฉุกเฉินนี้มีอยู่ในระบบแล้ว กรุณาใช้เบอร์อื่น');
       } else {
         toast.error('เกิดข้อผิดพลาดในการแปลงเป็นนักเรียน');
       }
@@ -378,17 +394,48 @@ export default function ConvertToStudentForm({
               <CardTitle className="text-lg">ข้อมูลผู้ปกครอง</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Existing parent info display */}
-              <div className="bg-gray-50 rounded-lg p-4 space-y-2">
-                <h4 className="font-medium text-sm text-gray-700 mb-2">ข้อมูลพื้นฐาน</h4>
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div>
-                    <span className="text-gray-500">ชื่อ-นามสกุล:</span>
-                    <p className="font-medium">{booking.parentName}</p>
+              {/* Basic parent info - Editable */}
+              <div className="space-y-4">
+                <h4 className="font-medium text-sm flex items-center gap-2">
+                  <Edit className="h-4 w-4" />
+                  ข้อมูลพื้นฐาน (แก้ไขได้)
+                </h4>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="parentName">
+                      <User className="inline h-4 w-4 mr-1" />
+                      ชื่อผู้ปกครอง <span className="text-red-500">*</span>
+                    </Label>
+                    <Input
+                      id="parentName"
+                      value={formData.parentName}
+                      onChange={(e) => setFormData(prev => ({ ...prev, parentName: e.target.value }))}
+                      placeholder="ชื่อ-นามสกุล"
+                      className={errors.parentName ? 'border-red-500' : ''}
+                      required
+                    />
+                    {errors.parentName && (
+                      <p className="text-sm text-red-500">{errors.parentName}</p>
+                    )}
                   </div>
-                  <div>
-                    <span className="text-gray-500">เบอร์โทร:</span>
-                    <p className="font-medium">{booking.parentPhone}</p>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="parentPhone">
+                      <Phone className="inline h-4 w-4 mr-1" />
+                      เบอร์โทร <span className="text-red-500">*</span>
+                    </Label>
+                    <Input
+                      id="parentPhone"
+                      value={formData.parentPhone}
+                      onChange={(e) => setFormData(prev => ({ ...prev, parentPhone: e.target.value }))}
+                      placeholder="08x-xxx-xxxx"
+                      className={errors.parentPhone ? 'border-red-500' : ''}
+                      required
+                    />
+                    {errors.parentPhone && (
+                      <p className="text-sm text-red-500">{errors.parentPhone}</p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -419,19 +466,19 @@ export default function ConvertToStudentForm({
                   <div className="space-y-2">
                     <Label htmlFor="emergencyPhone">
                       <Phone className="inline h-4 w-4 mr-1" />
-                      เบอร์โทรฉุกเฉิน <span className="text-red-500">*</span>
+                      เบอร์โทรฉุกเฉิน
                     </Label>
                     <Input
                       id="emergencyPhone"
                       value={formData.emergencyPhone}
                       onChange={(e) => setFormData(prev => ({ ...prev, emergencyPhone: e.target.value }))}
-                      placeholder="08x-xxx-xxxx"
+                      placeholder="08x-xxx-xxxx (ไม่บังคับ)"
                       className={errors.emergencyPhone ? 'border-red-500' : ''}
-                      required
                     />
                     {errors.emergencyPhone && (
                       <p className="text-sm text-red-500">{errors.emergencyPhone}</p>
                     )}
+                    <p className="text-xs text-gray-500">กรณีติดต่อเบอร์หลักไม่ได้</p>
                   </div>
                 </div>
 

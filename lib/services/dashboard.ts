@@ -16,21 +16,24 @@ import { getBranches } from './branches';
 import { getMakeupClasses } from './makeup';
 import { getStudentWithParent } from './parents';
 import { getTrialSessions } from './trial-bookings';
+import { getHolidaysInRange } from './holidays';
 import { EventInput } from '@fullcalendar/core';
+import { getEnrollmentsByClass } from './enrollments';
 
 export interface CalendarEvent extends EventInput {
   classId: string;
   extendedProps: {
-    type: 'class' | 'makeup' | 'trial'; // Added trial type
+    type: 'class' | 'makeup' | 'trial' | 'holiday'; // Added holiday type
     branchId: string;
     branchName: string;
     roomName: string;
     teacherName: string;
-    subjectColor?: string; // Add subject color
+    subjectColor?: string;
     enrolled?: number;
     maxStudents?: number;
     sessionNumber?: number;
     status?: string;
+    isFullyAttended?: boolean; // New field to track if all students are marked
     // For makeup
     studentName?: string;
     studentNickname?: string;
@@ -39,6 +42,8 @@ export interface CalendarEvent extends EventInput {
     // For trial
     trialStudentName?: string;
     trialSubjectName?: string;
+    // For holiday
+    holidayType?: 'national' | 'branch';
   };
 }
 
@@ -49,13 +54,14 @@ export async function getCalendarEvents(
 ): Promise<CalendarEvent[]> {
   try {
     // Get all necessary data
-    const [classes, subjects, teachers, branches, makeupClasses, trialSessions] = await Promise.all([
+    const [classes, subjects, teachers, branches, makeupClasses, trialSessions, holidays] = await Promise.all([
       getClasses(),
       getSubjects(),
       getTeachers(),
       getBranches(),
       getMakeupClasses(),
-      getTrialSessions() // Get all trial sessions
+      getTrialSessions(),
+      getHolidaysInRange(start, end) // Get holidays in date range
     ]);
 
     // Create lookup maps
@@ -81,7 +87,45 @@ export async function getCalendarEvents(
     // Get current date/time for comparison
     const now = new Date();
 
-    // 1. Process regular class schedules
+    // 1. Process holidays first
+    for (const holiday of holidays) {
+      // If filtering by branch, only show holidays that affect this branch
+      if (branchId) {
+        if (holiday.type === 'branch' && !holiday.branches?.includes(branchId)) {
+          continue;
+        }
+      }
+
+      // Create all-day event for holiday
+      const holidayDate = new Date(holiday.date);
+      holidayDate.setHours(0, 0, 0, 0);
+      
+      const holidayEndDate = new Date(holiday.date);
+      holidayEndDate.setHours(23, 59, 59, 999);
+
+      events.push({
+        id: `holiday-${holiday.id}`,
+        classId: '',
+        title: holiday.name,
+        start: holidayDate,
+        end: holidayEndDate,
+        allDay: true,
+        backgroundColor: '#EF4444', // Red-500
+        borderColor: '#DC2626', // Red-600
+        textColor: '#FFFFFF',
+        display: 'background', // Show as background event
+        extendedProps: {
+          type: 'holiday',
+          branchId: branchId || 'all',
+          branchName: holiday.type === 'national' ? 'ทุกสาขา' : 'เฉพาะสาขา',
+          roomName: '',
+          teacherName: '',
+          holidayType: holiday.type
+        }
+      });
+    }
+
+    // 2. Process regular class schedules
     for (const cls of classes) {
       // Skip if filtering by branch and doesn't match
       if (branchId && cls.branchId !== branchId) continue;
@@ -94,6 +138,10 @@ export async function getCalendarEvents(
       const branch = branchMap.get(cls.branchId);
 
       if (!subject || !teacher || !branch) continue;
+
+      // Get enrollments for this class to check attendance
+      const enrollments = await getEnrollmentsByClass(cls.id);
+      const activeEnrollments = enrollments.filter(e => e.status === 'active');
 
       // Get schedules for this class
       const schedulesRef = collection(db, 'classes', cls.id, 'schedules');
@@ -123,32 +171,34 @@ export async function getCalendarEvents(
         const eventEnd = new Date(sessionDate);
         eventEnd.setHours(endHour, endMinute, 0, 0);
 
+        // Check if all enrolled students have attendance marked
+        const isFullyAttended = activeEnrollments.length > 0 && 
+          schedule.attendance && 
+          activeEnrollments.every(enrollment => 
+            schedule.attendance.some((att: any) => att.studentId === enrollment.studentId)
+          );
+
         // Determine status and color
         let backgroundColor = '#E5E7EB'; // Gray-200 for regular classes
         let borderColor = '#D1D5DB'; // Gray-300 border
         let effectiveStatus = schedule.status;
         
-        // Check if the session has passed (ended)
-        if (eventEnd < now) {
-          // Past sessions should be marked as completed
-          // Unless they're already marked as cancelled or rescheduled
-          if (schedule.status === 'scheduled') {
-            effectiveStatus = 'completed';
-          }
-        }
-        
-        // Apply colors based on effective status
-        if (effectiveStatus === 'completed') {
-          backgroundColor = '#D1FAE5'; // Green-100 for completed
-          borderColor = '#A7F3D0'; // Green-200 border
-        } else if (effectiveStatus === 'rescheduled') {
-          backgroundColor = '#FEF3C7'; // Amber-100 for rescheduled
-          borderColor = '#FDE68A'; // Amber-200 border
-        } else if (schedule.attendance && schedule.attendance.length > 0) {
-          // If there's attendance data, mark as completed even if in future
+        // Priority 1: If all students are marked (regardless of time)
+        if (isFullyAttended) {
           backgroundColor = '#D1FAE5'; // Green-100 for completed
           borderColor = '#A7F3D0'; // Green-200 border
           effectiveStatus = 'completed';
+        }
+        // Priority 2: If time has passed but not all students marked
+        else if (eventEnd < now) {
+          backgroundColor = '#FEF3C7'; // Amber-100 for past sessions without full attendance
+          borderColor = '#FDE68A'; // Amber-200 border
+          effectiveStatus = 'past_incomplete';
+        }
+        // Priority 3: Rescheduled sessions
+        else if (schedule.status === 'rescheduled') {
+          backgroundColor = '#DBEAFE'; // Blue-100 for rescheduled
+          borderColor = '#BFDBFE'; // Blue-200 border
         }
 
         // Get room name
@@ -163,24 +213,26 @@ export async function getCalendarEvents(
           end: eventEnd,
           backgroundColor,
           borderColor,
-          textColor: effectiveStatus === 'completed' ? '#065F46' : '#374151', // Green-800 for completed, Gray-700 for others
+          textColor: effectiveStatus === 'completed' ? '#065F46' : 
+                     effectiveStatus === 'past_incomplete' ? '#92400E' : '#374151',
           extendedProps: {
             type: 'class',
             branchId: cls.branchId,
             branchName: branch.name,
             roomName: roomName,
             teacherName: teacher.nickname || teacher.name,
-            subjectColor: subject.color, // Add subject color
+            subjectColor: subject.color,
             enrolled: cls.enrolledCount,
             maxStudents: cls.maxStudents,
             sessionNumber: schedule.sessionNumber,
-            status: effectiveStatus // Use effective status instead of schedule status
+            status: effectiveStatus,
+            isFullyAttended
           }
         });
       });
     }
 
-    // 2. Process makeup classes (UPDATED - show all statuses)
+    // 3. Process makeup classes
     for (const makeup of makeupClasses) {
       // Skip only if cancelled
       if (makeup.status === 'cancelled') continue;
@@ -245,7 +297,7 @@ export async function getCalendarEvents(
           branchName: branch.name,
           roomName: room?.name || makeup.makeupSchedule.roomId,
           teacherName: teacher.nickname || teacher.name,
-          subjectColor: subject?.color, // Add subject color
+          subjectColor: subject?.color,
           studentName: student.name,
           studentNickname: student.nickname,
           originalClassName: originalClass.name,
@@ -254,7 +306,7 @@ export async function getCalendarEvents(
       });
     }
 
-    // 3. Process trial sessions (UPDATED - show all statuses except cancelled)
+    // 4. Process trial sessions
     for (const trial of trialSessions) {
       // Skip only if cancelled
       if (trial.status === 'cancelled') continue;
@@ -311,7 +363,7 @@ export async function getCalendarEvents(
           branchName: branch.name,
           roomName: room?.name || trial.roomName || trial.roomId,
           teacherName: teacher.nickname || teacher.name,
-          subjectColor: subject.color, // Add subject color
+          subjectColor: subject.color,
           trialStudentName: trial.studentName,
           trialSubjectName: subject.name
         }
@@ -337,7 +389,7 @@ export interface DashboardStats {
   todayClasses: number;
   upcomingMakeups: number;
   pendingMakeups: number;
-  upcomingTrials: number; // Add trial stats
+  upcomingTrials: number;
 }
 
 export async function getDashboardStats(branchId?: string): Promise<DashboardStats> {

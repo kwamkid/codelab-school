@@ -449,158 +449,51 @@ export async function rescheduleTrialSession(
   }
 }
 
-// Check room availability for trial
+// Check room availability for trial with comprehensive checks
 export async function checkTrialRoomAvailability(
   branchId: string,
   roomId: string,
   date: Date,
   startTime: string,
   endTime: string,
+  teacherId: string,
   excludeSessionId?: string
 ): Promise<{
   available: boolean;
   conflicts?: Array<{
-    type: 'class' | 'trial' | 'makeup';
-    name: string;
-    startTime: string;
-    endTime: string;
+    type: 'holiday' | 'room_conflict' | 'teacher_conflict';
+    message: string;
+    details?: any;
   }>;
 }> {
   try {
-    console.log('Checking room availability for:', { branchId, roomId, date, startTime, endTime });
+    // Use centralized availability checker
+    const { checkAvailability } = await import('../utils/availability');
     
-    const conflicts: Array<{
-      type: 'class' | 'trial' | 'makeup';
-      name: string;
-      startTime: string;
-      endTime: string;
-    }> = [];
+    const result = await checkAvailability({
+      date,
+      startTime,
+      endTime,
+      branchId,
+      roomId,
+      teacherId,
+      excludeId: excludeSessionId,
+      excludeType: 'trial'
+    });
     
-    // 1. Check regular classes on that day
-    const dayOfWeek = date.getDay();
-    const { getClasses } = await import('./classes');
-    const classes = await getClasses();
-    
-    // Create date without time for comparison
-    const dateOnly = new Date(date);
-    dateOnly.setHours(0, 0, 0, 0);
-    
-    // Filter classes for the same branch, room, and day
-    const relevantClasses = classes.filter(cls => 
-      cls.branchId === branchId &&
-      cls.roomId === roomId &&
-      cls.daysOfWeek.includes(dayOfWeek) &&
-      (cls.status === 'published' || cls.status === 'started') &&
-      new Date(cls.startDate) <= dateOnly &&
-      new Date(cls.endDate) >= dateOnly
-    );
-    
-    console.log(`Found ${relevantClasses.length} relevant classes`);
-    
-    // Check time conflicts for each class
-    for (const cls of relevantClasses) {
-      // Check if the class has a session on this specific date
-      const schedulesRef = collection(db, 'classes', cls.id, 'schedules');
-      
-      // Create start and end of day for query
-      const startOfDay = new Date(date);
-      startOfDay.setHours(0, 0, 0, 0);
-      const endOfDay = new Date(date);
-      endOfDay.setHours(23, 59, 59, 999);
-      
-      const scheduleQuery = query(
-        schedulesRef,
-        where('sessionDate', '>=', Timestamp.fromDate(startOfDay)),
-        where('sessionDate', '<=', Timestamp.fromDate(endOfDay)),
-        where('status', '!=', 'cancelled')
-      );
-      const scheduleSnapshot = await getDocs(scheduleQuery);
-      
-      console.log(`Class ${cls.name} has ${scheduleSnapshot.size} sessions on this date`);
-      
-      if (!scheduleSnapshot.empty) {
-        // Check time overlap
-        if (startTime < cls.endTime && endTime > cls.startTime) {
-          console.log(`Time conflict with class ${cls.name}: ${cls.startTime}-${cls.endTime} vs ${startTime}-${endTime}`);
-          conflicts.push({
-            type: 'class',
-            name: cls.name,
-            startTime: cls.startTime,
-            endTime: cls.endTime,
-          });
-        }
-      }
-    }
-    
-    // 2. Check makeup classes
-    const { getMakeupClasses } = await import('./makeup');
-    const makeupClasses = await getMakeupClasses();
-    
-    // Filter makeup classes for the same branch, room, and date
-    const relevantMakeups = makeupClasses.filter(makeup => 
-      makeup.status === 'scheduled' &&
-      makeup.makeupSchedule &&
-      makeup.makeupSchedule.branchId === branchId &&
-      makeup.makeupSchedule.roomId === roomId &&
-      new Date(makeup.makeupSchedule.date).toDateString() === date.toDateString()
-    );
-    
-    console.log(`Found ${relevantMakeups.length} relevant makeup classes`);
-    
-    // Check time conflicts for makeup classes
-    for (const makeup of relevantMakeups) {
-      if (makeup.makeupSchedule) {
-        // Check time overlap
-        if (startTime < makeup.makeupSchedule.endTime && endTime > makeup.makeupSchedule.startTime) {
-          const { getStudent } = await import('./parents');
-          const student = await getStudent(makeup.parentId, makeup.studentId);
-          console.log(`Time conflict with makeup class for ${student?.name}`);
-          conflicts.push({
-            type: 'makeup',
-            name: `${student?.nickname || student?.name || 'Unknown'}`,
-            startTime: makeup.makeupSchedule.startTime,
-            endTime: makeup.makeupSchedule.endTime,
-          });
-        }
-      }
-    }
-    
-    // 3. Check other trial sessions
-    const q = query(
-      collection(db, SESSIONS_COLLECTION),
-      where('branchId', '==', branchId),
-      where('roomId', '==', roomId),
-      where('scheduledDate', '==', Timestamp.fromDate(date)),
-      where('status', '!=', 'cancelled')
-    );
-    
-    const querySnapshot = await getDocs(q);
-    console.log(`Found ${querySnapshot.size} trial sessions`);
-    
-    for (const doc of querySnapshot.docs) {
-      if (doc.id === excludeSessionId) continue;
-      
-      const session = doc.data() as TrialSession;
-      // Check time overlap
-      if (startTime < session.endTime && endTime > session.startTime) {
-        console.log(`Time conflict with trial session for ${session.studentName}`);
-        conflicts.push({
-          type: 'trial',
-          name: session.studentName,
-          startTime: session.startTime,
-          endTime: session.endTime,
-        });
-      }
-    }
-    
-    console.log(`Total conflicts found: ${conflicts.length}`);
     return {
-      available: conflicts.length === 0,
-      conflicts: conflicts.length > 0 ? conflicts : undefined,
+      available: result.available,
+      conflicts: result.available ? undefined : result.reasons
     };
   } catch (error) {
     console.error('Error checking room availability:', error);
-    return { available: false };
+    return { 
+      available: false,
+      conflicts: [{
+        type: 'room_conflict',
+        message: 'เกิดข้อผิดพลาดในการตรวจสอบ'
+      }]
+    };
   }
 }
 
@@ -616,7 +509,7 @@ export async function convertTrialToEnrollment(
     parentName: string;
     parentPhone: string;
     parentEmail?: string;
-    emergencyPhone: string;
+    emergencyPhone?: string; // เปลี่ยนเป็น optional
     address?: {
       houseNumber: string;
       street?: string;
@@ -672,28 +565,43 @@ export async function convertTrialToEnrollment(
     // Check if parent exists by phone
     let parentId: string;
     
-    // Check both main phone and emergency phone
+    // Check main phone
     const mainPhoneExists = await checkParentPhoneExists(conversionData.parentPhone);
-    const emergencyPhoneExists = await checkParentPhoneExists(conversionData.emergencyPhone);
     
     if (mainPhoneExists) {
       throw new Error('เบอร์โทรหลักนี้มีอยู่ในระบบแล้ว กรุณาตรวจสอบข้อมูลผู้ปกครอง');
     }
     
-    if (emergencyPhoneExists && conversionData.emergencyPhone !== conversionData.parentPhone) {
-      throw new Error('เบอร์โทรฉุกเฉินนี้มีอยู่ในระบบแล้ว กรุณาตรวจสอบข้อมูล');
+    // Check emergency phone only if provided and different from main phone
+    if (conversionData.emergencyPhone && 
+        conversionData.emergencyPhone !== conversionData.parentPhone) {
+      const emergencyPhoneExists = await checkParentPhoneExists(conversionData.emergencyPhone);
+      
+      if (emergencyPhoneExists) {
+        throw new Error('เบอร์โทรฉุกเฉินนี้มีอยู่ในระบบแล้ว กรุณาใช้เบอร์อื่น');
+      }
     }
     
     // Create new parent with complete data
-    parentId = await createParent({
+    const parentData: any = {
       displayName: conversionData.parentName,
       phone: conversionData.parentPhone,
-      emergencyPhone: conversionData.emergencyPhone,
       email: conversionData.parentEmail,
-      address: conversionData.address,
       // Optional: If you want to set preferred branch from trial session
       preferredBranchId: session.branchId,
-    });
+    };
+    
+    // Add emergency phone only if provided
+    if (conversionData.emergencyPhone) {
+      parentData.emergencyPhone = conversionData.emergencyPhone;
+    }
+    
+    // Add address only if provided
+    if (conversionData.address) {
+      parentData.address = conversionData.address;
+    }
+    
+    parentId = await createParent(parentData);
     
     // Create student with complete data
     const studentId = await createStudent(parentId, {

@@ -26,7 +26,6 @@ export default function TechLoadingAnimation() {
             <ActiveIcon className="h-12 w-12 text-red-500 animate-pulse" />
           </div>
         </div>
-        <p className="text-lg font-medium text-gray-700 animate-pulse">กำลังโหลด...</p>
       </div>
       
       <style jsx>{`

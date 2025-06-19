@@ -573,51 +573,39 @@ export async function checkTeacherAvailability(
   teacherId: string,
   date: Date,
   startTime: string,
-  endTime: string
-): Promise<boolean> {
+  endTime: string,
+  branchId: string,
+  roomId: string,
+  excludeMakeupId?: string
+): Promise<{ available: boolean; reason?: string }> {
   try {
-    // Check regular classes
-    const classQuery = query(
-      collection(db, 'classes'),
-      where('teacherId', '==', teacherId),
-      where('status', 'in', ['published', 'started'])
-    );
+    // Use centralized availability checker
+    const { checkAvailability } = await import('../utils/availability');
     
-    const classSnapshot = await getDocs(classQuery);
-    const dayOfWeek = date.getDay();
+    const result = await checkAvailability({
+      date,
+      startTime,
+      endTime,
+      branchId,
+      roomId,
+      teacherId,
+      excludeId: excludeMakeupId,
+      excludeType: 'makeup'
+    });
     
-    for (const doc of classSnapshot.docs) {
-      const classData = doc.data();
-      if (classData.daysOfWeek.includes(dayOfWeek)) {
-        // Check time overlap
-        if (startTime < classData.endTime && endTime > classData.startTime) {
-          return false;
-        }
-      }
+    if (!result.available) {
+      // Return the first issue as reason
+      const firstIssue = result.reasons[0];
+      return {
+        available: false,
+        reason: firstIssue.message
+      };
     }
     
-    // Check other makeup classes
-    const makeupQuery = query(
-      collection(db, COLLECTION_NAME),
-      where('status', '==', 'scheduled'),
-      where('makeupSchedule.teacherId', '==', teacherId),
-      where('makeupSchedule.date', '==', Timestamp.fromDate(date))
-    );
-    
-    const makeupSnapshot = await getDocs(makeupQuery);
-    
-    for (const doc of makeupSnapshot.docs) {
-      const makeupData = doc.data();
-      const schedule = makeupData.makeupSchedule;
-      if (startTime < schedule.endTime && endTime > schedule.startTime) {
-        return false;
-      }
-    }
-    
-    return true;
+    return { available: true };
   } catch (error) {
     console.error('Error checking teacher availability:', error);
-    return false;
+    return { available: false, reason: 'เกิดข้อผิดพลาดในการตรวจสอบ' };
   }
 }
 
