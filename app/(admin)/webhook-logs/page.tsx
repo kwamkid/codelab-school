@@ -59,8 +59,12 @@ export default function WebhookLogsPage() {
       
       if (data.logs && Array.isArray(data.logs)) {
         setLogs(data.logs);
-        // Extract unique user IDs
-        const ids = new Set(data.logs.map((log: WebhookLog) => log.userId).filter(Boolean));
+        // Extract unique user IDs - แก้ไขส่วนนี้
+        const ids = new Set<string>(
+          data.logs
+            .map((log: WebhookLog) => log.userId)
+            .filter((id): id is string => Boolean(id))
+        );
         setUserIds(ids);
         toast.success(`โหลด ${data.logs.length} logs`);
       } else {
@@ -135,18 +139,18 @@ export default function WebhookLogsPage() {
       </div>
 
       {/* Instructions */}
-      <Alert>
-        <Info className="h-4 w-4" />
-        <AlertDescription>
-          <strong>วิธีหา User ID ของคุณ:</strong>
-          <ol className="list-decimal list-inside mt-2 space-y-1">
-            <li>เพิ่ม LINE Official Account เป็นเพื่อน</li>
-            <li>ส่งข้อความอะไรก็ได้ไปที่ Official Account (พิมพ์ "test" หรืออะไรก็ได้)</li>
-            <li>กลับมาที่หน้านี้และคลิก "รีเฟรช"</li>
-            <li>User ID ของคุณจะแสดงในส่วน "User IDs ที่พบ" ด้านล่าง</li>
-          </ol>
-        </AlertDescription>
-      </Alert>
+    <Alert>
+    <Info className="h-4 w-4" />
+    <AlertDescription>
+        <strong>วิธีหา User ID ของคุณ:</strong>
+        <ol className="list-decimal list-inside mt-2 space-y-1">
+        <li>เพิ่ม LINE Official Account เป็นเพื่อน</li>
+        <li>ส่งข้อความอะไรก็ได้ไปที่ Official Account (พิมพ์ &quot;test&quot; หรืออะไรก็ได้)</li>
+        <li>กลับมาที่หน้านี้และคลิก &quot;รีเฟรช&quot;</li>
+        <li>User ID ของคุณจะแสดงในส่วน &quot;User IDs ที่พบ&quot; ด้านล่าง</li>
+        </ol>
+    </AlertDescription>
+    </Alert>
 
       {/* User IDs Found */}
       {userIds.size > 0 && (
