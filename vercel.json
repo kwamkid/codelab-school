@@ -1,0 +1,11 @@
+{
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "framework": "nextjs",
+  "rewrites": [
+    {
+      "source": "/liff/(.*)",
+      "destination": "/liff/$1"
+    }
+  ]
+}

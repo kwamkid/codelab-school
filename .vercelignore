@@ -12,7 +12,3 @@ firebase-debug.log
 # Firebase files
 firebase.json
 .firebaserc
-
-# Development files
-.vscode/
-.idea/
