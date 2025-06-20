@@ -8,6 +8,15 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
 
+  // เพิ่ม output configuration
+  output: "standalone",
+
+  // เพิ่ม experimental options สำหรับ App Router
+  experimental: {
+    // ปิด optimizations ที่อาจมีปัญหากับ route groups
+    optimizePackageImports: [],
+  },
+
   images: {
     remotePatterns: [
       {
@@ -72,7 +81,24 @@ const nextConfig = {
     ];
   },
 
+  // เพิ่ม webpack config เพื่อ handle client components
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      // Don't resolve 'fs' module on the client to prevent this error on build
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        net: false,
+        tls: false,
+      };
+    }
+    return config;
+  },
+
   reactStrictMode: true,
+
+  // Force SWC minification
+  swcMinify: true,
 };
 
 module.exports = nextConfig;
