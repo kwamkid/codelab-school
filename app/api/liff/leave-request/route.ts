@@ -5,6 +5,9 @@ import { createMakeupRequest, checkMakeupExists } from '@/lib/services/makeup';
 import { getClass } from '@/lib/services/classes';
 import { getStudentWithParent } from '@/lib/services/parents';
 
+// Force dynamic rendering
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();

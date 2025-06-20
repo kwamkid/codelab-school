@@ -2,11 +2,16 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
+// Force dynamic rendering
+export const dynamic = 'force-dynamic';
+
 // This will get logs from the webhook endpoint
 export async function GET(request: NextRequest) {
   try {
     // Get the base URL
-    const baseUrl = request.nextUrl.origin;
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 
+                    (request.headers.get('x-forwarded-proto') || 'https') + '://' + 
+                    request.headers.get('host');
     
     // Call the webhook GET endpoint to get logs
     const response = await fetch(`${baseUrl}/api/webhooks/line`, {

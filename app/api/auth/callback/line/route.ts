@@ -3,6 +3,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getLineSettings } from '@/lib/services/line-settings';
 
+// Force dynamic rendering
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -11,22 +14,27 @@ export async function GET(request: NextRequest) {
     const error = searchParams.get('error');
     const errorDescription = searchParams.get('error_description');
     
+    // Get base URL
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 
+                    (request.headers.get('x-forwarded-proto') || 'https') + '://' + 
+                    request.headers.get('host');
+    
     // Handle error from LINE
     if (error) {
       console.error('LINE Login error:', error, errorDescription);
-      return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL || ''}/test-line-login?error=${error}`);
+      return NextResponse.redirect(`${baseUrl}/test-line-login?error=${error}`);
     }
     
     // Validate required parameters
     if (!code || !state) {
-      return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL || ''}/test-line-login?error=missing_params`);
+      return NextResponse.redirect(`${baseUrl}/test-line-login?error=missing_params`);
     }
     
     // Get LINE settings
     const settings = await getLineSettings();
     
     if (!settings.loginChannelId || !settings.loginChannelSecret) {
-      return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL || ''}/test-line-login?error=not_configured`);
+      return NextResponse.redirect(`${baseUrl}/test-line-login?error=not_configured`);
     }
     
     // Exchange code for access token
@@ -38,7 +46,7 @@ export async function GET(request: NextRequest) {
       body: new URLSearchParams({
         grant_type: 'authorization_code',
         code: code,
-        redirect_uri: `${process.env.NEXT_PUBLIC_APP_URL || ''}/api/auth/callback/line`,
+        redirect_uri: `${baseUrl}/api/auth/callback/line`,
         client_id: settings.loginChannelId,
         client_secret: settings.loginChannelSecret,
       }),
@@ -46,7 +54,7 @@ export async function GET(request: NextRequest) {
     
     if (!tokenResponse.ok) {
       console.error('Token exchange failed:', await tokenResponse.text());
-      return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL || ''}/test-line-login?error=token_exchange_failed`);
+      return NextResponse.redirect(`${baseUrl}/test-line-login?error=token_exchange_failed`);
     }
     
     const tokenData = await tokenResponse.json();
@@ -62,7 +70,7 @@ export async function GET(request: NextRequest) {
     
     if (!profileResponse.ok) {
       console.error('Profile fetch failed:', await profileResponse.text());
-      return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL || ''}/test-line-login?error=profile_fetch_failed`);
+      return NextResponse.redirect(`${baseUrl}/test-line-login?error=profile_fetch_failed`);
     }
     
     const profile = await profileResponse.json();
@@ -75,11 +83,15 @@ export async function GET(request: NextRequest) {
     
     // For now, redirect back with success
     return NextResponse.redirect(
-      `${process.env.NEXT_PUBLIC_APP_URL || ''}/test-line-login?success=true&userId=${profile.userId}`
+      `${baseUrl}/test-line-login?success=true&userId=${profile.userId}`
     );
     
   } catch (error) {
     console.error('LINE callback error:', error);
-    return NextResponse.redirect(`${process.env.NEXT_PUBLIC_APP_URL || ''}/test-line-login?error=server_error`);
+    // Get base URL for error redirect
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 
+                    (request.headers.get('x-forwarded-proto') || 'https') + '://' + 
+                    request.headers.get('host');
+    return NextResponse.redirect(`${baseUrl}/test-line-login?error=server_error`);
   }
 }

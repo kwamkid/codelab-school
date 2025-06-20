@@ -6,6 +6,9 @@ import { getLineSettings } from '@/lib/services/line-settings';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 
+// Force dynamic rendering
+export const dynamic = 'force-dynamic';
+
 // Simple in-memory storage for webhook logs (for development)
 const webhookLogs: any[] = [];
 const MAX_LOGS = 20;
