@@ -13,7 +13,7 @@ import {
   setDoc
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
-import { Enrollment } from '@/types/models';
+import { Enrollment, Class } from '@/types/models';  // <-- เพิ่ม Class ที่นี่
 import { getClass } from './classes';
 
 const COLLECTION_NAME = 'enrollments';
@@ -432,8 +432,8 @@ export async function getAvailableClassesForTransfer(
   currentClassId: string,
   studentAge: number
 ): Promise<{
-  eligibleClasses: import('./classes').Class[];
-  allClasses: import('./classes').Class[];
+  eligibleClasses: Class[];
+  allClasses: Class[];
 }> {
   try {
     // Import required functions
@@ -470,7 +470,7 @@ export async function getAvailableClassesForTransfer(
     });
     
     // Add subject info to classes for display
-    const enrichClasses = (classes: import('./classes').Class[]) => 
+    const enrichClasses = (classes: Class[]) => 
       classes.map(cls => ({
         ...cls,
         subject: subjectMap.get(cls.subjectId)
