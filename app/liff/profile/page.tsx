@@ -10,10 +10,10 @@ import { useLiff } from '@/components/liff/liff-provider'
 import { getParentByLineId, getStudentsByParent } from '@/lib/services/parents'
 import { getBranch } from '@/lib/services/branches'
 import { toast } from 'sonner'
-// Import types จาก models.ts
 import type { Parent, Student, Branch } from '@/types/models'
+import AuthWrapper from '@/components/liff/auth-wrapper'
 
-export default function ProfilePage() {
+function ProfileContent() {
   const router = useRouter()
   const { liff, profile, isLoggedIn } = useLiff()
   const [parentData, setParentData] = useState<Parent | null>(null)
@@ -121,23 +121,6 @@ export default function ProfilePage() {
     ].filter(Boolean)
     
     return parts.join(' ') || 'ไม่ได้ระบุ'
-  }
-
-  if (!isLoggedIn) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <Card className="w-full max-w-md">
-          <CardContent className="pt-6">
-            <div className="text-center">
-              <p className="mb-4">กรุณาเข้าสู่ระบบผ่าน LINE</p>
-              <Button onClick={() => liff?.login()}>
-                เข้าสู่ระบบ
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    )
   }
 
   return (
@@ -358,4 +341,12 @@ export default function ProfilePage() {
       </div>
     </div>
   )
+}
+
+export default function ProfilePage() {
+  return (
+    <AuthWrapper>
+      <ProfileContent />
+    </AuthWrapper>
+  );
 }

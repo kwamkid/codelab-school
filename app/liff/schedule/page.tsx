@@ -13,9 +13,9 @@ import { DatesSetArg } from '@fullcalendar/core'
 import ScheduleCalendar, { ScheduleEvent } from '@/components/liff/schedule-calendar'
 import { Badge } from '@/components/ui/badge'
 import TechLoadingAnimation from '@/components/liff/tech-loading-animation'
+import AuthWrapper from '@/components/liff/auth-wrapper'
 
-
-export default function SchedulePage() {
+function ScheduleContent() {
   const router = useRouter()
   const { profile } = useLiff()
   const [loading, setLoading] = useState(true)
@@ -116,8 +116,8 @@ export default function SchedulePage() {
   }, [students, loadOverallStats])
 
   if (loading && !dataLoaded) {
-  return <TechLoadingAnimation />
-}
+    return <TechLoadingAnimation />
+  }
 
   // Get stats for selected student
   const selectedStudentStats = selectedStudentId && overallStats[selectedStudentId]
@@ -297,7 +297,6 @@ export default function SchedulePage() {
           </CardHeader>
           <CardContent className="relative">
             {loading && <TechLoadingAnimation />}
-
             
             {students.length === 0 && !loading ? (
               <div className="text-center py-8">
@@ -321,4 +320,12 @@ export default function SchedulePage() {
       </div>
     </div>
   )
+}
+
+export default function SchedulePage() {
+  return (
+    <AuthWrapper>
+      <ScheduleContent />
+    </AuthWrapper>
+  );
 }

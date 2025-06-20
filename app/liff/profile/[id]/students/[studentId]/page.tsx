@@ -17,6 +17,7 @@ import { z } from 'zod'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import TechLoadingAnimation from '@/components/liff/tech-loading-animation'
+import AuthWrapper from '@/components/liff/auth-wrapper'
 
 // Form schema
 const formSchema = z.object({
@@ -35,7 +36,7 @@ const formSchema = z.object({
 
 type FormData = z.infer<typeof formSchema>
 
-export default function EditStudentPage() {
+function EditStudentContent() {
   const router = useRouter()
   const params = useParams()
   const parentId = params.id as string
@@ -144,7 +145,7 @@ export default function EditStudentPage() {
   const minDateStr = minDate.toISOString().split('T')[0]
 
   if (loading) {
-      return <TechLoadingAnimation />
+    return <TechLoadingAnimation />
   }
 
   return (
@@ -365,4 +366,12 @@ export default function EditStudentPage() {
       </form>
     </div>
   )
+}
+
+export default function EditStudentPage() {
+  return (
+    <AuthWrapper>
+      <EditStudentContent />
+    </AuthWrapper>
+  );
 }

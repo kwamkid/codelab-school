@@ -16,7 +16,7 @@ import { z } from 'zod'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import TechLoadingAnimation from '@/components/liff/tech-loading-animation'
-
+import AuthWrapper from '@/components/liff/auth-wrapper'
 
 // Thai provinces data
 const provinces = [
@@ -57,7 +57,7 @@ const formSchema = z.object({
 
 type FormData = z.infer<typeof formSchema>
 
-export default function EditParentProfilePage() {
+function EditParentProfileContent() {
   const router = useRouter()
   const params = useParams()
   const parentId = params.id as string
@@ -153,8 +153,7 @@ export default function EditParentProfilePage() {
   }
 
   if (loading) {
-      return <TechLoadingAnimation />
-
+    return <TechLoadingAnimation />
   }
 
   return (
@@ -391,4 +390,12 @@ export default function EditParentProfilePage() {
       </form>
     </div>
   )
+}
+
+export default function EditParentProfilePage() {
+  return (
+    <AuthWrapper>
+      <EditParentProfileContent />
+    </AuthWrapper>
+  );
 }

@@ -31,7 +31,7 @@ import { toast } from 'sonner'
 import { format } from 'date-fns'
 import { th } from 'date-fns/locale'
 import TechLoadingAnimation from '@/components/liff/tech-loading-animation'
-
+import AuthWrapper from '@/components/liff/auth-wrapper'
 
 interface MakeupData {
   makeup: any
@@ -42,7 +42,7 @@ interface MakeupData {
   branch?: any
 }
 
-export default function MakeupPage() {
+function MakeupContent() {
   const router = useRouter()
   const { profile } = useLiff()
   const [students, setStudents] = useState<any[]>([])
@@ -194,7 +194,6 @@ export default function MakeupPage() {
       <div className="p-4 space-y-4">
         {loading ? (
            <TechLoadingAnimation />
-
         ) : students.length === 0 ? (
           <Card>
             <CardContent className="pt-6">
@@ -352,4 +351,12 @@ export default function MakeupPage() {
       </div>
     </div>
   )
+}
+
+export default function MakeupPage() {
+  return (
+    <AuthWrapper>
+      <MakeupContent />
+    </AuthWrapper>
+  );
 }

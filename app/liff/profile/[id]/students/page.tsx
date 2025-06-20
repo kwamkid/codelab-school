@@ -9,8 +9,9 @@ import { ChevronLeft, Users, Plus, ChevronRight, User, Calendar, School } from '
 import { getStudentsByParent } from '@/lib/services/parents'
 import { toast } from 'sonner'
 import type { Student } from '@/types/models'
+import AuthWrapper from '@/components/liff/auth-wrapper'
 
-export default function StudentsListPage() {
+function StudentsListContent() {
   const router = useRouter()
   const params = useParams()
   const parentId = params.id as string
@@ -205,4 +206,12 @@ export default function StudentsListPage() {
       </div>
     </div>
   )
+}
+
+export default function StudentsListPage() {
+  return (
+    <AuthWrapper>
+      <StudentsListContent />
+    </AuthWrapper>
+  );
 }

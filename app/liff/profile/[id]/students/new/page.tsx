@@ -15,6 +15,7 @@ import { toast } from 'sonner'
 import { z } from 'zod'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import AuthWrapper from '@/components/liff/auth-wrapper'
 
 // Form schema
 const formSchema = z.object({
@@ -32,7 +33,7 @@ const formSchema = z.object({
 
 type FormData = z.infer<typeof formSchema>
 
-export default function AddStudentPage() {
+function AddStudentContent() {
   const router = useRouter()
   const params = useParams()
   const parentId = params.id as string
@@ -288,4 +289,12 @@ export default function AddStudentPage() {
       </form>
     </div>
   )
+}
+
+export default function AddStudentPage() {
+  return (
+    <AuthWrapper>
+      <AddStudentContent />
+    </AuthWrapper>
+  );
 }
