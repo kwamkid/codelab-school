@@ -75,8 +75,46 @@
   background-color: #dc2626;
 }
 
-/* FullCalendar styles */
-@import "@fullcalendar/common/main.css";
-@import "@fullcalendar/daygrid/main.css";
-@import "@fullcalendar/timegrid/main.css";
-@import "@fullcalendar/list/main.css";
+/* FullCalendar v6 styles */
+/* Base styles for FullCalendar - เพียงพอสำหรับการใช้งานพื้นฐาน */
+.fc {
+  @apply w-full;
+}
+
+.fc .fc-toolbar {
+  @apply mb-4 flex flex-wrap items-center justify-between gap-2;
+}
+
+.fc .fc-toolbar-title {
+  @apply text-lg font-semibold;
+}
+
+.fc-button {
+  @apply rounded bg-primary px-3 py-1 text-primary-foreground hover:bg-primary/90;
+}
+
+.fc-button:disabled {
+  @apply opacity-50;
+}
+
+.fc-button-active {
+  @apply bg-primary/80;
+}
+
+.fc-daygrid-day-number {
+  @apply text-sm;
+}
+
+.fc-daygrid-day.fc-day-today {
+  @apply bg-accent/10;
+}
+
+.fc-event {
+  @apply cursor-pointer rounded px-1 text-xs;
+}
+
+.fc-timegrid-event {
+  @apply overflow-hidden rounded px-1;
+}
+
+/* Remove import statements that were causing errors */
