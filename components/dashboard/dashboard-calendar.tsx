@@ -20,6 +20,9 @@ interface DashboardCalendarProps {
   setShowHalfHour: (value: boolean) => void;
 }
 
+// Create a WeakMap to store tooltip references
+const tooltipMap = new WeakMap<HTMLElement, HTMLDivElement>();
+
 export default function DashboardCalendar({ 
   events, 
   onDatesSet,
@@ -358,14 +361,15 @@ export default function DashboardCalendar({
             tooltip.style.left = rect.left + (rect.width / 2) - (tooltipRect.width / 2) + 'px';
             tooltip.style.top = rect.top - tooltipRect.height - 5 + 'px';
             
-            // Store tooltip reference
-            info.el._tooltip = tooltip;
+            // Store tooltip reference using WeakMap
+            tooltipMap.set(info.el, tooltip);
           });
           
           info.el.addEventListener('mouseleave', function(e) {
-            if (info.el._tooltip) {
-              info.el._tooltip.remove();
-              delete info.el._tooltip;
+            const tooltip = tooltipMap.get(info.el);
+            if (tooltip) {
+              tooltip.remove();
+              tooltipMap.delete(info.el);
             }
           });
         }}
