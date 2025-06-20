@@ -33,6 +33,7 @@ import { getSubjects } from '@/lib/services/subjects';
 import { getBranches } from '@/lib/services/branches';
 import { getRoomsByBranch } from '@/lib/services/rooms';
 import { createTrialSession } from '@/lib/services/trial-bookings';
+import { AvailabilityIssue } from '@/lib/utils/availability';
 
 interface TrialSessionDialogProps {
   isOpen: boolean;
@@ -71,10 +72,7 @@ export default function TrialSessionDialog({
   const [branches, setBranches] = useState<Branch[]>(initialBranches);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [checkingAvailability, setCheckingAvailability] = useState(false);
-  const [availabilityIssues, setAvailabilityIssues] = useState<Array<{
-    type: 'holiday' | 'room_conflict' | 'teacher_conflict';
-    message: string;
-  }>>([]);
+  const [availabilityIssues, setAvailabilityIssues] = useState<AvailabilityIssue[]>([]);
   
   // Form data
   const [formData, setFormData] = useState({
@@ -468,18 +466,7 @@ export default function TrialSessionDialog({
                     {availabilityIssues.map((issue, index) => (
                       <div key={index} className="flex items-start gap-2 text-sm">
                         <XCircle className="h-3 w-3 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <span>{issue.message}</span>
-                          {issue.details && (
-                            <div className="text-xs text-gray-600 mt-0.5">
-                              {issue.details.conflictType === 'class' && 'คลาส: '}
-                              {issue.details.conflictType === 'makeup' && 'Makeup: '}
-                              {issue.details.conflictType === 'trial' && 'ทดลอง: '}
-                              {issue.details.conflictName} 
-                              {issue.details.conflictTime && ` (${issue.details.conflictTime})`}
-                            </div>
-                          )}
-                        </div>
+                        <span>{issue.message}</span>
                       </div>
                     ))}
                   </div>

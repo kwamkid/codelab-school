@@ -137,40 +137,38 @@ export default function RescheduleTrialDialog({
   };
 
   const checkAvailability = async () => {
-    if (!selectedDate || !startTime || !endTime || !selectedBranch || !selectedRoom) {
-      return;
+  if (!selectedDate || !startTime || !endTime || !selectedBranch || !selectedRoom) {
+    return;
+  }
+
+  setCheckingAvailability(true);
+  setAvailabilityError('');
+
+  try {
+    // ใช้ centralized availability checker
+    const { checkAvailability } = await import('@/lib/utils/availability');
+    
+    const result = await checkAvailability({
+      date: selectedDate,
+      startTime,
+      endTime,
+      branchId: selectedBranch,
+      roomId: selectedRoom,
+      teacherId: selectedTeacher,
+      excludeId: session.id,
+      excludeType: 'trial'
+    });
+
+    if (!result.available && result.reasons.length > 0) {
+      const conflictMessages = result.reasons.map(reason => reason.message);
+      setAvailabilityError(conflictMessages.join(', '));
     }
-
-    setCheckingAvailability(true);
-    setAvailabilityError('');
-
-    try {
-      const result = await checkTrialRoomAvailability(
-        selectedBranch,
-        selectedRoom,
-        selectedDate,
-        startTime,
-        endTime,
-        session.id // Exclude current session from check
-      );
-
-      if (!result.available && result.conflicts) {
-        const conflictMessages = result.conflicts.map(c => {
-          let typeLabel = '';
-          if (c.type === 'class') typeLabel = 'คลาส';
-          else if (c.type === 'makeup') typeLabel = 'Makeup';
-          else typeLabel = 'ทดลองเรียน';
-          
-          return `${typeLabel} ${c.name} (${c.startTime}-${c.endTime})`;
-        });
-        setAvailabilityError(`ห้องไม่ว่าง: ${conflictMessages.join(', ')}`);
-      }
-    } catch (error) {
-      console.error('Error checking availability:', error);
-    } finally {
-      setCheckingAvailability(false);
-    }
-  };
+  } catch (error) {
+    console.error('Error checking availability:', error);
+  } finally {
+    setCheckingAvailability(false);
+  }
+};
 
   // Filter teachers based on selected subject and branch
   const getAvailableTeachers = () => {
