@@ -18,7 +18,6 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import TechLoadingAnimation from '@/components/liff/tech-loading-animation'
 
-
 // Form schema
 const formSchema = z.object({
   name: z.string().min(1, 'กรุณาระบุชื่อ-นามสกุล'),
@@ -74,15 +73,20 @@ export default function EditStudentPage() {
       setValue('name', student.name)
       setValue('nickname', student.nickname || '')
       
-      // Format birthdate
+      // Format birthdate - handle different types safely
       let birthdateStr = ''
-      if (student.birthdate instanceof Date) {
-        birthdateStr = student.birthdate.toISOString().split('T')[0]
-      } else if (student.birthdate?.toDate) {
-        birthdateStr = student.birthdate.toDate().toISOString().split('T')[0]
-      }
-      setValue('birthdate', birthdateStr)
+      const birthdate = student.birthdate as any // Type assertion to handle multiple formats
       
+      if (birthdate instanceof Date) {
+        birthdateStr = birthdate.toISOString().split('T')[0]
+      } else if (birthdate && typeof birthdate.toDate === 'function') {
+        birthdateStr = birthdate.toDate().toISOString().split('T')[0]
+      } else if (birthdate && birthdate.seconds) {
+        // Handle Firestore timestamp
+        birthdateStr = new Date(birthdate.seconds * 1000).toISOString().split('T')[0]
+      }
+      
+      setValue('birthdate', birthdateStr)
       setValue('gender', student.gender)
       setValue('gradeLevel', student.gradeLevel)
       setValue('schoolName', student.schoolName || '')
@@ -259,7 +263,7 @@ export default function EditStudentPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-             <div>
+            <div>
               <Label htmlFor="schoolName">โรงเรียน</Label>
               <Input
                 id="schoolName"
@@ -275,11 +279,9 @@ export default function EditStudentPage() {
                 placeholder="เลือกหรือพิมพ์ระดับชั้น..."
               />
               <p className="text-xs text-gray-500 mt-1">
-                เริ่มพิมพ์เพื่อค้นหา เช่น "ป", "ประถม", "Grade", "Year"
+                {`เริ่มพิมพ์เพื่อค้นหา เช่น "ป", "ประถม", "Grade", "Year"`}
               </p>
             </div>
-
-           
           </CardContent>
         </Card>
 
