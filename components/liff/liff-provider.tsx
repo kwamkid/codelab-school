@@ -1,12 +1,20 @@
 'use client'
 
 import { createContext, useContext, useEffect, useState, useRef } from 'react'
-import type { Liff, Profile as LiffProfile } from '@line/liff'
+import type { Liff } from '@line/liff'
 import { initializeLiff } from '@/lib/line/liff-client'
 import { LiffLoading } from '@/components/liff/loading'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { AlertCircle } from 'lucide-react'
+
+// Define Profile type based on LIFF documentation
+interface LiffProfile {
+  userId: string
+  displayName: string
+  pictureUrl?: string
+  statusMessage?: string
+}
 
 interface LiffContextType {
   liff: Liff | null
@@ -78,7 +86,7 @@ export function LiffProvider({ children, requireLogin = true }: LiffProviderProp
             console.log('[LiffProvider] Getting profile...')
             const userProfile = await liffInstance.getProfile()
             console.log('[LiffProvider] Got profile:', userProfile.displayName)
-            setProfile(userProfile)
+            setProfile(userProfile as LiffProfile)
             
             // Update parent last login if exists
             try {
