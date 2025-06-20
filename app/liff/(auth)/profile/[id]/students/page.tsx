@@ -8,17 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { ChevronLeft, Users, Plus, ChevronRight, User, Calendar, School } from 'lucide-react'
 import { getStudentsByParent } from '@/lib/services/parents'
 import { toast } from 'sonner'
-
-interface Student {
-  id: string
-  name: string
-  nickname?: string
-  birthdate: any
-  gradeLevel: string
-  profileImage?: string
-  schoolName?: string
-  isActive: boolean
-}
+import type { Student } from '@/types/models'
 
 export default function StudentsListPage() {
   const router = useRouter()
@@ -149,7 +139,7 @@ export default function StudentsListPage() {
                           <div className="flex items-center gap-3 text-sm text-muted-foreground">
                             <span className="flex items-center gap-1">
                               <User className="h-3 w-3" />
-                              {student.gradeLevel}
+                              {student.gradeLevel || 'ไม่ระบุชั้นเรียน'}
                             </span>
                             <span className="flex items-center gap-1">
                               <Calendar className="h-3 w-3" />
@@ -198,7 +188,7 @@ export default function StudentsListPage() {
                               </span>
                             </p>
                             <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                              <span>{student.gradeLevel}</span>
+                              <span>{student.gradeLevel || 'ไม่ระบุชั้นเรียน'}</span>
                               <span>อายุ {calculateAge(student.birthdate)} ปี</span>
                             </div>
                           </div>
