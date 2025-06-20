@@ -113,6 +113,7 @@ export default function ConvertToStudentForm({
   const [classes, setClasses] = useState<Class[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
+  const [enrolledClasses, setEnrolledClasses] = useState<string[]>([]);
   
   // Filter states
   const [classSearchTerm, setClassSearchTerm] = useState('');
@@ -234,11 +235,30 @@ export default function ConvertToStudentForm({
           studentGradeLevel: studentData.gradeLevel || ''
         }));
       }
+      
+      // Check enrolled classes if using existing student
+      if (formData.useExistingStudent && formData.selectedExistingStudentId) {
+        await checkEnrolledClasses(formData.selectedExistingStudentId);
+      }
     } catch (error) {
       console.error('Error loading data:', error);
       toast.error('ไม่สามารถโหลดข้อมูลคลาสได้');
     } finally {
       setLoadingClasses(false);
+    }
+  };
+  
+  // Function to check which classes the student is already enrolled in
+  const checkEnrolledClasses = async (studentId: string) => {
+    try {
+      const { getEnrollmentsByStudent } = await import('@/lib/services/enrollments');
+      const enrollments = await getEnrollmentsByStudent(studentId);
+      const enrolledClassIds = enrollments
+        .filter(e => e.status === 'active' || e.status === 'completed')
+        .map(e => e.classId);
+      setEnrolledClasses(enrolledClassIds);
+    } catch (error) {
+      console.error('Error checking enrolled classes:', error);
     }
   };
 
@@ -1037,16 +1057,22 @@ export default function ConvertToStudentForm({
                     const availableSeats = cls.maxStudents - cls.enrolledCount;
                     const classSubject = subjects.find(s => s.id === cls.subjectId);
                     const isTrialSubject = cls.subjectId === session.subjectId;
+                    const isEnrolled = enrolledClasses.includes(cls.id);
+                    const isDisabled = isEnrolled || availableSeats <= 0;
                     
                     return (
                       <div
                         key={cls.id}
-                        onClick={() => setFormData(prev => ({ ...prev, selectedClass: cls.id }))}
+                        onClick={() => !isDisabled && setFormData(prev => ({ ...prev, selectedClass: cls.id }))}
                         className={`
-                          p-3 sm:p-4 rounded-lg border cursor-pointer transition-all
-                          ${isSelected 
+                          p-3 sm:p-4 rounded-lg border transition-all
+                          ${isDisabled 
+                            ? 'bg-gray-50 border-gray-200 cursor-not-allowed opacity-60' 
+                            : 'cursor-pointer hover:border-gray-300'
+                          }
+                          ${isSelected && !isDisabled
                             ? 'border-red-500 bg-red-50' 
-                            : 'border-gray-200 hover:border-gray-300'
+                            : 'border-gray-200'
                           }
                         `}
                       >
@@ -1071,6 +1097,12 @@ export default function ConvertToStudentForm({
                                   วิชาที่ทดลอง
                                 </Badge>
                               )}
+                              {isEnrolled && (
+                                <Badge className="text-xs bg-green-100 text-green-700 shrink-0">
+                                  <CheckCircle className="h-3 w-3 mr-1" />
+                                  เรียนอยู่แล้ว
+                                </Badge>
+                              )}
                             </div>
                             <p className="text-xs sm:text-sm text-gray-600 mt-1">
                               {cls.code} • {cls.totalSessions} ครั้ง
@@ -1086,14 +1118,14 @@ export default function ConvertToStudentForm({
                           <div className="text-left sm:text-right">
                             <p className="font-medium text-sm sm:text-base">{formatCurrency(cls.pricing.totalPrice)}</p>
                             <Badge 
-                              variant={availableSeats <= 3 ? 'destructive' : 'outline'}
+                              variant={availableSeats <= 0 ? 'destructive' : availableSeats <= 3 ? 'destructive' : 'outline'}
                               className="mt-1 text-xs"
                             >
-                              เหลือ {availableSeats} ที่
+                              {availableSeats <= 0 ? 'เต็ม' : `เหลือ ${availableSeats} ที่`}
                             </Badge>
                           </div>
                         </div>
-                        {isSelected && (
+                        {isSelected && !isDisabled && (
                           <Badge className="mt-3 bg-red-100 text-red-700 text-xs">
                             เลือกแล้ว
                           </Badge>

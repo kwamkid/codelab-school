@@ -24,6 +24,7 @@ import {
   Home,
   CalendarDays,
   TestTube,
+  DoorOpen,
 } from 'lucide-react';
 import Image from 'next/image';
 
@@ -41,6 +42,7 @@ const navigation: NavigationItem[] = [
     icon: Building2,
     children: [
       { name: 'สาขา', href: '/branches', icon: Home },
+      { name: 'ห้องเรียน', href: '/rooms', icon: DoorOpen },
       { name: 'วิชา', href: '/subjects', icon: BookOpen },
       { name: 'ครูผู้สอน', href: '/teachers', icon: UserCheck },
       { name: 'วันหยุด', href: '/holidays', icon: CalendarCheck },

@@ -3,9 +3,10 @@
 import { useEffect, useState } from 'react';
 import { Branch } from '@/types/models';
 import { getBranches } from '@/lib/services/branches';
+import { getRoomsByBranch } from '@/lib/services/rooms';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Plus, Edit, MapPin, Phone, Clock, Users, MoreVertical } from 'lucide-react';
+import { Plus, Edit, MapPin, Phone, Clock, Users, MoreVertical, DoorOpen } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import {
@@ -15,9 +16,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { getDayName } from '@/lib/utils';
+import { Badge } from "@/components/ui/badge";
+
+interface BranchWithRoomCount extends Branch {
+  roomCount: number;
+}
 
 export default function BranchesPage() {
-  const [branches, setBranches] = useState<Branch[]>([]);
+  const [branches, setBranches] = useState<BranchWithRoomCount[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -27,7 +33,20 @@ export default function BranchesPage() {
   const loadBranches = async () => {
     try {
       const data = await getBranches();
-      setBranches(data);
+      
+      // Load room count for each branch
+      const branchesWithRoomCount = await Promise.all(
+        data.map(async (branch) => {
+          const rooms = await getRoomsByBranch(branch.id);
+          const activeRooms = rooms.filter(room => room.isActive);
+          return {
+            ...branch,
+            roomCount: activeRooms.length
+          };
+        })
+      );
+      
+      setBranches(branchesWithRoomCount);
     } catch (error) {
       console.error('Error loading branches:', error);
       toast.error('ไม่สามารถโหลดข้อมูลสาขาได้');
@@ -105,9 +124,9 @@ export default function BranchesPage() {
                         </Link>
                       </DropdownMenuItem>
                       <DropdownMenuItem asChild>
-                        <Link href={`/branches/${branch.id}/rooms`}>
-                          <Users className="h-4 w-4 mr-2" />
-                          จัดการห้องเรียน
+                        <Link href={`/rooms?branch=${branch.id}`}>
+                          <DoorOpen className="h-4 w-4 mr-2" />
+                          ดูห้องเรียน
                         </Link>
                       </DropdownMenuItem>
                     </DropdownMenuContent>
@@ -115,6 +134,33 @@ export default function BranchesPage() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-3">
+                {/* Room Count - แสดงเด่นชัด */}
+                <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+                  <DoorOpen className="h-5 w-5 text-gray-600" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-gray-900">
+                      ห้องเรียน: {branch.roomCount > 0 ? (
+                        <span className="text-green-600">{branch.roomCount} ห้อง</span>
+                      ) : (
+                        <span className="text-red-600">ยังไม่มีห้อง</span>
+                      )}
+                    </p>
+                    {branch.roomCount === 0 && (
+                      <Link 
+                        href={`/rooms?branch=${branch.id}`}
+                        className="text-xs text-red-500 hover:text-red-600 underline"
+                      >
+                        คลิกเพื่อเพิ่มห้อง
+                      </Link>
+                    )}
+                  </div>
+                  {branch.roomCount === 0 && (
+                    <Badge variant="destructive" className="text-xs">
+                      ต้องสร้าง
+                    </Badge>
+                  )}
+                </div>
+                
                 <div className="flex items-start gap-2">
                   <MapPin className="h-4 w-4 text-gray-400 mt-1 flex-shrink-0" />
                   <p className="text-sm text-gray-600">{branch.address}</p>

@@ -562,8 +562,8 @@ export async function convertTrialToEnrollment(
     }
     
     // Import required services
-    const { createParent, createStudent, updateParent } = await import('./parents');
-    const { createEnrollment } = await import('./enrollments');
+    const { createParent, createStudent } = await import('./parents');
+    const { createEnrollment, checkDuplicateEnrollment, checkAvailableSeats } = await import('./enrollments');
     const { getClass } = await import('./classes');
     
     let parentId: string;
@@ -614,6 +614,18 @@ export async function convertTrialToEnrollment(
         emergencyPhone: conversionData.emergencyContactPhone,
         isActive: true,
       });
+    }
+    
+    // Check for duplicate enrollment
+    const isDuplicate = await checkDuplicateEnrollment(studentId, conversionData.classId);
+    if (isDuplicate) {
+      throw new Error('นักเรียนได้ลงทะเบียนในคลาสนี้แล้ว');
+    }
+    
+    // Check available seats
+    const seatsInfo = await checkAvailableSeats(conversionData.classId);
+    if (!seatsInfo.available) {
+      throw new Error(`คลาสเต็มแล้ว (${seatsInfo.currentEnrolled}/${seatsInfo.maxStudents})`);
     }
     
     // Get class data for branch ID
