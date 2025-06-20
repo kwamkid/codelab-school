@@ -413,6 +413,7 @@ export async function getAllStudentsWithParents(): Promise<(Student & {
 }
 
 // Get single student with parent info
+// Get single student with parent info
 export async function getStudentWithParent(studentId: string): Promise<(Student & { 
   parentName: string; 
   parentPhone: string;
@@ -429,7 +430,7 @@ export async function getStudentWithParent(studentId: string): Promise<(Student 
       
       if (studentDoc.exists()) {
         const parentData = parentDoc.data() as Parent;
-        const studentData = studentDoc.data() as Student;
+        const studentData = studentDoc.data();
         
         return {
           id: studentDoc.id,
@@ -438,7 +439,13 @@ export async function getStudentWithParent(studentId: string): Promise<(Student 
           parentName: parentData.displayName,
           parentPhone: parentData.phone,
           lineDisplayName: parentData.displayName,
-          birthdate: studentData.birthdate?.toDate() || new Date(),
+          birthdate: studentData.birthdate?.toDate ? studentData.birthdate.toDate() : 
+                     studentData.birthdate instanceof Date ? studentData.birthdate :
+                     new Date(studentData.birthdate),
+        } as Student & { 
+          parentName: string; 
+          parentPhone: string;
+          lineDisplayName?: string;
         };
       }
     }
