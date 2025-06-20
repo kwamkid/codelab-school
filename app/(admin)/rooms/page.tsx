@@ -109,16 +109,17 @@ const [selectedRoom, setSelectedRoom] = useState<RoomWithBranch | null>(null);
     setFilteredRooms(filtered);
   };
 
-  const handleAddRoom = () => {
-    if (branches.length === 0) {
-      toast.error('กรุณาสร้างสาขาก่อน');
-      return;
-    }
-    setSelectedRoom(null);
-    // If filtered by branch, use that branch as default
-    setSelectedBranchId(filterBranch !== 'all' ? filterBranch : branches[0].id);
-    setDialogOpen(true);
-  };
+const handleAddRoom = () => {
+  if (branches.length === 0) {
+    toast.error('กรุณาสร้างสาขาก่อน');
+    return;
+  }
+  setSelectedRoom(null);
+  // ตั้งค่า branch ID ให้ถูกต้อง
+  const defaultBranchId = filterBranch !== 'all' ? filterBranch : branches[0].id;
+  setSelectedBranchId(defaultBranchId);
+  setDialogOpen(true);
+};
 
   const handleEditRoom = (room: RoomWithBranch) => {
     // แปลง RoomWithBranch เป็น Room โดยตัดฟิลด์ที่เพิ่มมาออก

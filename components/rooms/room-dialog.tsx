@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Room } from '@/types/models';
+import { Room, Branch } from '@/types/models';
 import { createRoom, updateRoom, checkRoomNameExists } from '@/lib/services/rooms';
 import {
   Dialog,
@@ -15,8 +15,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Save, MapPin } from 'lucide-react';
 
 interface RoomDialogProps {
   open: boolean;
@@ -24,6 +25,8 @@ interface RoomDialogProps {
   branchId: string;
   room?: Room | null;
   onSaved: () => void;
+  branches: Branch[];
+  onBranchChange: (branchId: string) => void;
 }
 
 export default function RoomDialog({
@@ -31,40 +34,61 @@ export default function RoomDialog({
   onOpenChange,
   branchId,
   room,
-  onSaved
+  onSaved,
+  branches,
+  onBranchChange
 }: RoomDialogProps) {
   const [loading, setLoading] = useState(false);
+  const [currentBranchId, setCurrentBranchId] = useState(branchId || '');
   const [formData, setFormData] = useState({
     name: '',
-    capacity: 10,
+    capacity: 20,
     floor: '',
-    hasProjector: true,
+    hasProjector: false,
     hasWhiteboard: true,
     isActive: true,
   });
 
+  // Update when branchId prop changes
   useEffect(() => {
-    if (room) {
-      setFormData({
-        name: room.name,
-        capacity: room.capacity,
-        floor: room.floor || '',
-        hasProjector: room.hasProjector,
-        hasWhiteboard: room.hasWhiteboard,
-        isActive: room.isActive,
-      });
-    } else {
-      // Reset form for new room
-      setFormData({
-        name: '',
-        capacity: 10,
-        floor: '',
-        hasProjector: true,
-        hasWhiteboard: true,
-        isActive: true,
-      });
+    if (branchId && !room) {
+      setCurrentBranchId(branchId);
     }
-  }, [room]);
+  }, [branchId, room]);
+
+  // Reset form when dialog opens/closes or room changes
+  useEffect(() => {
+    if (open) {
+      if (room) {
+        // Edit mode
+        setFormData({
+          name: room.name,
+          capacity: room.capacity,
+          floor: room.floor || '',
+          hasProjector: room.hasProjector,
+          hasWhiteboard: room.hasWhiteboard,
+          isActive: room.isActive,
+        });
+        setCurrentBranchId(room.branchId);
+      } else {
+        // Create mode - reset form
+        setFormData({
+          name: '',
+          capacity: 20,
+          floor: '',
+          hasProjector: false,
+          hasWhiteboard: true,
+          isActive: true,
+        });
+        // Use branchId from props or first branch
+        if (branchId) {
+          setCurrentBranchId(branchId);
+        } else if (branches.length > 0 && !currentBranchId) {
+          setCurrentBranchId(branches[0].id);
+        }
+      }
+    }
+  }, [open, room, branchId, branches]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -79,32 +103,37 @@ export default function RoomDialog({
       return;
     }
 
+    if (!currentBranchId) {
+      toast.error('กรุณาเลือกสาขา');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      // Check if room name already exists
+      // Check if room name exists
       const nameExists = await checkRoomNameExists(
-        branchId,
+        currentBranchId,
         formData.name.trim(),
         room?.id
       );
 
       if (nameExists) {
-        toast.error('ชื่อห้องนี้มีอยู่แล้ว');
+        toast.error('ชื่อห้องนี้มีอยู่แล้วในสาขานี้');
         setLoading(false);
         return;
       }
 
       if (room) {
         // Update existing room
-        await updateRoom(branchId, room.id, {
+        await updateRoom(currentBranchId, room.id, {
           ...formData,
           name: formData.name.trim(),
         });
         toast.success('อัปเดตข้อมูลห้องเรียนเรียบร้อยแล้ว');
       } else {
         // Create new room
-        await createRoom(branchId, {
+        await createRoom(currentBranchId, {
           ...formData,
           name: formData.name.trim(),
         });
@@ -112,6 +141,7 @@ export default function RoomDialog({
       }
 
       onSaved();
+      onOpenChange(false);
     } catch (error) {
       console.error('Error saving room:', error);
       toast.error(room ? 'ไม่สามารถอัปเดตข้อมูลได้' : 'ไม่สามารถเพิ่มห้องเรียนได้');
@@ -120,20 +150,66 @@ export default function RoomDialog({
     }
   };
 
+  const handleBranchChange = (value: string) => {
+    setCurrentBranchId(value);
+    onBranchChange(value);
+  };
+
+  // Find selected branch info
+  const selectedBranch = branches.find(b => b.id === currentBranchId);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
-            <DialogTitle>
-              {room ? 'แก้ไขข้อมูลห้องเรียน' : 'เพิ่มห้องเรียนใหม่'}
-            </DialogTitle>
+            <DialogTitle>{room ? 'แก้ไขข้อมูลห้องเรียน' : 'เพิ่มห้องเรียนใหม่'}</DialogTitle>
             <DialogDescription>
-              กรอกข้อมูลห้องเรียนให้ครบถ้วน
+              {room ? 'แก้ไขข้อมูลห้องเรียน' : 'กรอกข้อมูลเพื่อเพิ่มห้องเรียนใหม่'}
             </DialogDescription>
           </DialogHeader>
 
           <div className="grid gap-4 py-4">
+            {/* Branch Selection */}
+            <div className="grid gap-2">
+              <Label htmlFor="branch" className="flex items-center gap-2">
+                <MapPin className="h-4 w-4" />
+                สาขา *
+              </Label>
+              {room ? (
+                // Show branch name when editing (read-only)
+                <div className="px-3 py-2 bg-gray-100 rounded-md text-sm">
+                  {selectedBranch?.name || 'Loading...'} {selectedBranch?.code ? `(${selectedBranch.code})` : ''}
+                </div>
+              ) : (
+                // Show dropdown when creating new room
+                <>
+                  {branches.length > 0 ? (
+                    <Select 
+                      value={currentBranchId} 
+                      onValueChange={handleBranchChange}
+                      required
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="เลือกสาขาที่จะเพิ่มห้อง" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {branches.map((branch) => (
+                          <SelectItem key={branch.id} value={branch.id}>
+                            {branch.name} ({branch.code})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <div className="px-3 py-2 bg-yellow-50 text-yellow-800 rounded-md text-sm">
+                      ไม่พบข้อมูลสาขา กรุณาสร้างสาขาก่อน
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
             <div className="grid gap-2">
               <Label htmlFor="name">ชื่อห้อง *</Label>
               <Input
@@ -231,7 +307,7 @@ export default function RoomDialog({
             <Button
               type="submit"
               className="bg-red-500 hover:bg-red-600"
-              disabled={loading}
+              disabled={loading || (!room && !currentBranchId)}
             >
               {loading ? (
                 <>
@@ -239,7 +315,10 @@ export default function RoomDialog({
                   กำลังบันทึก...
                 </>
               ) : (
-                room ? 'บันทึกการแก้ไข' : 'เพิ่มห้องเรียน'
+                <>
+                  <Save className="h-4 w-4 mr-2" />
+                  {room ? 'บันทึกการแก้ไข' : 'เพิ่มห้องเรียน'}
+                </>
               )}
             </Button>
           </DialogFooter>
