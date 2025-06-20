@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { MakeupClass, Student, Class, Branch, ClassSchedule } from '@/types/models';
+import { MakeupClass, Student, Class, Branch, ClassSchedule, Subject } from '@/types/models';
 import { getMakeupClasses, deleteMakeupClass } from '@/lib/services/makeup';
 import { getClasses, getClassSchedule } from '@/lib/services/classes';
 import { getActiveBranches } from '@/lib/services/branches';
 import { getAllStudentsWithParents } from '@/lib/services/parents';
+import { getSubjects } from '@/lib/services/subjects';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -97,6 +98,7 @@ export default function MakeupPage() {
   const [classes, setClasses] = useState<Class[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [students, setStudents] = useState<StudentWithParent[]>([]);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
   const [loading, setLoading] = useState(true);
   const [originalSchedules, setOriginalSchedules] = useState<Record<string, ClassSchedule | null>>({});
   
@@ -123,20 +125,23 @@ export default function MakeupPage() {
   const loadData = async () => {
     console.log('=== Starting loadData ===');
     try {
-      const [makeupData, classesData, branchesData, studentsData] = await Promise.all([
+      const [makeupData, classesData, branchesData, studentsData, subjectsData] = await Promise.all([
         getMakeupClasses(),
         getClasses(),
         getActiveBranches(),
-        getAllStudentsWithParents()
+        getAllStudentsWithParents(),
+        getSubjects()
       ]);
       
       console.log('Makeup data loaded:', makeupData);
       console.log('Classes data loaded:', classesData);
+      console.log('Subjects data loaded:', subjectsData);
       
       setMakeupClasses(makeupData);
       setClasses(classesData);
       setBranches(branchesData);
       setStudents(studentsData);
+      setSubjects(subjectsData);
       
       // Load original schedules for each makeup
       console.log('=== Loading schedules for makeups ===');
@@ -177,56 +182,55 @@ export default function MakeupPage() {
   };
 
   // เพิ่ม function นี้ใน makeup page เพื่อตรวจสอบ schedules ที่มีอยู่จริง
-
-const debugCheckSchedules = async () => {
-  console.log('=== DEBUG: Checking actual schedules ===');
-  
-  // ดู class ที่มีปัญหา
-  const problemClassIds = ['ti9H088p9LNPPY05xFKy', 'lZlIe1zel3rMrZaKS7ro'];
-  
-  for (const classId of problemClassIds) {
-    console.log(`\nChecking class: ${classId}`);
+  const debugCheckSchedules = async () => {
+    console.log('=== DEBUG: Checking actual schedules ===');
     
-    // หา class info
-    const classInfo = classes.find(c => c.id === classId);
-    console.log('Class info:', classInfo?.name, classInfo?.code);
+    // ดู class ที่มีปัญหา
+    const problemClassIds = ['ti9H088p9LNPPY05xFKy', 'lZlIe1zel3rMrZaKS7ro'];
     
-    // ดึง schedules ทั้งหมดของ class นี้
-    try {
-      const { getClassSchedules } = await import('@/lib/services/classes');
-      const schedules = await getClassSchedules(classId);
-      console.log(`Found ${schedules.length} schedules:`);
+    for (const classId of problemClassIds) {
+      console.log(`\nChecking class: ${classId}`);
       
-      schedules.forEach(schedule => {
-        console.log(`- Schedule ID: ${schedule.id}, Session: ${schedule.sessionNumber}, Date: ${formatDate(schedule.sessionDate)}`);
-      });
+      // หา class info
+      const classInfo = classes.find(c => c.id === classId);
+      console.log('Class info:', classInfo?.name, classInfo?.code);
       
-      // เช็คว่า schedule IDs ที่ makeup อ้างอิง มีอยู่จริงไหม
-      const makeupScheduleIds = [
-        '5JhBQJJwxxOrvaXZ6rxK',
-        'l0daEdaBVb4Nb85OCmRg', 
-        'ZJ9oe25NNKX2wwisrtKx',
-        'arq5aziY9FKtagqFff4T'
-      ];
-      
-      console.log('\nChecking if makeup schedule IDs exist:');
-      makeupScheduleIds.forEach(id => {
-        const exists = schedules.some(s => s.id === id);
-        console.log(`- ${id}: ${exists ? 'EXISTS' : 'NOT FOUND'}`);
-      });
-      
-    } catch (error) {
-      console.error('Error loading schedules:', error);
+      // ดึง schedules ทั้งหมดของ class นี้
+      try {
+        const { getClassSchedules } = await import('@/lib/services/classes');
+        const schedules = await getClassSchedules(classId);
+        console.log(`Found ${schedules.length} schedules:`);
+        
+        schedules.forEach(schedule => {
+          console.log(`- Schedule ID: ${schedule.id}, Session: ${schedule.sessionNumber}, Date: ${formatDate(schedule.sessionDate)}`);
+        });
+        
+        // เช็คว่า schedule IDs ที่ makeup อ้างอิง มีอยู่จริงไหม
+        const makeupScheduleIds = [
+          '5JhBQJJwxxOrvaXZ6rxK',
+          'l0daEdaBVb4Nb85OCmRg', 
+          'ZJ9oe25NNKX2wwisrtKx',
+          'arq5aziY9FKtagqFff4T'
+        ];
+        
+        console.log('\nChecking if makeup schedule IDs exist:');
+        makeupScheduleIds.forEach(id => {
+          const exists = schedules.some(s => s.id === id);
+          console.log(`- ${id}: ${exists ? 'EXISTS' : 'NOT FOUND'}`);
+        });
+        
+      } catch (error) {
+        console.error('Error loading schedules:', error);
+      }
     }
-  }
-};
+  };
 
-// เรียกใช้ใน useEffect
-useEffect(() => {
-  if (classes.length > 0) {
-    debugCheckSchedules();
-  }
-}, [classes]);
+  // เรียกใช้ใน useEffect
+  useEffect(() => {
+    if (classes.length > 0) {
+      debugCheckSchedules();
+    }
+  }, [classes]);
 
   // Helper functions
   const getStudentInfo = (studentId: string) => {
@@ -235,6 +239,11 @@ useEffect(() => {
 
   const getClassInfo = (classId: string) => {
     return classes.find(c => c.id === classId);
+  };
+
+  const getSubjectName = (subjectId: string): string => {
+    const subject = subjects.find(s => s.id === subjectId);
+    return subject?.name || '';
   };
 
   const getBranchName = (branchId: string) => {
@@ -690,13 +699,19 @@ useEffect(() => {
         <ScheduleMakeupDialog
           open={showScheduleDialog}
           onOpenChange={setShowScheduleDialog}
-          makeup={selectedMakeup}
-          student={getStudentInfo(selectedMakeup.studentId)!}
-          classInfo={getClassInfo(selectedMakeup.originalClassId)!}
-          onScheduled={() => {
+          makeupRequest={{
+            ...selectedMakeup,
+            studentName: getStudentInfo(selectedMakeup.studentId)?.name || '',
+            studentNickname: getStudentInfo(selectedMakeup.studentId)?.nickname || '',
+            className: getClassInfo(selectedMakeup.originalClassId)?.name || '',
+            subjectName: (() => {
+              const classInfo = getClassInfo(selectedMakeup.originalClassId);
+              return classInfo ? getSubjectName(classInfo.subjectId) : '';
+            })(),
+          }}
+          onSuccess={() => {
             setShowScheduleDialog(false);
             loadData();
-            toast.success('จัดตาราง Makeup Class เรียบร้อยแล้ว');
           }}
         />
       )}
