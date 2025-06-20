@@ -32,13 +32,15 @@ import {
   Heart,
   CheckCircle,
   Users,
-  UserPlus
+  UserPlus,
+  Search
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { TrialBooking, TrialSession, Class, Subject, Parent, Student } from '@/types/models';
+import { TrialBooking, TrialSession, Class, Subject, Parent, Student, Branch } from '@/types/models';
 import { convertTrialToEnrollment } from '@/lib/services/trial-bookings';
 import { getClasses } from '@/lib/services/classes';
 import { getSubjects } from '@/lib/services/subjects';
+import { getBranches } from '@/lib/services/branches';
 import { getParentByPhone, getStudentsByParent } from '@/lib/services/parents';
 import { formatCurrency, calculateAge } from '@/lib/utils';
 import { GradeLevelCombobox } from '@/components/ui/grade-level-combobox';
@@ -110,6 +112,11 @@ export default function ConvertToStudentForm({
   const [existingStudents, setExistingStudents] = useState<Student[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
+  
+  // Filter states
+  const [classSearchTerm, setClassSearchTerm] = useState('');
+  const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>('all');
   
   // Form state
   const [formData, setFormData] = useState<FormData>({
@@ -200,22 +207,23 @@ export default function ConvertToStudentForm({
   const loadData = async () => {
     try {
       setLoadingClasses(true);
-      const [classesData, subjectsData] = await Promise.all([
+      const [classesData, subjectsData, branchesData] = await Promise.all([
         getClasses(),
-        getSubjects()
+        getSubjects(),
+        getBranches()
       ]);
       
       setSubjects(subjectsData);
+      setBranches(branchesData);
       
-      // Filter classes
-      const eligibleClasses = classesData.filter(cls => 
-        cls.subjectId === session.subjectId &&
+      // แสดงคลาสทั้งหมดของสาขา ไม่จำกัดวิชา
+      const branchClasses = classesData.filter(cls => 
         cls.branchId === session.branchId &&
         (cls.status === 'published' || cls.status === 'started') &&
         cls.enrolledCount < cls.maxStudents
       );
       
-      setClasses(eligibleClasses);
+      setClasses(branchClasses);
       
       // Pre-fill student data if available
       const studentData = booking.students.find(s => s.name === session.studentName);
@@ -232,6 +240,37 @@ export default function ConvertToStudentForm({
     } finally {
       setLoadingClasses(false);
     }
+  };
+
+  // Set default subject filter to trial subject (but still show all classes)
+  useEffect(() => {
+    if (session.subjectId && subjects.length > 0) {
+      const trialSubject = subjects.find(s => s.id === session.subjectId);
+      if (trialSubject) {
+        setSelectedSubjectFilter(session.subjectId);
+      }
+    }
+  }, [session.subjectId, subjects]);
+
+  // Filter classes function
+  const getFilteredClasses = () => {
+    let filtered = [...classes];
+    
+    // Filter by subject
+    if (selectedSubjectFilter !== 'all') {
+      filtered = filtered.filter(cls => cls.subjectId === selectedSubjectFilter);
+    }
+    
+    // Filter by search term
+    if (classSearchTerm.trim()) {
+      const searchLower = classSearchTerm.toLowerCase();
+      filtered = filtered.filter(cls => 
+        cls.name.toLowerCase().includes(searchLower) ||
+        cls.code.toLowerCase().includes(searchLower)
+      );
+    }
+    
+    return filtered;
   };
 
   const calculatePricing = () => {
@@ -406,6 +445,7 @@ export default function ConvertToStudentForm({
   };
 
   const subject = subjects.find(s => s.id === session.subjectId);
+  const currentBranch = branches.find(b => b.id === session.branchId);
 
   if (loadingClasses || checkingPhone) {
     return (
@@ -910,24 +950,93 @@ export default function ConvertToStudentForm({
       {/* Step 3: Class Selection & Pricing */}
       {currentStep === 3 && (
         <div className="space-y-6">
+          {/* Trial Session Info */}
+          <Alert className="border-blue-200 bg-blue-50">
+            <Info className="h-4 w-4 text-blue-600" />
+            <AlertDescription className="text-blue-800">
+              ทดลองเรียนวิชา <strong>{subject?.name}</strong> ที่สาขา <strong>{currentBranch?.name}</strong>
+              <br />
+              <span className="text-sm">คุณสามารถเลือกลงทะเบียนคลาสใดก็ได้ในสาขานี้</span>
+            </AlertDescription>
+          </Alert>
+
           {/* Class Selection */}
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">เลือกคลาสที่จะลงทะเบียน</CardTitle>
+              <CardDescription>
+                แสดงคลาสทั้งหมดในสาขา {currentBranch?.name} ({classes.length} คลาส)
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {classes.length === 0 ? (
+              {/* Filters */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div className="space-y-2">
+                  <Label>ค้นหาคลาส</Label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input
+                      placeholder="ค้นหาชื่อคลาส หรือรหัส..."
+                      value={classSearchTerm}
+                      onChange={(e) => setClassSearchTerm(e.target.value)}
+                      className="pl-10"
+                    />
+                  </div>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label>กรองตามวิชา</Label>
+                  <Select
+                    value={selectedSubjectFilter}
+                    onValueChange={setSelectedSubjectFilter}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">
+                        <div className="flex items-center gap-2">
+                          <div className="w-3 h-3 rounded-full bg-gray-400" />
+                          ทุกวิชา ({classes.length} คลาส)
+                        </div>
+                      </SelectItem>
+                      {subjects.map((subject) => {
+                        const subjectClassCount = classes.filter(c => c.subjectId === subject.id).length;
+                        return (
+                          <SelectItem key={subject.id} value={subject.id}>
+                            <div className="flex items-center gap-2">
+                              <div 
+                                className="w-3 h-3 rounded-full" 
+                                style={{ backgroundColor: subject.color }}
+                              />
+                              {subject.name} ({subjectClassCount} คลาส)
+                            </div>
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Class List */}
+              {getFilteredClasses().length === 0 ? (
                 <Alert>
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription>
-                    ไม่พบคลาส {subject?.name} ที่เปิดรับสมัครในสาขานี้
+                    {classes.length === 0 
+                      ? `ไม่พบคลาสที่เปิดรับสมัครในสาขา ${currentBranch?.name}`
+                      : 'ไม่พบคลาสตามเงื่อนไขที่ค้นหา'
+                    }
                   </AlertDescription>
                 </Alert>
               ) : (
-                <div className="space-y-3">
-                  {classes.map((cls) => {
+                <div className="space-y-3 max-h-96 overflow-y-auto">
+                  {getFilteredClasses().map((cls) => {
                     const isSelected = formData.selectedClass === cls.id;
                     const availableSeats = cls.maxStudents - cls.enrolledCount;
+                    const classSubject = subjects.find(s => s.id === cls.subjectId);
+                    const isTrialSubject = cls.subjectId === session.subjectId;
                     
                     return (
                       <div
@@ -943,7 +1052,26 @@ export default function ConvertToStudentForm({
                       >
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
-                            <h4 className="font-medium">{cls.name}</h4>
+                            <div className="flex items-center gap-2">
+                              <h4 className="font-medium">{cls.name}</h4>
+                              {classSubject && (
+                                <Badge 
+                                  style={{ 
+                                    backgroundColor: `${classSubject.color}20`,
+                                    color: classSubject.color,
+                                    borderColor: classSubject.color
+                                  }}
+                                  className="text-xs"
+                                >
+                                  {classSubject.name}
+                                </Badge>
+                              )}
+                              {isTrialSubject && (
+                                <Badge className="text-xs bg-blue-100 text-blue-700">
+                                  วิชาที่ทดลอง
+                                </Badge>
+                              )}
+                            </div>
                             <p className="text-sm text-gray-600 mt-1">
                               {cls.code} • {cls.totalSessions} ครั้ง
                             </p>
