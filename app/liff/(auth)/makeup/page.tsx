@@ -12,6 +12,7 @@ import {
   Clock, 
   MapPin, 
   User,
+  Users,
   CalendarOff,
   ChevronRight,
   AlertCircle,

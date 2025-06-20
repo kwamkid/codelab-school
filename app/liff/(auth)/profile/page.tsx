@@ -10,47 +10,13 @@ import { useLiff } from '@/components/liff/liff-provider'
 import { getParentByLineId, getStudentsByParent } from '@/lib/services/parents'
 import { getBranch } from '@/lib/services/branches'
 import { toast } from 'sonner'
-
-// Define types
-interface Student {
-  id: string
-  name: string
-  nickname: string
-  birthdate: any // รองรับหลาย format
-  gradeLevel: string
-  profileImage?: string
-  isActive: boolean
-}
-
-interface Address {
-  houseNumber: string
-  street: string
-  subDistrict: string
-  district: string
-  province: string
-  postalCode: string
-}
-
-interface ParentData {
-  displayName: string
-  email?: string
-  phone?: string
-  emergencyPhone?: string
-  address?: Address
-  preferredBranchId?: string
-  pictureUrl?: string
-}
-
-interface Branch {
-  id: string
-  name: string
-  address?: string
-}
+// Import types จาก models.ts
+import type { Parent, Student, Branch } from '@/types/models'
 
 export default function ProfilePage() {
   const router = useRouter()
   const { liff, profile, isLoggedIn } = useLiff()
-  const [parentData, setParentData] = useState<ParentData | null>(null)
+  const [parentData, setParentData] = useState<Parent | null>(null)
   const [students, setStudents] = useState<Student[]>([])
   const [preferredBranch, setPreferredBranch] = useState<Branch | null>(null)
   const [isLoadingData, setIsLoadingData] = useState(true)
@@ -142,7 +108,7 @@ export default function ProfilePage() {
     return age;
   }
 
-  const formatAddress = (address?: Address) => {
+  const formatAddress = (address?: Parent['address']) => {
     if (!address) return 'ไม่ได้ระบุ'
     
     const parts = [
@@ -175,7 +141,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="min-h-screen bg--50">
+    <div className="min-h-screen bg-gray-50">
       {/* Header with Back Button */}
       <div className="bg-primary text-white p-4">
         <div className="flex items-center justify-between">
@@ -344,7 +310,7 @@ export default function ProfilePage() {
                       <div>
                         <p className="font-medium">{student.nickname || student.name}</p>
                         <p className="text-sm text-muted-foreground">
-                          {student.gradeLevel} • อายุ {calculateAge(student.birthdate)} ปี
+                          {student.gradeLevel || 'ไม่ระบุชั้นเรียน'} • อายุ {calculateAge(student.birthdate)} ปี
                         </p>
                       </div>
                     </div>
@@ -353,11 +319,11 @@ export default function ProfilePage() {
                 ))}
 
                 <Button 
-  className="w-full mt-4 bg-red-500 hover:bg-red-600"
-  onClick={() => router.push(`/liff/profile/${parentId}/students/new`)}
->
-  เพิ่มนักเรียน
-</Button>
+                  className="w-full mt-4 bg-red-500 hover:bg-red-600"
+                  onClick={() => router.push(`/liff/profile/${parentId}/students/new`)}
+                >
+                  เพิ่มนักเรียน
+                </Button>
               </div>
             )}
           </CardContent>
