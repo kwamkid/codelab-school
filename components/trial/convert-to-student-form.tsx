@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -456,12 +456,12 @@ export default function ConvertToStudentForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
       {/* Progress */}
       <div className="space-y-2">
-        <div className="flex justify-between text-sm text-gray-600">
+        <div className="flex flex-col sm:flex-row sm:justify-between text-sm text-gray-600 gap-1">
           <span>ขั้นตอนที่ {currentStep} จาก {steps.length}</span>
-          <span>{steps[currentStep - 1].name}</span>
+          <span className="text-right">{steps[currentStep - 1].name}</span>
         </div>
         <Progress value={(currentStep / steps.length) * 100} className="h-2" />
       </div>
@@ -962,15 +962,15 @@ export default function ConvertToStudentForm({
 
           {/* Class Selection */}
           <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">เลือกคลาสที่จะลงทะเบียน</CardTitle>
-              <CardDescription>
+            <CardHeader className="px-4 sm:px-6">
+              <CardTitle className="text-base sm:text-lg">เลือกคลาสที่จะลงทะเบียน</CardTitle>
+              <CardDescription className="text-xs sm:text-sm">
                 แสดงคลาสทั้งหมดในสาขา {currentBranch?.name} ({classes.length} คลาส)
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="px-4 sm:px-6 space-y-4">
               {/* Filters */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <div className="space-y-4 mb-4">
                 <div className="space-y-2">
                   <Label>ค้นหาคลาส</Label>
                   <div className="relative">
@@ -1043,17 +1043,17 @@ export default function ConvertToStudentForm({
                         key={cls.id}
                         onClick={() => setFormData(prev => ({ ...prev, selectedClass: cls.id }))}
                         className={`
-                          p-4 rounded-lg border cursor-pointer transition-all
+                          p-3 sm:p-4 rounded-lg border cursor-pointer transition-all
                           ${isSelected 
                             ? 'border-red-500 bg-red-50' 
                             : 'border-gray-200 hover:border-gray-300'
                           }
                         `}
                       >
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2">
-                              <h4 className="font-medium">{cls.name}</h4>
+                        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h4 className="font-medium text-sm sm:text-base truncate">{cls.name}</h4>
                               {classSubject && (
                                 <Badge 
                                   style={{ 
@@ -1061,40 +1061,40 @@ export default function ConvertToStudentForm({
                                     color: classSubject.color,
                                     borderColor: classSubject.color
                                   }}
-                                  className="text-xs"
+                                  className="text-xs shrink-0"
                                 >
                                   {classSubject.name}
                                 </Badge>
                               )}
                               {isTrialSubject && (
-                                <Badge className="text-xs bg-blue-100 text-blue-700">
+                                <Badge className="text-xs bg-blue-100 text-blue-700 shrink-0">
                                   วิชาที่ทดลอง
                                 </Badge>
                               )}
                             </div>
-                            <p className="text-sm text-gray-600 mt-1">
+                            <p className="text-xs sm:text-sm text-gray-600 mt-1">
                               {cls.code} • {cls.totalSessions} ครั้ง
                             </p>
-                            <div className="flex items-center gap-3 mt-2 text-sm">
-                              <span className="flex items-center gap-1">
+                            <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-2 text-xs sm:text-sm">
+                              <span className="flex items-center gap-1 shrink-0">
                                 <Calendar className="h-3 w-3" />
                                 {cls.daysOfWeek.map(d => ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'][d]).join(', ')}
                               </span>
-                              <span>{cls.startTime} - {cls.endTime}</span>
+                              <span className="shrink-0">{cls.startTime} - {cls.endTime}</span>
                             </div>
                           </div>
-                          <div className="text-right">
-                            <p className="font-medium">{formatCurrency(cls.pricing.totalPrice)}</p>
+                          <div className="text-left sm:text-right">
+                            <p className="font-medium text-sm sm:text-base">{formatCurrency(cls.pricing.totalPrice)}</p>
                             <Badge 
                               variant={availableSeats <= 3 ? 'destructive' : 'outline'}
-                              className="mt-1"
+                              className="mt-1 text-xs"
                             >
                               เหลือ {availableSeats} ที่
                             </Badge>
                           </div>
                         </div>
                         {isSelected && (
-                          <Badge className="mt-3 bg-red-100 text-red-700">
+                          <Badge className="mt-3 bg-red-100 text-red-700 text-xs">
                             เลือกแล้ว
                           </Badge>
                         )}
@@ -1190,8 +1190,8 @@ export default function ConvertToStudentForm({
 
       {/* Info Alert */}
       <Alert>
-        <Info className="h-4 w-4" />
-        <AlertDescription>
+        <Info className="h-4 w-4 shrink-0" />
+        <AlertDescription className="text-xs sm:text-sm">
           {existingParent ? (
             <>
               ระบบจะ{formData.studentSelection === 'existing' ? 'ลงทะเบียน' : 'เพิ่ม'}นักเรียน
@@ -1205,12 +1205,13 @@ export default function ConvertToStudentForm({
       </Alert>
 
       {/* Actions */}
-      <div className="flex justify-between">
+      <div className="flex flex-col sm:flex-row gap-3 sm:justify-between">
         <Button 
           type="button" 
           variant="outline" 
           onClick={currentStep === 1 ? onCancel : handlePrevious}
           disabled={loading}
+          className="w-full sm:w-auto order-2 sm:order-1"
         >
           {currentStep === 1 ? 'ยกเลิก' : (
             <>
@@ -1221,7 +1222,7 @@ export default function ConvertToStudentForm({
         </Button>
         
         {currentStep < steps.length ? (
-          <Button type="button" onClick={handleNext} className="bg-red-500 hover:bg-red-600">
+          <Button type="button" onClick={handleNext} className="bg-red-500 hover:bg-red-600 w-full sm:w-auto order-1 sm:order-2">
             ถัดไป
             <ChevronRight className="h-4 w-4 ml-2" />
           </Button>
@@ -1229,7 +1230,7 @@ export default function ConvertToStudentForm({
           <Button 
             type="submit"
             disabled={loading || !formData.selectedClass}
-            className="bg-green-600 hover:bg-green-700"
+            className="bg-green-600 hover:bg-green-700 w-full sm:w-auto order-1 sm:order-2"
           >
             {loading ? (
               <>
