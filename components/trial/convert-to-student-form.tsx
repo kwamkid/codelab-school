@@ -72,6 +72,7 @@ interface FormData {
   // Student selection
   studentSelection: 'existing' | 'new';
   selectedExistingStudentId?: string;
+  useExistingStudent?: boolean;
   
   // New student info
   studentName: string;
@@ -187,7 +188,14 @@ export default function ConvertToStudentForm({
           parentName: parent.displayName,
           parentEmail: parent.email || '',
           emergencyPhone: parent.emergencyPhone || '',
-          address: parent.address || prev.address
+          address: parent.address ? {
+            houseNumber: parent.address.houseNumber || '',
+            street: parent.address.street || '',
+            subDistrict: parent.address.subDistrict || '',
+            district: parent.address.district || '',
+            province: parent.address.province || '',
+            postalCode: parent.address.postalCode || ''
+          } : prev.address
         }));
         
         // Load existing students
@@ -237,7 +245,7 @@ export default function ConvertToStudentForm({
       }
       
       // Check enrolled classes if using existing student
-      if (formData.useExistingStudent && formData.selectedExistingStudentId) {
+      if (formData.selectedExistingStudentId) {
         await checkEnrolledClasses(formData.selectedExistingStudentId);
       }
     } catch (error) {
@@ -261,6 +269,15 @@ export default function ConvertToStudentForm({
       console.error('Error checking enrolled classes:', error);
     }
   };
+
+  // Update enrolled classes when student selection changes
+  useEffect(() => {
+    if (formData.studentSelection === 'existing' && formData.selectedExistingStudentId) {
+      checkEnrolledClasses(formData.selectedExistingStudentId);
+    } else {
+      setEnrolledClasses([]);
+    }
+  }, [formData.selectedExistingStudentId, formData.studentSelection]);
 
   // Set default subject filter to trial subject (but still show all classes)
   useEffect(() => {
@@ -1228,7 +1245,7 @@ export default function ConvertToStudentForm({
             <>
               ระบบจะ{formData.studentSelection === 'existing' ? 'ลงทะเบียน' : 'เพิ่ม'}นักเรียน
               {formData.studentSelection === 'existing' ? 'ที่เลือก' : 'ใหม่'}
-              ให้กับผู้ปกครอง "{existingParent.displayName}" และลงทะเบียนในคลาสที่เลือก
+              ให้กับผู้ปกครอง {`"${existingParent.displayName}"`} และลงทะเบียนในคลาสที่เลือก
             </>
           ) : (
             <>หลังจากแปลงเป็นนักเรียนแล้ว ระบบจะสร้างข้อมูลผู้ปกครองและนักเรียนอัตโนมัติ พร้อมลงทะเบียนในคลาสที่เลือก (สถานะรอชำระเงิน)</>
