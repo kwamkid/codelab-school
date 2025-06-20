@@ -11,6 +11,7 @@ import {
   Timestamp,
   deleteField,
   limit,
+  serverTimestamp
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { Parent, Student } from '@/types/models';
@@ -84,7 +85,6 @@ export async function getParentByLineId(lineUserId: string): Promise<Parent | nu
   }
 }
 
-// Create new parent
 // Create new parent
 export async function createParent(parentData: Omit<Parent, 'id' | 'createdAt' | 'lastLoginAt'>): Promise<string> {
   try {
@@ -230,7 +230,6 @@ export async function getStudent(parentId: string, studentId: string): Promise<S
 }
 
 // Create new student
-// Create new student
 export async function createStudent(
   parentId: string, 
   studentData: Omit<Student, 'id' | 'parentId'>
@@ -260,6 +259,39 @@ export async function createStudent(
     return docRef.id;
   } catch (error) {
     console.error('Error creating student:', error);
+    throw error;
+  }
+}
+
+// Update student
+export async function updateStudent(
+  parentId: string,
+  studentId: string,
+  data: Partial<Student>
+): Promise<void> {
+  try {
+    const studentRef = doc(db, 'parents', parentId, 'students', studentId);
+    
+    // Prepare update data
+    const updateData: any = {};
+    
+    // Add fields to update, excluding id and parentId
+    Object.keys(data).forEach(key => {
+      if (key !== 'id' && key !== 'parentId' && data[key as keyof Student] !== undefined) {
+        if (key === 'birthdate' && data.birthdate) {
+          updateData[key] = Timestamp.fromDate(data.birthdate);
+        } else {
+          updateData[key] = data[key as keyof Student];
+        }
+      }
+    });
+    
+    // Add updatedAt timestamp
+    updateData.updatedAt = serverTimestamp();
+    
+    await updateDoc(studentRef, updateData);
+  } catch (error) {
+    console.error('Error updating student:', error);
     throw error;
   }
 }
