@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { MakeupClass, Student, Class, Teacher, Room } from '@/types/models';
-import { scheduleMakeupClass, checkTeacherAvailability } from '@/lib/services/makeup';
+import { scheduleMakeupClass } from '@/lib/services/makeup';
 import { getActiveTeachers } from '@/lib/services/teachers';
 import { getActiveRoomsByBranch } from '@/lib/services/rooms';
+import { checkAvailability } from '@/lib/utils/availability';
 import {
   Dialog,
   DialogContent,
@@ -51,6 +52,7 @@ export default function EditMakeupScheduleDialog({
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [changeReason, setChangeReason] = useState('');
+  const [availabilityMessage, setAvailabilityMessage] = useState('');
   
   const [formData, setFormData] = useState({
     date: '',
@@ -60,10 +62,7 @@ export default function EditMakeupScheduleDialog({
     roomId: '',
   });
   
-  const [availability, setAvailability] = useState<{
-    teacher: boolean | null;
-    room: boolean | null;
-  }>({ teacher: null, room: null });
+  const [isAvailable, setIsAvailable] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (open && makeup.makeupSchedule) {
@@ -82,8 +81,9 @@ export default function EditMakeupScheduleDialog({
 
   useEffect(() => {
     // Check availability when form data changes
-    if (formData.date && formData.teacherId && formData.roomId) {
-      checkAvailability();
+    if (formData.date && formData.startTime && formData.endTime && 
+        formData.teacherId && formData.roomId && hasChanged()) {
+      checkFormAvailability();
     }
   }, [formData]);
 
@@ -107,25 +107,38 @@ export default function EditMakeupScheduleDialog({
     }
   };
 
-  const checkAvailability = async () => {
-    if (!formData.date || !formData.teacherId) return;
+  const checkFormAvailability = async () => {
+    if (!formData.date || !formData.startTime || !formData.endTime || 
+        !formData.teacherId || !formData.roomId) return;
     
     setCheckingAvailability(true);
+    setAvailabilityMessage('');
+    
     try {
       const date = new Date(formData.date);
-      const teacherAvailable = await checkTeacherAvailability(
-        formData.teacherId,
+      const result = await checkAvailability({
         date,
-        formData.startTime,
-        formData.endTime
-      );
+        startTime: formData.startTime,
+        endTime: formData.endTime,
+        branchId: classInfo.branchId,
+        roomId: formData.roomId,
+        teacherId: formData.teacherId,
+        excludeId: makeup.id,
+        excludeType: 'makeup'
+      });
       
-      setAvailability(prev => ({ ...prev, teacher: teacherAvailable }));
+      setIsAvailable(result.available);
       
-      // TODO: Check room availability
-      setAvailability(prev => ({ ...prev, room: true }));
+      if (!result.available && result.reasons.length > 0) {
+        // Show first issue
+        setAvailabilityMessage(result.reasons[0].message);
+      } else {
+        setAvailabilityMessage('');
+      }
     } catch (error) {
       console.error('Error checking availability:', error);
+      setIsAvailable(null);
+      setAvailabilityMessage('ไม่สามารถตรวจสอบได้');
     } finally {
       setCheckingAvailability(false);
     }
@@ -133,7 +146,8 @@ export default function EditMakeupScheduleDialog({
 
   const handleSubmit = async () => {
     // Validate
-    if (!formData.date || !formData.teacherId || !formData.roomId) {
+    if (!formData.date || !formData.startTime || !formData.endTime || 
+        !formData.teacherId || !formData.roomId) {
       toast.error('กรุณากรอกข้อมูลให้ครบถ้วน');
       return;
     }
@@ -143,8 +157,8 @@ export default function EditMakeupScheduleDialog({
       return;
     }
     
-    if (availability.teacher === false) {
-      toast.error('ครูไม่ว่างในช่วงเวลานี้');
+    if (isAvailable === false) {
+      toast.error(availabilityMessage || 'ไม่สามารถจัดตารางในช่วงเวลานี้ได้');
       return;
     }
     
@@ -285,9 +299,6 @@ export default function EditMakeupScheduleDialog({
                   ))}
                 </SelectContent>
               </Select>
-              {availability.teacher === false && (
-                <p className="text-xs text-red-600">ครูไม่ว่างในช่วงเวลานี้</p>
-              )}
             </div>
 
             {/* Room */}
@@ -325,16 +336,16 @@ export default function EditMakeupScheduleDialog({
           </div>
 
           {/* Availability Status */}
-          {(availability.teacher !== null || availability.room !== null) && hasChanged() && (
-            <Alert className={availability.teacher === false ? 'border-red-200' : 'border-green-200'}>
+          {isAvailable !== null && hasChanged() && (
+            <Alert className={isAvailable ? 'border-green-200' : 'border-red-200'}>
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>
-                {availability.teacher === false ? (
-                  'ครูไม่ว่างในช่วงเวลานี้ กรุณาเลือกเวลาอื่นหรือเปลี่ยนครู'
-                ) : checkingAvailability ? (
+                {checkingAvailability ? (
                   'กำลังตรวจสอบ...'
+                ) : isAvailable ? (
+                  'ครูและห้องเรียนว่างในช่วงเวลานี้'
                 ) : (
-                  'ครูและห้องเรียนว่าง'
+                  availabilityMessage || 'ไม่สามารถจัดตารางในช่วงเวลานี้ได้'
                 )}
               </AlertDescription>
             </Alert>
@@ -356,11 +367,14 @@ export default function EditMakeupScheduleDialog({
             disabled={
               loading || 
               !formData.date || 
+              !formData.startTime ||
+              !formData.endTime ||
               !formData.teacherId || 
               !formData.roomId || 
-              availability.teacher === false ||
+              isAvailable === false ||
               !changeReason.trim() ||
-              !hasChanged()
+              !hasChanged() ||
+              checkingAvailability
             }
             className="bg-blue-500 hover:bg-blue-600"
           >
