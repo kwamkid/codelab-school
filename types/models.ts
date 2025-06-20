@@ -338,6 +338,11 @@ export interface MakeupClass {
   requestedBy: string; // user id ของคนที่สร้าง request
   reason: string; // เหตุผลที่ขาด
   status: 'pending' | 'scheduled' | 'completed' | 'cancelled';
+  
+  // เพิ่ม fields ที่หายไป
+  originalSessionNumber?: number; // ครั้งที่ของคลาสเดิม
+  originalSessionDate?: Date; // วันที่เรียนเดิม
+  
   makeupSchedule?: { // ข้อมูลการนัด makeup (อาจยังไม่มีถ้า status = pending)
     date: Date;
     startTime: string;
