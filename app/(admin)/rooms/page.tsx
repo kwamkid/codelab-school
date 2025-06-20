@@ -122,9 +122,7 @@ const handleAddRoom = () => {
 };
 
   const handleEditRoom = (room: RoomWithBranch) => {
-    // แปลง RoomWithBranch เป็น Room โดยตัดฟิลด์ที่เพิ่มมาออก
-    const { branchName, branchCode, ...roomData } = room;
-    setSelectedRoom(roomData);
+    setSelectedRoom(room); // ใช้ room ทั้งตัวเลย
     setSelectedBranchId(room.branchId);
     setDialogOpen(true);
   };
