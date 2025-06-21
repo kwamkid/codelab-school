@@ -1,5 +1,5 @@
-import TechLoadingAnimation from '@/components/liff/tech-loading-animation'
+import { Loading } from '@/components/ui/loading'
 
 export function LiffLoading() {
-  return <TechLoadingAnimation />
+  return <Loading fullScreen />
 }

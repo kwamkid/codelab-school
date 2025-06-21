@@ -50,6 +50,8 @@ import { TrialBooking } from '@/types/models';
 import { getTrialBookings, getTrialBookingStats, deleteTrialBooking } from '@/lib/services/trial-bookings';
 import { formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
+import { useLoading } from '@/contexts/LoadingContext';
+
 
 const statusConfig = {
   new: { label: 'ใหม่', color: 'bg-blue-100 text-blue-700', icon: AlertCircle },
@@ -70,7 +72,7 @@ export default function TrialBookingsPage() {
   const router = useRouter();
   const [bookings, setBookings] = useState<TrialBooking[]>([]);
   const [filteredBookings, setFilteredBookings] = useState<TrialBooking[]>([]);
-  const [loading, setLoading] = useState(true);
+const { setLoading } = useLoading();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [stats, setStats] = useState<any>(null);
@@ -282,14 +284,7 @@ export default function TrialBookingsPage() {
         <TabsContent value={selectedStatus} className="mt-6">
           <Card>
             <CardContent className="p-0">
-              {loading ? (
-                <div className="text-center py-12">
-                  <div className="inline-flex items-center gap-2 text-gray-500">
-                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600"></div>
-                    กำลังโหลด...
-                  </div>
-                </div>
-              ) : filteredBookings.length === 0 ? (
+              {filteredBookings.length === 0 ? (
                 <div className="text-center py-12">
                   <TestTube className="h-12 w-12 text-gray-300 mx-auto mb-4" />
                   <p className="text-gray-500">

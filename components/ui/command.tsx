@@ -67,13 +67,13 @@ function CommandInput({
   return (
     <div
       data-slot="command-input-wrapper"
-      className="flex h-9 items-center gap-2 border-b px-3"
+      className="flex items-center gap-2 border-b px-3 py-2" // ลด padding จาก h-9 เป็น py-2
     >
       <SearchIcon className="size-4 shrink-0 opacity-50" />
       <CommandPrimitive.Input
         data-slot="command-input"
         className={cn(
-          "placeholder:text-muted-foreground flex h-10 w-full rounded-md bg-transparent py-3 text-sm outline-hidden disabled:cursor-not-allowed disabled:opacity-50",
+          "placeholder:text-muted-foreground flex h-8 w-full rounded-md bg-transparent py-1 text-sm outline-hidden disabled:cursor-not-allowed disabled:opacity-50", // ลด h-10 เป็น h-8 และ py-3 เป็น py-1
           className
         )}
         {...props}

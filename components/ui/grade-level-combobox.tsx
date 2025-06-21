@@ -37,8 +37,9 @@ export function GradeLevelCombobox({
 
   // Filter grade levels based on search
   const filteredGrades = React.useMemo(() => {
+    // แก้ไขตรงนี้: แสดงผลเฉพาะเมื่อพิมพ์อย่างน้อย 1 ตัวอักษร
     if (!searchValue || searchValue.length < 1) {
-      return gradeLevels; // แสดงทั้งหมดถ้ายังไม่ได้พิมพ์
+      return []; // ไม่แสดงอะไรเลยถ้ายังไม่ได้พิมพ์
     }
     
     return searchGradeLevels(searchValue)
@@ -92,62 +93,53 @@ export function GradeLevelCombobox({
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          className="w-full justify-between text-left font-normal"
+          className={cn(
+            "w-full justify-between text-left font-normal",
+            // แก้ไข: ลบ focus styles ที่ทำให้ border เกิน
+            "focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+          )}
         >
           <span className="truncate">{value ? currentLabel : placeholder}</span>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+      <PopoverContent 
+        className="w-[var(--radix-popover-trigger-width)] p-0" 
+  align="start"
+  sideOffset={5}
+  style={{ 
+    marginTop: '2px' // เพิ่ม margin-top เล็กน้อย
+  }}
+      >
         <Command>
           <CommandInput 
             placeholder="ค้นหา ป.4, ม.1, Grade 3..." 
             value={searchValue}
             onValueChange={setSearchValue}
           />
-          <CommandEmpty>
-            {allowCustom && searchValue ? (
-              <div 
-                className="px-4 py-2 cursor-pointer hover:bg-gray-100 text-sm"
-                onClick={handleCustomValue}
-              >
-                ใช้ &quot;{searchValue}&quot; เป็นระดับชั้น
+          <CommandList>
+            {/* แสดงเมื่อยังไม่ได้พิมพ์ */}
+            {searchValue.length === 0 ? (
+              <div className="py-6 text-center text-sm text-muted-foreground">
+                พิมพ์เพื่อค้นหาระดับชั้น...
               </div>
             ) : (
-              "ไม่พบระดับชั้นที่ค้นหา"
-            )}
-          </CommandEmpty>
-          <CommandList>
-            {searchValue.length === 0 ? (
-              // แสดงรายการทั้งหมดแบ่งตาม category เมื่อไม่มีการค้นหา
-              Object.entries(groupedGrades).length > 0 ? (
-                Object.entries(groupedGrades).map(([category, grades]) => (
-                  <CommandGroup key={category} heading={category}>
-                    {grades.slice(0, 5).map((grade) => (
-                      <CommandItem
-                        key={grade.value}
-                        value={grade.value}
-                        onSelect={() => handleSelect(grade.value)}
-                        className="cursor-pointer"
-                      >
-                        <Check
-                          className={cn(
-                            "mr-2 h-4 w-4",
-                            value === grade.value ? "opacity-100" : "opacity-0"
-                          )}
-                        />
-                        {grade.label}
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                ))
-              ) : (
-                <div className="py-6 text-center text-sm">ไม่มีข้อมูล</div>
-              )
-            ) : (
               // แสดงผลการค้นหา
-              filteredGrades.length > 0 ? (
-                Object.entries(groupedGrades).map(([category, grades]) => (
+              <>
+                <CommandEmpty>
+                  {allowCustom && searchValue ? (
+                    <div 
+                      className="px-4 py-2 cursor-pointer hover:bg-gray-100 text-sm"
+                      onClick={handleCustomValue}
+                    >
+                      ใช้ &quot;{searchValue}&quot; เป็นระดับชั้น
+                    </div>
+                  ) : (
+                    "ไม่พบระดับชั้นที่ค้นหา"
+                  )}
+                </CommandEmpty>
+                
+                {Object.entries(groupedGrades).map(([category, grades]) => (
                   <CommandGroup key={category} heading={category}>
                     {grades.map((grade) => (
                       <CommandItem
@@ -166,8 +158,8 @@ export function GradeLevelCombobox({
                       </CommandItem>
                     ))}
                   </CommandGroup>
-                ))
-              ) : null
+                ))}
+              </>
             )}
           </CommandList>
         </Command>

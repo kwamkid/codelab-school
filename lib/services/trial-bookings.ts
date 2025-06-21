@@ -98,11 +98,34 @@ export async function createTrialBooking(
   data: Omit<TrialBooking, 'id' | 'createdAt' | 'updatedAt'>
 ): Promise<string> {
   try {
-    const docRef = await addDoc(collection(db, BOOKINGS_COLLECTION), {
+    // ทำความสะอาดข้อมูลก่อนบันทึก
+    const cleanedData: any = {
       ...data,
       status: data.status || 'new',
       createdAt: serverTimestamp(),
-    });
+    };
+    
+    // ทำความสะอาดข้อมูลนักเรียน
+    if (cleanedData.students && Array.isArray(cleanedData.students)) {
+      cleanedData.students = cleanedData.students.map((student: any) => {
+        const cleanStudent: any = {
+          name: student.name,
+          subjectInterests: student.subjectInterests || []
+        };
+        
+        // เพิ่มเฉพาะ field ที่มีค่า
+        if (student.schoolName) {
+          cleanStudent.schoolName = student.schoolName;
+        }
+        if (student.gradeLevel) {
+          cleanStudent.gradeLevel = student.gradeLevel;
+        }
+        
+        return cleanStudent;
+      });
+    }
+    
+    const docRef = await addDoc(collection(db, BOOKINGS_COLLECTION), cleanedData);
     return docRef.id;
   } catch (error) {
     console.error('Error creating trial booking:', error);

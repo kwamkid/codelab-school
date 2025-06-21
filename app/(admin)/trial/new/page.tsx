@@ -143,45 +143,46 @@ export default function CreateTrialBookingPage() {
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  e.preventDefault();
+  
+  if (!validateForm()) return;
+  
+  setLoading(true);
+  
+  try {
+    const bookingData: any = {
+      source: 'walkin' as const,
+      parentName: parentName.trim(),
+      parentPhone: parentPhone.replace(/[-\s]/g, ''),
+      students: students.map(s => ({
+        name: s.name.trim(),
+        subjectInterests: s.subjectInterests,
+        // แก้ไขตรงนี้: ตรวจสอบก่อนว่ามีค่าหรือไม่ ถ้าไม่มีไม่ต้องใส่ field
+        ...(s.schoolName.trim() && { schoolName: s.schoolName.trim() }),
+        ...(s.gradeLevel.trim() && { gradeLevel: s.gradeLevel.trim() })
+      })),
+      status: 'new' as const
+    };
     
-    if (!validateForm()) return;
-    
-    setLoading(true);
-    
-    try {
-      const bookingData: any = {
-        source: 'walkin' as const,
-        parentName: parentName.trim(),
-        parentPhone: parentPhone.replace(/[-\s]/g, ''),
-        students: students.map(s => ({
-          name: s.name.trim(),
-          subjectInterests: s.subjectInterests,
-          schoolName: s.schoolName.trim() || undefined,
-          gradeLevel: s.gradeLevel.trim() || undefined
-        })),
-        status: 'new' as const
-      };
-      
-      // Add optional fields only if they have values
-      if (parentEmail.trim()) {
-        bookingData.parentEmail = parentEmail.trim();
-      }
-      
-      if (contactNote.trim()) {
-        bookingData.contactNote = contactNote.trim();
-      }
-      
-      const bookingId = await createTrialBooking(bookingData);
-      toast.success('บันทึกการจองทดลองเรียนสำเร็จ');
-      router.push(`/trial/${bookingId}`);
-    } catch (error) {
-      console.error('Error creating booking:', error);
-      toast.error('เกิดข้อผิดพลาดในการบันทึกข้อมูล');
-    } finally {
-      setLoading(false);
+    // Add optional fields only if they have values
+    if (parentEmail.trim()) {
+      bookingData.parentEmail = parentEmail.trim();
     }
-  };
+    
+    if (contactNote.trim()) {
+      bookingData.contactNote = contactNote.trim();
+    }
+    
+    const bookingId = await createTrialBooking(bookingData);
+    toast.success('บันทึกการจองทดลองเรียนสำเร็จ');
+    router.push(`/trial/${bookingId}`);
+  } catch (error) {
+    console.error('Error creating booking:', error);
+    toast.error('เกิดข้อผิดพลาดในการบันทึกข้อมูล');
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <div className="p-6 max-w-4xl mx-auto">

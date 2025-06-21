@@ -1,174 +1,127 @@
 'use client';
 
-import { useAuth } from '@/hooks/useAuth';
-import { useRouter, usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { getGeneralSettings } from '@/lib/services/settings';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
-  LayoutDashboard,
-  Building2,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  Home,
   Users,
-  Calendar,
   GraduationCap,
-  UserCheck,
-  FileText,
+  Calendar,
+  BookOpen,
   Settings,
   LogOut,
   Menu,
   X,
-  ChevronDown,
-  BookOpen,
+  Building2,
+  UserCog,
+  DollarSign,
   CalendarCheck,
-  Home,
-  CalendarDays,
   TestTube,
-  DoorOpen,
+  FileText,
+  Repeat,
+  ChevronDown,
+  ChevronRight,
+  School,
+  CalendarDays,
+  MessageSquare,
+  Sparkles,
+  Gift
 } from 'lucide-react';
-import Image from 'next/image';
+import { useAuth } from '@/hooks/useAuth';
+import { cn } from '@/lib/utils';
+import { LoadingProvider } from '@/contexts/LoadingContext';
 
-interface NavigationItem {
-  name: string;
-  href?: string;
-  icon: React.ElementType;
-  children?: NavigationItem[];
-}
-
-const navigation: NavigationItem[] = [
-  { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+const navigation = [
+  { name: 'หน้าหลัก', href: '/dashboard', icon: Home },
+  { name: 'สาขา', href: '/branches', icon: Building2 },
+  { name: 'นักเรียน', href: '/students', icon: Users },
+  { name: 'ผู้ปกครอง', href: '/parents', icon: Users },
+  { name: 'ครู', href: '/teachers', icon: UserCog },
+  { name: 'วิชา', href: '/subjects', icon: BookOpen },
   {
-    name: 'ข้อมูลพื้นฐาน',
-    icon: Building2,
-    children: [
-      { name: 'สาขา', href: '/branches', icon: Home },
-      { name: 'ห้องเรียน', href: '/rooms', icon: DoorOpen },
-      { name: 'วิชา', href: '/subjects', icon: BookOpen },
-      { name: 'ครูผู้สอน', href: '/teachers', icon: UserCheck },
-      { name: 'วันหยุด', href: '/holidays', icon: CalendarCheck },
+    name: 'คลาสเรียน',
+    icon: School,
+    subItems: [
+      { name: 'รายการคลาส', href: '/classes', icon: BookOpen },
+      { name: 'ตารางเรียน', href: '/schedules', icon: Calendar },
+      { name: 'เช็คชื่อ', href: '/attendance', icon: CalendarCheck },
+      { name: 'Makeup Class', href: '/makeup', icon: Repeat },
     ]
   },
   {
-    name: 'ลูกค้า',
-    icon: Users,
-    children: [
-      { name: 'ผู้ปกครอง', href: '/parents', icon: Users },
-      { name: 'นักเรียน', href: '/students', icon: GraduationCap },
+    name: 'การเงิน',
+    icon: DollarSign,
+    subItems: [
+      { name: 'รายการชำระเงิน', href: '/payments', icon: DollarSign },
+      { name: 'ใบเสร็จ', href: '/receipts', icon: FileText },
     ]
   },
-  {
-    name: 'จัดการคลาส',
-    icon: Calendar,
-    children: [
-      { name: 'คลาสเรียน', href: '/classes', icon: Calendar },
-      { name: 'Makeup Class', href: '/makeup', icon: CalendarDays },
-      { name: 'ทดลองเรียน', href: '/trial', icon: TestTube },
-    ]
+  { name: 'ทดลองเรียน', href: '/trial', icon: TestTube },
+  { name: 'วันหยุด', href: '/holidays', icon: CalendarDays },
+  { name: 'โปรโมชั่น', href: '/promotions', icon: Gift },
+  { 
+    name: 'LINE Integration', 
+    href: '/line-integration', 
+    icon: MessageSquare,
+    badge: 'New'
   },
-  { name: 'ลงทะเบียน', href: '/enrollments', icon: UserCheck },
-  { name: 'รายงาน', href: '/reports', icon: FileText },
-  { name: 'ตั้งค่า', href: '/settings', icon: Settings },
 ];
-
-function NavItem({ item, pathname, setSidebarOpen }: { 
-  item: NavigationItem; 
-  pathname: string; 
-  setSidebarOpen: (open: boolean) => void 
-}) {
-  const [isOpen, setIsOpen] = useState(false);
-  const hasChildren = item.children && item.children.length > 0;
-  const isActive = item.href ? pathname === item.href : item.children?.some(child => pathname === child.href);
-
-  if (hasChildren) {
-    return (
-      <div>
-        <button
-          onClick={() => setIsOpen(!isOpen)}
-          className={`flex items-center gap-3 px-4 py-2 text-gray-700 rounded-lg hover:bg-red-50 hover:text-red-600 transition-colors w-full ${
-            isActive ? 'bg-red-50 text-red-600' : ''
-          }`}
-        >
-          <item.icon className="h-5 w-5" />
-          <span className="flex-1 text-left">{item.name}</span>
-          <ChevronDown className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-        </button>
-        {isOpen && (
-          <div className="mt-1 ml-4 space-y-1">
-            {item.children.map((child) => {
-              if (!child.href) return null;
-              return (
-                <Link
-                  key={child.name}
-                  href={child.href}
-                  className={`flex items-center gap-3 px-4 py-2 text-sm rounded-lg hover:bg-red-50 hover:text-red-600 transition-colors ${
-                    pathname === child.href ? 'bg-red-50 text-red-600' : 'text-gray-600'
-                  }`}
-                  onClick={() => setSidebarOpen(false)}
-                >
-                  <child.icon className="h-4 w-4" />
-                  <span>{child.name}</span>
-                </Link>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  if (!item.href) return null;
-
-  return (
-    <Link
-      href={item.href}
-      className={`flex items-center gap-3 px-4 py-2 text-gray-700 rounded-lg hover:bg-red-50 hover:text-red-600 transition-colors ${
-        pathname === item.href ? 'bg-red-50 text-red-600' : ''
-      }`}
-      onClick={() => setSidebarOpen(false)}
-    >
-      <item.icon className="h-5 w-5" />
-      <span>{item.name}</span>
-    </Link>
-  );
-}
 
 export default function AdminLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { user, loading, signOut } = useAuth();
+  const { user, signOut, loading: authLoading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [settings, setSettings] = useState<any>(null);
+  const [expandedItems, setExpandedItems] = useState<string[]>([]);
 
   useEffect(() => {
-    if (!loading && !user) {
+    if (!authLoading && !user) {
       router.push('/login');
     }
-  }, [user, loading, router]);
+  }, [user, authLoading, router]);
 
-  // Load settings
+  // Auto-expand menu items based on current path
   useEffect(() => {
-    const loadSettings = async () => {
-      try {
-        const data = await getGeneralSettings();
-        setSettings(data);
-      } catch (error) {
-        console.error('Error loading settings:', error);
-      }
-    };
-    loadSettings();
-  }, []);
+    const expandedMenus = navigation
+      .filter(item => 
+        item.subItems?.some(sub => pathname.startsWith(sub.href))
+      )
+      .map(item => item.name);
+    setExpandedItems(expandedMenus);
+  }, [pathname]);
 
-  if (loading) {
+  const toggleExpanded = (itemName: string) => {
+    setExpandedItems(prev =>
+      prev.includes(itemName)
+        ? prev.filter(name => name !== itemName)
+        : [...prev, itemName]
+    );
+  };
+
+  const handleSignOut = async () => {
+    await signOut();
+    router.push('/login');
+  };
+
+  if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
-          <p className="mt-4 text-gray-600">กำลังโหลด...</p>
-        </div>
+      <div className="flex h-screen items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-gray-600" />
       </div>
     );
   }
@@ -177,107 +130,187 @@ export default function AdminLayout({
     return null;
   }
 
+  const isActive = (href: string) => {
+    if (href === '/dashboard') {
+      return pathname === href;
+    }
+    return pathname.startsWith(href);
+  };
+
+  const isSubItemActive = (item: any) => {
+    return item.subItems?.some((sub: any) => pathname.startsWith(sub.href));
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Mobile sidebar backdrop */}
-      {sidebarOpen && (
+    <LoadingProvider>
+      <div className="flex h-screen bg-gray-50">
+        {/* Sidebar */}
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-
-      {/* Sidebar */}
-      <aside
-        className={`fixed top-0 left-0 z-50 h-full w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out lg:translate-x-0 ${
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
-      >
-        <div className="flex items-center justify-between p-6 border-b">
-          <div className="flex items-center gap-3">
+          className={cn(
+            'fixed inset-y-0 left-0 z-50 w-64 transform bg-white shadow-lg transition-transform duration-200 ease-in-out lg:static lg:translate-x-0',
+            sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+          )}
+        >
+          <div className="flex h-full flex-col">
             {/* Logo */}
-            {settings?.logoUrl ? (
-              <div className="relative w-[180px] h-[45px]">
-                <Image 
-                  src={settings.logoUrl} 
-                  alt={settings.schoolName || 'School Logo'} 
-                  width={180}
-                  height={45}
-                  className="object-contain object-left"
-                  priority
-                  unoptimized // สำหรับ external URL
-                />
-              </div>
-            ) : (
-              <div className="relative h-[45px]" style={{ width: '180px' }}>
-                <Image 
-                  src="/logo.svg" 
-                  alt="CodeLab Logo" 
-                  fill
-                  className="object-contain object-left"
-                />
-              </div>
-            )}
+            <div className="flex h-16 items-center justify-between px-4 shadow-sm">
+              <h1 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+                <Sparkles className="h-6 w-6 text-red-500" />
+                CodeLab School
+              </h1>
+              <button
+                onClick={() => setSidebarOpen(false)}
+                className="lg:hidden"
+              >
+                <X className="h-6 w-6 text-gray-500" />
+              </button>
+            </div>
+
+            {/* Navigation */}
+            <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-4">
+              {navigation.map((item) => (
+                <div key={item.name}>
+                  {item.subItems ? (
+                    <>
+                      <button
+                        onClick={() => toggleExpanded(item.name)}
+                        className={cn(
+                          'flex w-full items-center justify-between rounded-lg px-2 py-2 text-sm font-medium transition-colors',
+                          isSubItemActive(item)
+                            ? 'bg-red-50 text-red-700'
+                            : 'text-gray-700 hover:bg-gray-100'
+                        )}
+                      >
+                        <div className="flex items-center">
+                          <item.icon className="mr-3 h-5 w-5" />
+                          {item.name}
+                        </div>
+                        {expandedItems.includes(item.name) ? (
+                          <ChevronDown className="h-4 w-4" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4" />
+                        )}
+                      </button>
+                      {expandedItems.includes(item.name) && (
+                        <div className="ml-4 mt-1 space-y-1">
+                          {item.subItems.map((subItem) => (
+                            <Link
+                              key={subItem.name}
+                              href={subItem.href}
+                              className={cn(
+                                'flex items-center rounded-lg px-2 py-2 text-sm transition-colors',
+                                isActive(subItem.href)
+                                  ? 'bg-red-100 text-red-700'
+                                  : 'text-gray-600 hover:bg-gray-100'
+                              )}
+                              onClick={() => setSidebarOpen(false)}
+                            >
+                              <subItem.icon className="mr-3 h-4 w-4" />
+                              {subItem.name}
+                            </Link>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <Link
+                      href={item.href}
+                      className={cn(
+                        'flex items-center rounded-lg px-2 py-2 text-sm font-medium transition-colors',
+                        isActive(item.href)
+                          ? 'bg-red-50 text-red-700'
+                          : 'text-gray-700 hover:bg-gray-100'
+                      )}
+                      onClick={() => setSidebarOpen(false)}
+                    >
+                      <item.icon className="mr-3 h-5 w-5" />
+                      {item.name}
+                      {item.badge && (
+                        <span className="ml-auto rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-600">
+                          {item.badge}
+                        </span>
+                      )}
+                    </Link>
+                  )}
+                </div>
+              ))}
+            </nav>
+
+            {/* Settings */}
+            <div className="border-t p-4">
+              <Link
+                href="/settings"
+                className={cn(
+                  'flex items-center rounded-lg px-2 py-2 text-sm font-medium transition-colors',
+                  isActive('/settings')
+                    ? 'bg-red-50 text-red-700'
+                    : 'text-gray-700 hover:bg-gray-100'
+                )}
+                onClick={() => setSidebarOpen(false)}
+              >
+                <Settings className="mr-3 h-5 w-5" />
+                ตั้งค่า
+              </Link>
+            </div>
           </div>
-          <button
-            onClick={() => setSidebarOpen(false)}
-            className="lg:hidden"
-          >
-            <X className="h-6 w-6" />
-          </button>
         </div>
 
-        <nav className="flex-1 overflow-y-auto p-4">
-          <ul className="space-y-2">
-            {navigation.map((item) => (
-              <li key={item.name}>
-                <NavItem item={item} pathname={pathname} setSidebarOpen={setSidebarOpen} />
-              </li>
-            ))}
-          </ul>
-        </nav>
-
-        <div className="p-4 border-t">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-full bg-gray-300 flex items-center justify-center">
-              <Users className="h-5 w-5 text-gray-600" />
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-medium text-gray-900">Admin</p>
-              <p className="text-xs text-gray-500">{user.email}</p>
-            </div>
-          </div>
-          <Button
-            variant="outline"
-            className="w-full justify-start"
-            onClick={() => signOut()}
-          >
-            <LogOut className="mr-2 h-4 w-4" />
-            ออกจากระบบ
-          </Button>
-        </div>
-      </aside>
-
-      {/* Main content */}
-      <div className="lg:pl-64">
-        {/* Top bar */}
-        <header className="bg-white shadow-sm border-b">
-          <div className="flex items-center justify-between px-4 py-3">
+        {/* Main content */}
+        <div className="flex flex-1 flex-col">
+          {/* Top bar */}
+          <header className="flex h-16 items-center justify-between bg-white px-4 shadow-sm">
             <button
               onClick={() => setSidebarOpen(true)}
               className="lg:hidden"
             >
-              <Menu className="h-6 w-6" />
+              <Menu className="h-6 w-6 text-gray-500" />
             </button>
-            <div className="flex-1" />
-          </div>
-        </header>
 
-        {/* Page content */}
-        <main className="p-4 md:p-6 lg:p-8">
-          {children}
-        </main>
+            <div className="flex items-center gap-4 ml-auto">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    className="relative h-10 w-10 rounded-full"
+                  >
+                    <Avatar>
+                      <AvatarImage
+                        src={user.photoURL || ''}
+                        alt={user.displayName || ''}
+                      />
+                      <AvatarFallback>
+                        {user.displayName?.charAt(0) || 'A'}
+                      </AvatarFallback>
+                    </Avatar>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="w-56" align="end" forceMount>
+                  <DropdownMenuLabel className="font-normal">
+                    <div className="flex flex-col space-y-1">
+                      <p className="text-sm font-medium leading-none">
+                        {user.displayName || 'Admin'}
+                      </p>
+                      <p className="text-xs leading-none text-muted-foreground">
+                        {user.email}
+                      </p>
+                    </div>
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleSignOut}>
+                    <LogOut className="mr-2 h-4 w-4" />
+                    <span>ออกจากระบบ</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </header>
+
+          {/* Page content */}
+          <main className="flex-1 overflow-y-auto p-4 md:p-6">
+            {children}
+          </main>
+        </div>
       </div>
-    </div>
+    </LoadingProvider>
   );
 }

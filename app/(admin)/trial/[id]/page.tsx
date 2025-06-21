@@ -412,93 +412,100 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
           </Card>
 
           {/* Students Info */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <GraduationCap className="h-5 w-5 text-gray-400" />
-                นักเรียน ({booking.students.length} คน)
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {booking.students.map((student, idx) => (
-                  <div key={idx} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
-                    {editingStudent === idx ? (
-                      <div className="space-y-3">
-                        <Input
-                          placeholder="ชื่อ-นามสกุล"
-                          value={tempStudentData.name}
-                          onChange={(e) => setTempStudentData(prev => ({ ...prev, name: e.target.value }))}
-                        />
-                        <Input
-                          placeholder="โรงเรียน"
-                          value={tempStudentData.schoolName}
-                          onChange={(e) => setTempStudentData(prev => ({ ...prev, schoolName: e.target.value }))}
-                        />
-                        <GradeLevelCombobox
-                          value={tempStudentData.gradeLevel}
-                          onChange={(value) => setTempStudentData(prev => ({ ...prev, gradeLevel: value }))}
-                          placeholder="พิมพ์ระดับชั้น เช่น ป.4, Grade 3..."
-                        />
-                        <div className="flex gap-2">
-                          <Button size="sm" onClick={handleStudentSave}>บันทึก</Button>
-                          <Button size="sm" variant="outline" onClick={() => setEditingStudent(null)}>ยกเลิก</Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="flex items-start justify-between mb-2">
-                          <div>
-                            <h4 className="font-medium text-base">{student.name}</h4>
-                            {student.schoolName && (
-                              <p className="text-sm text-gray-600">
-                                <School className="inline h-3 w-3 mr-1" />
-                                {student.schoolName}
-                                {student.gradeLevel && ` (${student.gradeLevel})`}
-                              </p>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleStudentEdit(idx)}
-                            >
-                              <Edit className="h-3 w-3" />
-                            </Button>
-                            <Badge variant="outline" className="text-xs">
-                              คนที่ {idx + 1}
-                            </Badge>
-                          </div>
-                        </div>
-                        <div className="space-y-1">
-                          <p className="text-xs text-gray-500">วิชาที่สนใจ:</p>
-                          <div className="flex flex-wrap gap-1">
-                            {student.subjectInterests.map(subjectId => {
-                              const subject = subjects.find(s => s.id === subjectId);
-                              return subject ? (
-                                <Badge 
-                                  key={subjectId} 
-                                  className="text-xs"
-                                  style={{ 
-                                    backgroundColor: `${subject.color}20`,
-                                    color: subject.color,
-                                    borderColor: subject.color
-                                  }}
-                                >
-                                  {subject.name}
-                                </Badge>
-                              ) : null;
-                            })}
-                          </div>
-                        </div>
-                      </>
+<Card>
+  <CardHeader className="pb-3">
+    <CardTitle className="text-base flex items-center gap-2">
+      <GraduationCap className="h-5 w-5 text-gray-400" />
+      นักเรียน ({booking.students.length} คน)
+    </CardTitle>
+  </CardHeader>
+  <CardContent>
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      {booking.students.map((student, idx) => (
+        <div key={idx} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
+          {editingStudent === idx ? (
+            <div className="space-y-3">
+              <Input
+                placeholder="ชื่อ-นามสกุล"
+                value={tempStudentData.name}
+                onChange={(e) => setTempStudentData(prev => ({ ...prev, name: e.target.value }))}
+              />
+              <Input
+                placeholder="โรงเรียน"
+                value={tempStudentData.schoolName}
+                onChange={(e) => setTempStudentData(prev => ({ ...prev, schoolName: e.target.value }))}
+              />
+              <GradeLevelCombobox
+                value={tempStudentData.gradeLevel}
+                onChange={(value) => setTempStudentData(prev => ({ ...prev, gradeLevel: value }))}
+                placeholder="พิมพ์ระดับชั้น เช่น ป.4, Grade 3..."
+              />
+              <div className="flex gap-2">
+                <Button size="sm" onClick={handleStudentSave}>บันทึก</Button>
+                <Button size="sm" variant="outline" onClick={() => setEditingStudent(null)}>ยกเลิก</Button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-start justify-between mb-2">
+                <div className="flex-1">
+                  <h4 className="font-medium text-base">{student.name}</h4>
+                  <div className="space-y-1 mt-1">
+                    {student.schoolName && (
+                      <p className="text-sm text-gray-600 flex items-center gap-1">
+                        <School className="h-3 w-3" />
+                        {student.schoolName}
+                      </p>
+                    )}
+                    {student.gradeLevel && (
+                      <p className="text-sm text-gray-600 flex items-center gap-1">
+                        <GraduationCap className="h-3 w-3" />
+                        ระดับชั้น: {student.gradeLevel}
+                      </p>
                     )}
                   </div>
-                ))}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleStudentEdit(idx)}
+                  >
+                    <Edit className="h-3 w-3" />
+                  </Button>
+                  <Badge variant="outline" className="text-xs">
+                    คนที่ {idx + 1}
+                  </Badge>
+                </div>
               </div>
-            </CardContent>
-          </Card>
+              <div className="space-y-1">
+                <p className="text-xs text-gray-500">วิชาที่สนใจ:</p>
+                <div className="flex flex-wrap gap-1">
+                  {student.subjectInterests.map(subjectId => {
+                    const subject = subjects.find(s => s.id === subjectId);
+                    return subject ? (
+                      <Badge 
+                        key={subjectId} 
+                        className="text-xs"
+                        style={{ 
+                          backgroundColor: `${subject.color}20`,
+                          color: subject.color,
+                          borderColor: subject.color
+                        }}
+                      >
+                        {subject.name}
+                      </Badge>
+                    ) : null;
+                  })}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      ))}
+    </div>
+  </CardContent>
+</Card>
 
           {/* Trial Sessions */}
           <Card>
