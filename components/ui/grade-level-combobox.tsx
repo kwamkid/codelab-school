@@ -10,6 +10,7 @@ import {
   CommandGroup,
   CommandInput,
   CommandItem,
+  CommandList,
 } from "@/components/ui/command"
 import {
   Popover,
@@ -28,7 +29,7 @@ interface GradeLevelComboboxProps {
 export function GradeLevelCombobox({ 
   value, 
   onChange, 
-  placeholder = "พิมพ์ ป.4, ม1, Grade 3...",
+  placeholder = "เลือกระดับชั้น...",
   allowCustom = true 
 }: GradeLevelComboboxProps) {
   const [open, setOpen] = React.useState(false)
@@ -37,7 +38,7 @@ export function GradeLevelCombobox({
   // Filter grade levels based on search
   const filteredGrades = React.useMemo(() => {
     if (!searchValue || searchValue.length < 1) {
-      return []
+      return gradeLevels; // แสดงทั้งหมดถ้ายังไม่ได้พิมพ์
     }
     
     return searchGradeLevels(searchValue)
@@ -45,13 +46,15 @@ export function GradeLevelCombobox({
 
   // Group filtered grades by category
   const groupedGrades = React.useMemo(() => {
-    return filteredGrades.reduce((acc, grade) => {
+    const grouped = filteredGrades.reduce((acc, grade) => {
       if (!acc[grade.category]) {
         acc[grade.category] = []
       }
       acc[grade.category].push(grade)
       return acc
     }, {} as Record<string, typeof gradeLevels>)
+    
+    return grouped
   }, [filteredGrades])
 
   // Find label for current value
@@ -74,81 +77,99 @@ export function GradeLevelCombobox({
     }
   }
 
+  // Reset search when popover closes
+  React.useEffect(() => {
+    if (!open) {
+      setSearchValue("")
+    }
+  }, [open])
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
+          type="button"
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          className="w-full justify-between"
+          className="w-full justify-between text-left font-normal"
         >
-          {value ? currentLabel : placeholder}
+          <span className="truncate">{value ? currentLabel : placeholder}</span>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-full p-0" align="start" style={{ maxHeight: '300px' }}>
+      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
         <Command>
           <CommandInput 
-            placeholder="พิมพ์ ป.4, ม1, Grade 3..." 
+            placeholder="ค้นหา ป.4, ม.1, Grade 3..." 
             value={searchValue}
             onValueChange={setSearchValue}
           />
           <CommandEmpty>
-            {searchValue.length < 1 ? (
-              <div className="px-4 py-6 text-center text-sm text-muted-foreground">
-                <p className="font-medium">พิมพ์เพื่อค้นหาระดับชั้น</p>
-                <p className="text-xs mt-1">เช่น: ป4, ม1, ประถม, Grade 3</p>
-              </div>
-            ) : allowCustom && searchValue && !filteredGrades.length ? (
+            {allowCustom && searchValue ? (
               <div 
-                className="px-2 py-2 cursor-pointer hover:bg-gray-100"
+                className="px-4 py-2 cursor-pointer hover:bg-gray-100 text-sm"
                 onClick={handleCustomValue}
               >
-                ใช้ "{searchValue}"
+                ใช้ &quot;{searchValue}&quot; เป็นระดับชั้น
               </div>
             ) : (
               "ไม่พบระดับชั้นที่ค้นหา"
             )}
           </CommandEmpty>
-          {searchValue.length === 1 && (
-            <CommandGroup heading="ตัวอย่างที่ใช้บ่อย">
-              <CommandItem onSelect={() => handleSelect('ป.1')}>
-                ป.1 (ประถมศึกษาปีที่ 1)
-              </CommandItem>
-              <CommandItem onSelect={() => handleSelect('ป.4')}>
-                ป.4 (ประถมศึกษาปีที่ 4)
-              </CommandItem>
-              <CommandItem onSelect={() => handleSelect('ม.1')}>
-                ม.1 (มัธยมศึกษาปีที่ 1)
-              </CommandItem>
-              <CommandItem onSelect={() => handleSelect('Grade 1')}>
-                Grade 1
-              </CommandItem>
-              <CommandItem onSelect={() => handleSelect('Year 1')}>
-                Year 1
-              </CommandItem>
-            </CommandGroup>
-          )}
-          {Object.entries(groupedGrades).map(([category, grades]) => (
-            <CommandGroup key={category} heading={category}>
-              {grades.map((grade) => (
-                <CommandItem
-                  key={grade.value}
-                  value={grade.label}
-                  onSelect={() => handleSelect(grade.value)}
-                >
-                  <Check
-                    className={cn(
-                      "mr-2 h-4 w-4",
-                      value === grade.value ? "opacity-100" : "opacity-0"
-                    )}
-                  />
-                  {grade.label}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          ))}
+          <CommandList>
+            {searchValue.length === 0 ? (
+              // แสดงรายการทั้งหมดแบ่งตาม category เมื่อไม่มีการค้นหา
+              Object.entries(groupedGrades).length > 0 ? (
+                Object.entries(groupedGrades).map(([category, grades]) => (
+                  <CommandGroup key={category} heading={category}>
+                    {grades.slice(0, 5).map((grade) => (
+                      <CommandItem
+                        key={grade.value}
+                        value={grade.value}
+                        onSelect={() => handleSelect(grade.value)}
+                        className="cursor-pointer"
+                      >
+                        <Check
+                          className={cn(
+                            "mr-2 h-4 w-4",
+                            value === grade.value ? "opacity-100" : "opacity-0"
+                          )}
+                        />
+                        {grade.label}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                ))
+              ) : (
+                <div className="py-6 text-center text-sm">ไม่มีข้อมูล</div>
+              )
+            ) : (
+              // แสดงผลการค้นหา
+              filteredGrades.length > 0 ? (
+                Object.entries(groupedGrades).map(([category, grades]) => (
+                  <CommandGroup key={category} heading={category}>
+                    {grades.map((grade) => (
+                      <CommandItem
+                        key={grade.value}
+                        value={grade.value}
+                        onSelect={() => handleSelect(grade.value)}
+                        className="cursor-pointer"
+                      >
+                        <Check
+                          className={cn(
+                            "mr-2 h-4 w-4",
+                            value === grade.value ? "opacity-100" : "opacity-0"
+                          )}
+                        />
+                        {grade.label}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                ))
+              ) : null
+            )}
+          </CommandList>
         </Command>
       </PopoverContent>
     </Popover>

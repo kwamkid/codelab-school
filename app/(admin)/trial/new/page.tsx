@@ -9,7 +9,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { 
@@ -157,7 +156,9 @@ export default function CreateTrialBookingPage() {
         parentPhone: parentPhone.replace(/[-\s]/g, ''),
         students: students.map(s => ({
           name: s.name.trim(),
-          subjectInterests: s.subjectInterests
+          subjectInterests: s.subjectInterests,
+          schoolName: s.schoolName.trim() || undefined,
+          gradeLevel: s.gradeLevel.trim() || undefined
         })),
         status: 'new' as const
       };
@@ -170,24 +171,6 @@ export default function CreateTrialBookingPage() {
       if (contactNote.trim()) {
         bookingData.contactNote = contactNote.trim();
       }
-      
-      // Add optional student fields
-      bookingData.students = students.map(s => {
-        const studentData: any = {
-          name: s.name.trim(),
-          subjectInterests: s.subjectInterests
-        };
-        
-        if (s.schoolName.trim()) {
-          studentData.schoolName = s.schoolName.trim();
-        }
-        
-        if (s.gradeLevel.trim()) {
-          studentData.gradeLevel = s.gradeLevel.trim();
-        }
-        
-        return studentData;
-      });
       
       const bookingId = await createTrialBooking(bookingData);
       toast.success('บันทึกการจองทดลองเรียนสำเร็จ');
@@ -353,7 +336,7 @@ export default function CreateTrialBookingPage() {
                     <GradeLevelCombobox
                       value={student.gradeLevel}
                       onChange={(value) => updateStudent(idx, 'gradeLevel', value)}
-                      placeholder="พิมพ์ระดับชั้น เช่น ป.4, Grade 3..."
+                      placeholder="เลือกหรือพิมพ์ระดับชั้น..."
                     />
                   </div>
                 </div>

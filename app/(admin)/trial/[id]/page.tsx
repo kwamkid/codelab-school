@@ -2,7 +2,7 @@
 
 'use client';
 
-import { use, useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -94,9 +94,8 @@ const sourceConfig = {
   phone: { label: 'โทรศัพท์', color: 'bg-purple-100 text-purple-700' }
 };
 
-export default function TrialBookingDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default function TrialBookingDetailPage({ params }: { params: { id: string } }) {
   const searchParams = useSearchParams();
-  const resolvedParams = use(params);
   const router = useRouter();
   const [booking, setBooking] = useState<TrialBooking | null>(null);
   const [sessions, setSessions] = useState<TrialSession[]>([]);
@@ -120,8 +119,10 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
   const [selectedStudent, setSelectedStudent] = useState<string>('');
 
   useEffect(() => {
-    loadData();
-  }, [resolvedParams.id]);
+    if (params.id) {
+      loadData();
+    }
+  }, [params.id]);
 
   // เพิ่ม useEffect เพื่อตรวจสอบ action parameter
   useEffect(() => {
@@ -135,16 +136,16 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
         setRescheduleModalOpen(true);
         
         // Clear URL parameters using Next.js router
-        router.replace(`/trial/${resolvedParams.id}`, { scroll: false });
+        router.replace(`/trial/${params.id}`, { scroll: false });
       }
     }
-  }, [searchParams, sessions, router, resolvedParams.id]);
+  }, [searchParams, sessions, router, params.id]);
   
   const loadData = async () => {
     try {
       setLoading(true);
       const [bookingData, subjectsData, teachersData, branchesData] = await Promise.all([
-        getTrialBooking(resolvedParams.id),
+        getTrialBooking(params.id),
         getSubjects(),
         getTeachers(),
         getBranches()
@@ -162,7 +163,7 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
       setBranches(branchesData.filter(b => b.isActive));
       
       // Load sessions
-      const sessionsData = await getTrialSessionsByBooking(resolvedParams.id);
+      const sessionsData = await getTrialSessionsByBooking(params.id);
       setSessions(sessionsData);
       
       // Load rooms for all branches
@@ -271,7 +272,7 @@ export default function TrialBookingDetailPage({ params }: { params: Promise<{ i
     setSelectedSession(null);
     
     // Make sure URL is clean
-    router.replace(`/trial/${resolvedParams.id}`, { scroll: false });
+    router.replace(`/trial/${params.id}`, { scroll: false });
   };
 
   const getStatusBadge = (status: TrialBooking['status']) => {
