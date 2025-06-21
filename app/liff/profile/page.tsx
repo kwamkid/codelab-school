@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { 
   User, 
   School, 
@@ -245,64 +245,60 @@ function ProfileContent() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="flex items-center gap-4 mb-4">
-              <Avatar className="h-16 w-16">
-                <AvatarImage src={profile?.pictureUrl} />
-                <AvatarFallback>
-                  {profile?.displayName?.charAt(0) || 'U'}
-                </AvatarFallback>
-              </Avatar>
-              <div className="flex-1">
-                <h3 className="font-semibold">{parentData?.displayName || profile?.displayName || 'ไม่ระบุชื่อ'}</h3>
+            <div className="space-y-3">
+              <div>
+                <h3 className="font-semibold text-lg">{parentData?.displayName || profile?.displayName || 'ไม่ระบุชื่อ'}</h3>
               </div>
-            </div>
 
-            <div className="space-y-3 text-sm">
-              {parentData?.phone && (
-                <div className="flex items-center gap-2">
-                  <Phone className="h-4 w-4 text-muted-foreground" />
-                  <span>โทร: {parentData.phone}</span>
-                  {parentData.emergencyPhone && (
-                    <span className="text-muted-foreground">
-                      (ฉุกเฉิน: {parentData.emergencyPhone})
+              <div className="space-y-2 text-sm">
+                {parentData?.phone && (
+                  <div className="flex items-center gap-2">
+                    <Phone className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                    <div>
+                      <span>โทร: {parentData.phone}</span>
+                      {parentData.emergencyPhone && (
+                        <span className="text-muted-foreground ml-2">
+                          (ฉุกเฉิน: {parentData.emergencyPhone})
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+                
+                {parentData?.email && (
+                  <div className="flex items-center gap-2">
+                    <Mail className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                    <span className="break-all">{parentData.email}</span>
+                  </div>
+                )}
+
+                <div className="flex items-start gap-2">
+                  <MapPin className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <span className="font-medium">ที่อยู่: </span>
+                    <span className={parentData?.address ? '' : 'text-red-500'}>
+                      {formatAddress(parentData?.address)}
                     </span>
-                  )}
-                </div>
-              )}
-              
-              {parentData?.email && (
-                <div className="flex items-center gap-2">
-                  <Mail className="h-4 w-4 text-muted-foreground" />
-                  <span>{parentData.email}</span>
-                </div>
-              )}
-
-              <div className="flex items-start gap-2">
-                <MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />
-                <div>
-                  <span className="font-medium">ที่อยู่: </span>
-                  <span className={parentData?.address ? '' : 'text-red-500'}>
-                    {formatAddress(parentData?.address)}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {preferredBranch && (
-              <div className="mt-4 p-3 bg-gray-50 rounded-lg">
-                <div className="flex items-start gap-2 text-sm">
-                  <School className="h-4 w-4 text-primary mt-0.5" />
-                  <div>
-                    <p className="font-medium">{preferredBranch.name}</p>
-                    {preferredBranch.address && (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {preferredBranch.address}
-                      </p>
-                    )}
                   </div>
                 </div>
               </div>
-            )}
+
+              {preferredBranch && (
+                <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+                  <div className="flex items-start gap-2 text-sm">
+                    <School className="h-4 w-4 text-primary flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="font-medium">{preferredBranch.name}</p>
+                      {preferredBranch.address && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {preferredBranch.address}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
 
@@ -319,6 +315,7 @@ function ProfileContent() {
                   size="sm"
                   onClick={() => navigateTo(`/liff/profile/${parentId}/students/new`)}
                   disabled={navigating}
+                  className="text-xs"
                 >
                   <Plus className="h-4 w-4 mr-1" />
                   เพิ่ม
@@ -344,63 +341,50 @@ function ProfileContent() {
                 {students.map((student) => (
                   <div
                     key={student.id}
-                    className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50"
+                    className="border rounded-lg p-3 hover:bg-gray-50 transition-colors"
                   >
-                    <div 
-                      className="flex items-center gap-3 flex-1 cursor-pointer"
-                      onClick={() => navigateTo(`/liff/profile/${parentId}/students/${student.id}`)}
-                    >
-                      <Avatar className="h-10 w-10">
-                        <AvatarImage src={student.profileImage} />
-                        <AvatarFallback>
-                          {student.nickname?.charAt(0) || student.name.charAt(0)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1">
-                        <p className="font-medium">{student.nickname || student.name}</p>
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <span>{student.gradeLevel || 'ไม่ระบุชั้นเรียน'}</span>
-                          <span>•</span>
-                          <span className="flex items-center gap-1">
-                            <Calendar className="h-3 w-3" />
-                            อายุ {calculateAge(student.birthdate)} ปี
-                          </span>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-base">
+                          {student.nickname || student.name}
+                        </p>
+                        <div className="text-sm text-muted-foreground space-y-1 mt-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span>{student.gradeLevel || 'ไม่ระบุชั้นเรียน'}</span>
+                            <span>•</span>
+                            <span className="flex items-center gap-1">
+                              <Calendar className="h-3 w-3" />
+                              อายุ {calculateAge(student.birthdate)} ปี
+                            </span>
+                          </div>
                           {student.schoolName && (
-                            <>
-                              <span>•</span>
-                              <span className="flex items-center gap-1">
-                                <School className="h-3 w-3" />
-                                {student.schoolName}
-                              </span>
-                            </>
+                            <div className="flex items-center gap-1">
+                              <School className="h-3 w-3" />
+                              <span className="truncate">{student.schoolName}</span>
+                            </div>
                           )}
                         </div>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          navigateTo(`/liff/profile/${parentId}/students/${student.id}`)
-                        }}
-                        disabled={navigating}
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setDeleteStudentData(student)
-                        }}
-                        disabled={navigating}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8"
+                          onClick={() => navigateTo(`/liff/profile/${parentId}/students/${student.id}`)}
+                          disabled={navigating}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50"
+                          onClick={() => setDeleteStudentData(student)}
+                          disabled={navigating}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -422,7 +406,7 @@ function ProfileContent() {
                 onClick={() => navigateTo('/liff/schedule')}
                 disabled={navigating}
               >
-                <School className="h-6 w-6" />
+                <Calendar className="h-6 w-6" />
                 <span className="text-sm">ตารางเรียน</span>
               </Button>
               <Button

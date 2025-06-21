@@ -13,9 +13,10 @@ import { ChevronLeft, User, Calendar, School, AlertCircle, Loader2 } from 'lucid
 import { createStudent } from '@/lib/services/parents'
 import { toast } from 'sonner'
 import { z } from 'zod'
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import AuthWrapper from '@/components/liff/auth-wrapper'
+import { LiffProvider } from '@/components/liff/liff-provider'
+import { useLiff } from '@/components/liff/liff-provider'
 
 // Form schema
 const formSchema = z.object({
@@ -37,17 +38,21 @@ function AddStudentContent() {
   const router = useRouter()
   const params = useParams()
   const parentId = params.id as string
+  const { profile, isLoggedIn, isLoading: liffLoading, liff } = useLiff()
   
   const [saving, setSaving] = useState(false)
   
   const {
-    register,
+    control,
     handleSubmit,
     formState: { errors },
     setValue,
     watch
   } = useForm<FormData>({
-    resolver: zodResolver(formSchema)
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      gender: 'M'
+    }
   })
 
   const onSubmit = async (data: FormData) => {
@@ -71,7 +76,7 @@ function AddStudentContent() {
       })
       
       toast.success('เพิ่มข้อมูลนักเรียนเรียบร้อย')
-      router.push(`/liff/profile/${parentId}/students`)
+      router.push('/liff/profile')
       
     } catch (error) {
       console.error('Error saving:', error)
@@ -97,7 +102,7 @@ function AddStudentContent() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => router.push(`/liff/profile/${parentId}/students`)}
+            onClick={() => router.push('/liff/profile')}
             className="text-white hover:text-white/80 -ml-2"
           >
             <ChevronLeft className="h-5 w-5" />
@@ -118,10 +123,18 @@ function AddStudentContent() {
           <CardContent className="space-y-4">
             <div>
               <Label htmlFor="name">ชื่อ-นามสกุล *</Label>
-              <Input
-                id="name"
-                {...register('name')}
-                placeholder="ระบุชื่อ-นามสกุลภาษาไทย"
+              <Controller
+                name="name"
+                control={control}
+                render={({ field }) => (
+                  <Input
+                    id="name"
+                    placeholder="ระบุชื่อ-นามสกุลภาษาไทย"
+                    value={field.value || ''}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                  />
+                )}
               />
               {errors.name && (
                 <p className="text-sm text-red-500 mt-1">{errors.name.message}</p>
@@ -131,10 +144,18 @@ function AddStudentContent() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="nickname">ชื่อเล่น *</Label>
-                <Input
-                  id="nickname"
-                  {...register('nickname')}
-                  placeholder="ชื่อเล่น"
+                <Controller
+                  name="nickname"
+                  control={control}
+                  render={({ field }) => (
+                    <Input
+                      id="nickname"
+                      placeholder="ชื่อเล่น"
+                      value={field.value || ''}
+                      onChange={field.onChange}
+                      onBlur={field.onBlur}
+                    />
+                  )}
                 />
                 {errors.nickname && (
                   <p className="text-sm text-red-500 mt-1">{errors.nickname.message}</p>
@@ -143,18 +164,24 @@ function AddStudentContent() {
 
               <div>
                 <Label htmlFor="gender">เพศ *</Label>
-                <Select
-                  value={watch('gender')}
-                  onValueChange={(value) => setValue('gender', value as 'M' | 'F')}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="เลือกเพศ" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="M">ชาย</SelectItem>
-                    <SelectItem value="F">หญิง</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Controller
+                  name="gender"
+                  control={control}
+                  render={({ field }) => (
+                    <Select
+                      value={field.value}
+                      onValueChange={field.onChange}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="เลือกเพศ" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="M">ชาย</SelectItem>
+                        <SelectItem value="F">หญิง</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
                 {errors.gender && (
                   <p className="text-sm text-red-500 mt-1">{errors.gender.message}</p>
                 )}
@@ -163,12 +190,20 @@ function AddStudentContent() {
 
             <div>
               <Label htmlFor="birthdate">วันเกิด *</Label>
-              <Input
-                id="birthdate"
-                type="date"
-                {...register('birthdate')}
-                max={today}
-                min={minDateStr}
+              <Controller
+                name="birthdate"
+                control={control}
+                render={({ field }) => (
+                  <Input
+                    id="birthdate"
+                    type="date"
+                    max={today}
+                    min={minDateStr}
+                    value={field.value || ''}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                  />
+                )}
               />
               {errors.birthdate && (
                 <p className="text-sm text-red-500 mt-1">{errors.birthdate.message}</p>
@@ -188,19 +223,33 @@ function AddStudentContent() {
           <CardContent className="space-y-4">
             <div>
               <Label htmlFor="schoolName">โรงเรียน</Label>
-              <Input
-                id="schoolName"
-                {...register('schoolName')}
-                placeholder="ชื่อโรงเรียน (ไม่บังคับ)"
+              <Controller
+                name="schoolName"
+                control={control}
+                render={({ field }) => (
+                  <Input
+                    id="schoolName"
+                    placeholder="ชื่อโรงเรียน (ไม่บังคับ)"
+                    value={field.value || ''}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                  />
+                )}
               />
             </div>
             
             <div>
               <Label htmlFor="gradeLevel">ระดับชั้น</Label>
-              <GradeLevelCombobox
-                value={watch('gradeLevel') || ''}
-                onChange={(value) => setValue('gradeLevel', value)}
-                placeholder="เลือกหรือพิมพ์ระดับชั้น..."
+              <Controller
+                name="gradeLevel"
+                control={control}
+                render={({ field }) => (
+                  <GradeLevelCombobox
+                    value={field.value || ''}
+                    onChange={field.onChange}
+                    placeholder="เลือกหรือพิมพ์ระดับชั้น..."
+                  />
+                )}
               />
               <p className="text-xs text-gray-500 mt-1">
                 เริ่มพิมพ์เพื่อค้นหา เช่น "ป", "ประถม", "Grade", "Year"
@@ -220,41 +269,73 @@ function AddStudentContent() {
           <CardContent className="space-y-4">
             <div>
               <Label htmlFor="allergies">ประวัติการแพ้</Label>
-              <Textarea
-                id="allergies"
-                {...register('allergies')}
-                placeholder="ระบุอาหาร/ยา/สิ่งที่แพ้ (ถ้ามี)"
-                rows={3}
+              <Controller
+                name="allergies"
+                control={control}
+                render={({ field }) => (
+                  <Textarea
+                    id="allergies"
+                    placeholder="ระบุอาหาร/ยา/สิ่งที่แพ้ (ถ้ามี)"
+                    rows={3}
+                    value={field.value || ''}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                  />
+                )}
               />
             </div>
 
             <div>
               <Label htmlFor="specialNeeds">ข้อควรระวังพิเศษ</Label>
-              <Textarea
-                id="specialNeeds"
-                {...register('specialNeeds')}
-                placeholder="โรคประจำตัว หรือข้อควรระวังอื่นๆ (ถ้ามี)"
-                rows={3}
+              <Controller
+                name="specialNeeds"
+                control={control}
+                render={({ field }) => (
+                  <Textarea
+                    id="specialNeeds"
+                    placeholder="โรคประจำตัว หรือข้อควรระวังอื่นๆ (ถ้ามี)"
+                    rows={3}
+                    value={field.value || ''}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                  />
+                )}
               />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="emergencyContact">ผู้ติดต่อฉุกเฉิน</Label>
-                <Input
-                  id="emergencyContact"
-                  {...register('emergencyContact')}
-                  placeholder="ชื่อผู้ติดต่อ"
+                <Controller
+                  name="emergencyContact"
+                  control={control}
+                  render={({ field }) => (
+                    <Input
+                      id="emergencyContact"
+                      placeholder="ชื่อผู้ติดต่อ"
+                      value={field.value || ''}
+                      onChange={field.onChange}
+                      onBlur={field.onBlur}
+                    />
+                  )}
                 />
               </div>
 
               <div>
                 <Label htmlFor="emergencyPhone">เบอร์ฉุกเฉิน</Label>
-                <Input
-                  id="emergencyPhone"
-                  {...register('emergencyPhone')}
-                  placeholder="0812345678"
-                  maxLength={10}
+                <Controller
+                  name="emergencyPhone"
+                  control={control}
+                  render={({ field }) => (
+                    <Input
+                      id="emergencyPhone"
+                      placeholder="0812345678"
+                      maxLength={10}
+                      value={field.value || ''}
+                      onChange={field.onChange}
+                      onBlur={field.onBlur}
+                    />
+                  )}
                 />
               </div>
             </div>
@@ -262,7 +343,7 @@ function AddStudentContent() {
         </Card>
 
         {/* Actions */}
-        <div className="flex gap-2">
+        <div className="flex gap-2 pb-4">
           <Button
             type="submit"
             className="flex-1"
@@ -280,7 +361,7 @@ function AddStudentContent() {
           <Button
             type="button"
             variant="outline"
-            onClick={() => router.push(`/liff/profile/${parentId}/students`)}
+            onClick={() => router.push('/liff/profile')}
             disabled={saving}
           >
             ยกเลิก
@@ -293,8 +374,8 @@ function AddStudentContent() {
 
 export default function AddStudentPage() {
   return (
-    <AuthWrapper>
+    <LiffProvider requireLogin={true}>
       <AddStudentContent />
-    </AuthWrapper>
+    </LiffProvider>
   );
 }
