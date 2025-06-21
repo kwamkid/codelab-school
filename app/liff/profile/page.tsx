@@ -5,14 +5,40 @@ import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
-import { User, Users, School, LogOut, ChevronRight, ChevronLeft, MapPin, Phone, Mail } from 'lucide-react'
+import { 
+  User, 
+  School, 
+  LogOut, 
+  ChevronRight, 
+  ChevronLeft, 
+  MapPin, 
+  Phone, 
+  Mail, 
+  Edit, 
+  Trash2, 
+  Plus,
+  AlertCircle,
+  Calendar,
+  Users,
+  Loader2
+} from 'lucide-react'
 import { useLiff } from '@/components/liff/liff-provider'
-import { getParentByLineId, getStudentsByParent } from '@/lib/services/parents'
+import { getParentByLineId, getStudentsByParent, deleteStudent as deleteStudentService } from '@/lib/services/parents'
 import { getBranch } from '@/lib/services/branches'
 import { toast } from 'sonner'
 import type { Parent, Student, Branch } from '@/types/models'
 import { LiffProvider } from '@/components/liff/liff-provider'
-import TechLoadingAnimation from '@/components/liff/tech-loading-animation'
+import { Loading } from '@/components/ui/loading'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 function ProfileContent() {
   const router = useRouter()
@@ -23,6 +49,11 @@ function ProfileContent() {
   const [isLoadingData, setIsLoadingData] = useState(true)
   const [parentId, setParentId] = useState<string | null>(null)
   const [authChecked, setAuthChecked] = useState(false)
+  
+  // Delete confirmation state
+  const [deleteStudentData, setDeleteStudentData] = useState<Student | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [navigating, setNavigating] = useState(false)
 
   // Check authentication
   useEffect(() => {
@@ -52,7 +83,7 @@ function ProfileContent() {
       
       if (parent) {
         setParentData(parent)
-        setParentId(parent.id) // เก็บ parent ID
+        setParentId(parent.id)
 
         // Load preferred branch
         if (parent.preferredBranchId) {
@@ -66,12 +97,6 @@ function ProfileContent() {
         const studentsList = await getStudentsByParent(parent.id)
         console.log('Students:', studentsList)
         
-        // Debug birthdate format
-        if (studentsList.length > 0) {
-          console.log('First student birthdate:', studentsList[0].birthdate)
-          console.log('Birthdate type:', typeof studentsList[0].birthdate)
-        }
-        
         setStudents(studentsList.filter(student => student.isActive))
       } else {
         console.log('No parent data found for LINE ID:', lineUserId)
@@ -84,10 +109,16 @@ function ProfileContent() {
     }
   }
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     if (liff) {
-      liff.logout()
+      setNavigating(true)
+      await liff.logout()
     }
+  }
+
+  const navigateTo = (path: string) => {
+    setNavigating(true)
+    router.push(path)
   }
 
   const calculateAge = (birthdate: any) => {
@@ -95,16 +126,12 @@ function ProfileContent() {
     
     // Handle different birthdate formats
     if (birthdate?.seconds) {
-      // Firestore Timestamp
       birth = new Date(birthdate.seconds * 1000);
     } else if (birthdate?.toDate && typeof birthdate.toDate === 'function') {
-      // Firestore Timestamp with toDate method
       birth = birthdate.toDate();
     } else if (birthdate instanceof Date) {
-      // Already a Date object
       birth = birthdate;
     } else if (typeof birthdate === 'string') {
-      // String date
       birth = new Date(birthdate);
     } else {
       console.error('Invalid birthdate format:', birthdate);
@@ -137,9 +164,36 @@ function ProfileContent() {
     return parts.join(' ') || 'ไม่ได้ระบุ'
   }
 
+  const handleDeleteStudent = async () => {
+    if (!deleteStudentData || !parentId) return
+
+    try {
+      setIsDeleting(true)
+      
+      // Call delete function
+      await deleteStudentService(parentId, deleteStudentData.id)
+      
+      // Update local state
+      setStudents(prev => prev.filter(s => s.id !== deleteStudentData.id))
+      
+      toast.success('ลบข้อมูลนักเรียนเรียบร้อยแล้ว')
+      setDeleteStudentData(null)
+    } catch (error: any) {
+      console.error('Error deleting student:', error)
+      toast.error(error.message || 'ไม่สามารถลบข้อมูลได้')
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
   // Show loading while checking auth or loading data
   if (liffLoading || !authChecked || isLoadingData) {
-    return <TechLoadingAnimation />
+    return <Loading fullScreen text="กำลังโหลดข้อมูล..." />
+  }
+
+  // Show navigating overlay
+  if (navigating) {
+    return <Loading fullScreen text="กำลังโหลด..." />
   }
 
   return (
@@ -151,7 +205,7 @@ function ProfileContent() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => router.push('/liff')}
+              onClick={() => navigateTo('/liff')}
               className="text-white hover:text-white/80 -ml-2"
             >
               <ChevronLeft className="h-5 w-5" />
@@ -163,6 +217,7 @@ function ProfileContent() {
             size="sm"
             onClick={handleLogout}
             className="text-white hover:text-white/80"
+            disabled={navigating}
           >
             <LogOut className="h-4 w-4" />
           </Button>
@@ -173,10 +228,21 @@ function ProfileContent() {
         {/* Parent Profile Card */}
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <User className="h-5 w-5" />
-              ข้อมูลผู้ปกครอง
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <User className="h-5 w-5" />
+                ข้อมูลผู้ปกครอง
+              </CardTitle>
+              {parentId && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => navigateTo(`/liff/profile/${parentId}`)}
+                >
+                  <Edit className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-4 mb-4">
@@ -187,7 +253,7 @@ function ProfileContent() {
                 </AvatarFallback>
               </Avatar>
               <div className="flex-1">
-                <h3 className="font-semibold">{profile?.displayName || 'ไม่ระบุชื่อ'}</h3>
+                <h3 className="font-semibold">{parentData?.displayName || profile?.displayName || 'ไม่ระบุชื่อ'}</h3>
               </div>
             </div>
 
@@ -218,16 +284,6 @@ function ProfileContent() {
                   <span className={parentData?.address ? '' : 'text-red-500'}>
                     {formatAddress(parentData?.address)}
                   </span>
-                  {!parentData?.address && (
-                    <Button
-                      variant="link"
-                      size="sm"
-                      className="text-xs h-auto p-0 ml-2"
-                      onClick={() => parentId && router.push(`/liff/profile/${parentId}`)}
-                    >
-                      กรุณากรอกที่อยู่
-                    </Button>
-                  )}
                 </div>
               </div>
             </div>
@@ -247,15 +303,6 @@ function ProfileContent() {
                 </div>
               </div>
             )}
-
-            <Button 
-              variant="outline" 
-              className="w-full mt-4"
-              onClick={() => parentId && router.push(`/liff/profile/${parentId}`)}
-              disabled={!parentId}
-            >
-              แก้ไขข้อมูล
-            </Button>
           </CardContent>
         </Card>
 
@@ -265,15 +312,16 @@ function ProfileContent() {
             <div className="flex items-center justify-between">
               <CardTitle className="flex items-center gap-2">
                 <Users className="h-5 w-5" />
-                รายชื่อนักเรียน
+                รายชื่อนักเรียน ({students.length} คน)
               </CardTitle>
-              {students.length > 0 && parentId && (
+              {parentId && (
                 <Button
-                  variant="ghost"
                   size="sm"
-                  onClick={() => router.push(`/liff/profile/${parentId}/students`)}
+                  onClick={() => navigateTo(`/liff/profile/${parentId}/students/new`)}
+                  disabled={navigating}
                 >
-                  จัดการ
+                  <Plus className="h-4 w-4 mr-1" />
+                  เพิ่ม
                 </Button>
               )}
             </div>
@@ -283,9 +331,9 @@ function ProfileContent() {
               <div className="text-center py-8">
                 <p className="text-muted-foreground mb-4">ยังไม่มีข้อมูลนักเรียน</p>
                 <Button 
-                  onClick={() => router.push(`/liff/profile/${parentId}/students/new`)}
+                  onClick={() => navigateTo(`/liff/profile/${parentId}/students/new`)}
                   className="gap-2"
-                  disabled={!parentId}
+                  disabled={!parentId || navigating}
                 >
                   <Users className="h-4 w-4" />
                   ลงทะเบียนนักเรียน
@@ -296,33 +344,66 @@ function ProfileContent() {
                 {students.map((student) => (
                   <div
                     key={student.id}
-                    className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 cursor-pointer"
-                    onClick={() => router.push(`/liff/profile/${parentId}/students/${student.id}`)}
+                    className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50"
                   >
-                    <div className="flex items-center gap-3">
+                    <div 
+                      className="flex items-center gap-3 flex-1 cursor-pointer"
+                      onClick={() => navigateTo(`/liff/profile/${parentId}/students/${student.id}`)}
+                    >
                       <Avatar className="h-10 w-10">
                         <AvatarImage src={student.profileImage} />
                         <AvatarFallback>
                           {student.nickname?.charAt(0) || student.name.charAt(0)}
                         </AvatarFallback>
                       </Avatar>
-                      <div>
+                      <div className="flex-1">
                         <p className="font-medium">{student.nickname || student.name}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {student.gradeLevel || 'ไม่ระบุชั้นเรียน'} • อายุ {calculateAge(student.birthdate)} ปี
-                        </p>
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <span>{student.gradeLevel || 'ไม่ระบุชั้นเรียน'}</span>
+                          <span>•</span>
+                          <span className="flex items-center gap-1">
+                            <Calendar className="h-3 w-3" />
+                            อายุ {calculateAge(student.birthdate)} ปี
+                          </span>
+                          {student.schoolName && (
+                            <>
+                              <span>•</span>
+                              <span className="flex items-center gap-1">
+                                <School className="h-3 w-3" />
+                                {student.schoolName}
+                              </span>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
-                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          navigateTo(`/liff/profile/${parentId}/students/${student.id}`)
+                        }}
+                        disabled={navigating}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setDeleteStudentData(student)
+                        }}
+                        disabled={navigating}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 ))}
-
-                <Button 
-                  className="w-full mt-4 bg-red-500 hover:bg-red-600"
-                  onClick={() => router.push(`/liff/profile/${parentId}/students/new`)}
-                >
-                  เพิ่มนักเรียน
-                </Button>
               </div>
             )}
           </CardContent>
@@ -338,7 +419,8 @@ function ProfileContent() {
               <Button
                 variant="outline"
                 className="h-20 flex-col gap-2"
-                onClick={() => router.push('/liff/schedule')}
+                onClick={() => navigateTo('/liff/schedule')}
+                disabled={navigating}
               >
                 <School className="h-6 w-6" />
                 <span className="text-sm">ตารางเรียน</span>
@@ -346,7 +428,8 @@ function ProfileContent() {
               <Button
                 variant="outline"
                 className="h-20 flex-col gap-2"
-                onClick={() => router.push('/liff/makeup')}
+                onClick={() => navigateTo('/liff/makeup')}
+                disabled={navigating}
               >
                 <Users className="h-6 w-6" />
                 <span className="text-sm">Makeup Class</span>
@@ -355,6 +438,42 @@ function ProfileContent() {
           </Card>
         )}
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={!!deleteStudentData} onOpenChange={() => setDeleteStudentData(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-destructive" />
+              ยืนยันการลบข้อมูล
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              คุณต้องการลบข้อมูลของ <strong>{deleteStudentData?.nickname || deleteStudentData?.name}</strong> ใช่หรือไม่?
+              <br />
+              <span className="text-destructive text-sm mt-2 block">
+                ⚠️ การลบข้อมูลนี้ไม่สามารถย้อนกลับได้
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>ยกเลิก</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteStudent}
+              disabled={isDeleting}
+              className="bg-destructive hover:bg-destructive/90"
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  กำลังลบ...
+                </>
+              ) : (
+                'ยืนยันการลบ'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

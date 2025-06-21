@@ -9,15 +9,15 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { GradeLevelCombobox } from "@/components/ui/grade-level-combobox"
-import { Switch } from "@/components/ui/switch"
 import { ChevronLeft, User, Calendar, School, AlertCircle, Loader2 } from 'lucide-react'
 import { getStudent, updateStudent } from '@/lib/services/parents'
 import { toast } from 'sonner'
 import { z } from 'zod'
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import TechLoadingAnimation from '@/components/liff/tech-loading-animation'
-import AuthWrapper from '@/components/liff/auth-wrapper'
+import { Loading } from '@/components/ui/loading'
+import { LiffProvider } from '@/components/liff/liff-provider'
+import { useLiff } from '@/components/liff/liff-provider'
 
 // Form schema
 const formSchema = z.object({
@@ -31,7 +31,6 @@ const formSchema = z.object({
   specialNeeds: z.string().optional(),
   emergencyContact: z.string().optional(),
   emergencyPhone: z.string().optional(),
-  isActive: z.boolean()
 })
 
 type FormData = z.infer<typeof formSchema>
@@ -41,23 +40,53 @@ function EditStudentContent() {
   const params = useParams()
   const parentId = params.id as string
   const studentId = params.studentId as string
+  const { profile, isLoggedIn, isLoading: liffLoading, liff } = useLiff()
   
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [navigating, setNavigating] = useState(false)
+  const [authChecked, setAuthChecked] = useState(false)
   
   const {
-    register,
+    control,
     handleSubmit,
     formState: { errors },
     setValue,
-    watch
+    watch,
+    reset
   } = useForm<FormData>({
-    resolver: zodResolver(formSchema)
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      name: '',
+      nickname: '',
+      birthdate: '',
+      gender: 'M',
+      gradeLevel: '',
+      schoolName: '',
+      allergies: '',
+      specialNeeds: '',
+      emergencyContact: '',
+      emergencyPhone: '',
+    }
   })
 
+  // Check authentication
   useEffect(() => {
-    loadStudent()
-  }, [parentId, studentId])
+    if (!liffLoading) {
+      if (!isLoggedIn && liff) {
+        console.log('[EditStudentContent] Not logged in, redirecting...')
+        liff.login()
+      } else if (isLoggedIn) {
+        setAuthChecked(true)
+      }
+    }
+  }, [liffLoading, isLoggedIn, liff])
+
+  useEffect(() => {
+    if (parentId && studentId && authChecked) {
+      loadStudent()
+    }
+  }, [parentId, studentId, authChecked])
 
   const loadStudent = async () => {
     try {
@@ -66,36 +95,38 @@ function EditStudentContent() {
       
       if (!student) {
         toast.error('ไม่พบข้อมูลนักเรียน')
-        router.back()
+        navigateBack()
         return
       }
       
-      // Set form values
-      setValue('name', student.name)
-      setValue('nickname', student.nickname || '')
-      
       // Format birthdate - handle different types safely
       let birthdateStr = ''
-      const birthdate = student.birthdate as any // Type assertion to handle multiple formats
+      const birthdate = student.birthdate as any
       
       if (birthdate instanceof Date) {
         birthdateStr = birthdate.toISOString().split('T')[0]
       } else if (birthdate && typeof birthdate.toDate === 'function') {
         birthdateStr = birthdate.toDate().toISOString().split('T')[0]
       } else if (birthdate && birthdate.seconds) {
-        // Handle Firestore timestamp
         birthdateStr = new Date(birthdate.seconds * 1000).toISOString().split('T')[0]
       }
       
-      setValue('birthdate', birthdateStr)
-      setValue('gender', student.gender)
-      setValue('gradeLevel', student.gradeLevel)
-      setValue('schoolName', student.schoolName || '')
-      setValue('allergies', student.allergies || '')
-      setValue('specialNeeds', student.specialNeeds || '')
-      setValue('emergencyContact', student.emergencyContact || '')
-      setValue('emergencyPhone', student.emergencyPhone || '')
-      setValue('isActive', student.isActive)
+      // Reset form with loaded data
+      const formData = {
+        name: student.name,
+        nickname: student.nickname || '',
+        birthdate: birthdateStr,
+        gender: student.gender,
+        gradeLevel: student.gradeLevel || '',
+        schoolName: student.schoolName || '',
+        allergies: student.allergies || '',
+        specialNeeds: student.specialNeeds || '',
+        emergencyContact: student.emergencyContact || '',
+        emergencyPhone: student.emergencyPhone || '',
+      }
+      
+      console.log('[EditStudent] Form data to reset:', formData)
+      reset(formData)
       
     } catch (error) {
       console.error('Error loading student:', error)
@@ -103,6 +134,11 @@ function EditStudentContent() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const navigateBack = () => {
+    setNavigating(true)
+    router.push('/liff/profile')
   }
 
   const onSubmit = async (data: FormData) => {
@@ -122,11 +158,11 @@ function EditStudentContent() {
         specialNeeds: data.specialNeeds || '',
         emergencyContact: data.emergencyContact || '',
         emergencyPhone: data.emergencyPhone || '',
-        isActive: data.isActive
+        isActive: true // Always keep active
       })
       
       toast.success('บันทึกข้อมูลเรียบร้อย')
-      router.push(`/liff/profile/${parentId}/students`)
+      navigateBack()
       
     } catch (error) {
       console.error('Error saving:', error)
@@ -144,8 +180,8 @@ function EditStudentContent() {
   minDate.setFullYear(minDate.getFullYear() - 18)
   const minDateStr = minDate.toISOString().split('T')[0]
 
-  if (loading) {
-    return <TechLoadingAnimation />
+  if (liffLoading || !authChecked || loading || navigating) {
+    return <Loading fullScreen text="กำลังโหลด..." />
   }
 
   return (
@@ -156,7 +192,7 @@ function EditStudentContent() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => router.push(`/liff/profile/${parentId}/students`)}
+            onClick={navigateBack}
             className="text-white hover:text-white/80 -ml-2"
           >
             <ChevronLeft className="h-5 w-5" />
@@ -165,26 +201,7 @@ function EditStudentContent() {
         </div>
       </div>
 
-      <form onSubmit={handleSubmit(onSubmit)} className="p-4 space-y-4">
-        {/* Active Status */}
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <Label htmlFor="isActive">สถานะการเรียน</Label>
-                <p className="text-sm text-muted-foreground">
-                  {watch('isActive') ? 'กำลังเรียนอยู่' : 'ไม่ได้เรียนแล้ว'}
-                </p>
-              </div>
-              <Switch
-                id="isActive"
-                checked={watch('isActive')}
-                onCheckedChange={(checked) => setValue('isActive', checked)}
-              />
-            </div>
-          </CardContent>
-        </Card>
-
+      <div className="p-4 space-y-4">
         {/* Basic Information */}
         <Card>
           <CardHeader>
@@ -196,10 +213,16 @@ function EditStudentContent() {
           <CardContent className="space-y-4">
             <div>
               <Label htmlFor="name">ชื่อ-นามสกุล *</Label>
-              <Input
-                id="name"
-                {...register('name')}
-                placeholder="ระบุชื่อ-นามสกุลภาษาไทย"
+              <Controller
+                name="name"
+                control={control}
+                render={({ field }) => (
+                  <Input
+                    {...field}
+                    id="name"
+                    placeholder="ระบุชื่อ-นามสกุลภาษาไทย"
+                  />
+                )}
               />
               {errors.name && (
                 <p className="text-sm text-red-500 mt-1">{errors.name.message}</p>
@@ -209,10 +232,16 @@ function EditStudentContent() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="nickname">ชื่อเล่น *</Label>
-                <Input
-                  id="nickname"
-                  {...register('nickname')}
-                  placeholder="ชื่อเล่น"
+                <Controller
+                  name="nickname"
+                  control={control}
+                  render={({ field }) => (
+                    <Input
+                      {...field}
+                      id="nickname"
+                      placeholder="ชื่อเล่น"
+                    />
+                  )}
                 />
                 {errors.nickname && (
                   <p className="text-sm text-red-500 mt-1">{errors.nickname.message}</p>
@@ -241,12 +270,18 @@ function EditStudentContent() {
 
             <div>
               <Label htmlFor="birthdate">วันเกิด *</Label>
-              <Input
-                id="birthdate"
-                type="date"
-                {...register('birthdate')}
-                max={today}
-                min={minDateStr}
+              <Controller
+                name="birthdate"
+                control={control}
+                render={({ field }) => (
+                  <Input
+                    {...field}
+                    id="birthdate"
+                    type="date"
+                    max={today}
+                    min={minDateStr}
+                  />
+                )}
               />
               {errors.birthdate && (
                 <p className="text-sm text-red-500 mt-1">{errors.birthdate.message}</p>
@@ -266,10 +301,16 @@ function EditStudentContent() {
           <CardContent className="space-y-4">
             <div>
               <Label htmlFor="schoolName">โรงเรียน</Label>
-              <Input
-                id="schoolName"
-                {...register('schoolName')}
-                placeholder="ชื่อโรงเรียน (ไม่บังคับ)"
+              <Controller
+                name="schoolName"
+                control={control}
+                render={({ field }) => (
+                  <Input
+                    {...field}
+                    id="schoolName"
+                    placeholder="ชื่อโรงเรียน (ไม่บังคับ)"
+                  />
+                )}
               />
             </div>
             <div>
@@ -280,7 +321,7 @@ function EditStudentContent() {
                 placeholder="เลือกหรือพิมพ์ระดับชั้น..."
               />
               <p className="text-xs text-gray-500 mt-1">
-                {`เริ่มพิมพ์เพื่อค้นหา เช่น "ป", "ประถม", "Grade", "Year"`}
+                เริ่มพิมพ์เพื่อค้นหา เช่น "ป", "ประถม", "Grade", "Year"
               </p>
             </div>
           </CardContent>
@@ -297,41 +338,65 @@ function EditStudentContent() {
           <CardContent className="space-y-4">
             <div>
               <Label htmlFor="allergies">ประวัติการแพ้</Label>
-              <Textarea
-                id="allergies"
-                {...register('allergies')}
-                placeholder="ระบุอาหาร/ยา/สิ่งที่แพ้ (ถ้ามี)"
-                rows={3}
+              <Controller
+                name="allergies"
+                control={control}
+                render={({ field }) => (
+                  <Textarea
+                    {...field}
+                    id="allergies"
+                    placeholder="ระบุอาหาร/ยา/สิ่งที่แพ้ (ถ้ามี)"
+                    rows={3}
+                  />
+                )}
               />
             </div>
 
             <div>
               <Label htmlFor="specialNeeds">ข้อควรระวังพิเศษ</Label>
-              <Textarea
-                id="specialNeeds"
-                {...register('specialNeeds')}
-                placeholder="โรคประจำตัว หรือข้อควรระวังอื่นๆ (ถ้ามี)"
-                rows={3}
+              <Controller
+                name="specialNeeds"
+                control={control}
+                render={({ field }) => (
+                  <Textarea
+                    {...field}
+                    id="specialNeeds"
+                    placeholder="โรคประจำตัว หรือข้อควรระวังอื่นๆ (ถ้ามี)"
+                    rows={3}
+                  />
+                )}
               />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="emergencyContact">ผู้ติดต่อฉุกเฉิน</Label>
-                <Input
-                  id="emergencyContact"
-                  {...register('emergencyContact')}
-                  placeholder="ชื่อผู้ติดต่อ"
+                <Controller
+                  name="emergencyContact"
+                  control={control}
+                  render={({ field }) => (
+                    <Input
+                      {...field}
+                      id="emergencyContact"
+                      placeholder="ชื่อผู้ติดต่อ"
+                    />
+                  )}
                 />
               </div>
 
               <div>
                 <Label htmlFor="emergencyPhone">เบอร์ฉุกเฉิน</Label>
-                <Input
-                  id="emergencyPhone"
-                  {...register('emergencyPhone')}
-                  placeholder="0812345678"
-                  maxLength={10}
+                <Controller
+                  name="emergencyPhone"
+                  control={control}
+                  render={({ field }) => (
+                    <Input
+                      {...field}
+                      id="emergencyPhone"
+                      placeholder="0812345678"
+                      maxLength={10}
+                    />
+                  )}
                 />
               </div>
             </div>
@@ -339,11 +404,12 @@ function EditStudentContent() {
         </Card>
 
         {/* Actions */}
-        <div className="flex gap-2">
+        <div className="flex gap-2 pb-4">
           <Button
-            type="submit"
+            type="button"
             className="flex-1"
             disabled={saving}
+            onClick={handleSubmit(onSubmit)}
           >
             {saving ? (
               <>
@@ -357,21 +423,21 @@ function EditStudentContent() {
           <Button
             type="button"
             variant="outline"
-            onClick={() => router.push(`/liff/profile/${parentId}/students`)}
+            onClick={navigateBack}
             disabled={saving}
           >
             ยกเลิก
           </Button>
         </div>
-      </form>
+      </div>
     </div>
   )
 }
 
 export default function EditStudentPage() {
   return (
-    <AuthWrapper>
+    <LiffProvider requireLogin={true}>
       <EditStudentContent />
-    </AuthWrapper>
+    </LiffProvider>
   );
 }

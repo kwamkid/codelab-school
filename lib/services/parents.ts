@@ -5,6 +5,7 @@ import {
   getDoc, 
   addDoc, 
   updateDoc,
+  deleteDoc,  // เพิ่มบรรทัดนี้
   query,
   where,
   orderBy,
@@ -511,5 +512,108 @@ export async function getParentByPhone(phone: string): Promise<Parent | null> {
   } catch (error) {
     console.error('Error getting parent by phone:', error);
     return null;
+  }
+}
+
+// เพิ่มใน lib/services/parents.ts ท้ายไฟล์
+
+// Delete student
+export async function deleteStudent(
+  parentId: string, 
+  studentId: string
+): Promise<void> {
+  try {
+    // Check if student has any enrollments first
+    const { getEnrollmentsByStudent } = await import('./enrollments');
+    const enrollments = await getEnrollmentsByStudent(studentId);
+    
+    if (enrollments.length > 0) {
+      throw new Error('ไม่สามารถลบนักเรียนที่มีประวัติการลงทะเบียนเรียนได้');
+    }
+    
+    // Delete student document
+    const studentRef = doc(db, COLLECTION_NAME, parentId, 'students', studentId);
+    await deleteDoc(studentRef);
+    
+    console.log('Student deleted successfully:', studentId);
+  } catch (error) {
+    console.error('Error deleting student:', error);
+    throw error;
+  }
+}
+
+// Delete parent
+export async function deleteParent(parentId: string): Promise<void> {
+  try {
+    // Check if parent has any students
+    const students = await getStudentsByParent(parentId);
+    
+    if (students.length > 0) {
+      throw new Error('ไม่สามารถลบผู้ปกครองที่ยังมีข้อมูลนักเรียนได้ กรุณาลบข้อมูลนักเรียนทั้งหมดก่อน');
+    }
+    
+    // Delete parent document
+    const parentRef = doc(db, COLLECTION_NAME, parentId);
+    await deleteDoc(parentRef);
+    
+    console.log('Parent deleted successfully:', parentId);
+  } catch (error) {
+    console.error('Error deleting parent:', error);
+    throw error;
+  }
+}
+
+// Check if student can be deleted
+export async function canDeleteStudent(studentId: string): Promise<{
+  canDelete: boolean;
+  reason?: string;
+  enrollmentCount?: number;
+}> {
+  try {
+    const { getEnrollmentsByStudent } = await import('./enrollments');
+    const enrollments = await getEnrollmentsByStudent(studentId);
+    
+    if (enrollments.length > 0) {
+      return {
+        canDelete: false,
+        reason: `นักเรียนมีประวัติการลงทะเบียน ${enrollments.length} คลาส`,
+        enrollmentCount: enrollments.length
+      };
+    }
+    
+    return { canDelete: true };
+  } catch (error) {
+    console.error('Error checking if student can be deleted:', error);
+    return {
+      canDelete: false,
+      reason: 'เกิดข้อผิดพลาดในการตรวจสอบ'
+    };
+  }
+}
+
+// Check if parent can be deleted
+export async function canDeleteParent(parentId: string): Promise<{
+  canDelete: boolean;
+  reason?: string;
+  studentCount?: number;
+}> {
+  try {
+    const students = await getStudentsByParent(parentId);
+    
+    if (students.length > 0) {
+      return {
+        canDelete: false,
+        reason: `ผู้ปกครองยังมีข้อมูลนักเรียน ${students.length} คน`,
+        studentCount: students.length
+      };
+    }
+    
+    return { canDelete: true };
+  } catch (error) {
+    console.error('Error checking if parent can be deleted:', error);
+    return {
+      canDelete: false,
+      reason: 'เกิดข้อผิดพลาดในการตรวจสอบ'
+    };
   }
 }

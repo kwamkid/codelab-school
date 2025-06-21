@@ -13,30 +13,13 @@ import { getParent, updateParent } from '@/lib/services/parents'
 import { getActiveBranches } from '@/lib/services/branches'
 import { toast } from 'sonner'
 import { z } from 'zod'
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import TechLoadingAnimation from '@/components/liff/tech-loading-animation'
+import { Loading } from '@/components/ui/loading'
 import { LiffProvider } from '@/components/liff/liff-provider'
+import { ProvinceCombobox } from '@/components/ui/province-combobox'
 
-// Thai provinces data
-const provinces = [
-  'กรุงเทพมหานคร', 'กระบี่', 'กาญจนบุรี', 'กาฬสินธุ์', 'กำแพงเพชร',
-  'ขอนแก่น', 'จันทบุรี', 'ฉะเชิงเทรา', 'ชลบุรี', 'ชัยนาท',
-  'ชัยภูมิ', 'ชุมพร', 'เชียงราย', 'เชียงใหม่', 'ตรัง',
-  'ตราด', 'ตาก', 'นครนายก', 'นครปฐม', 'นครพนม',
-  'นครราชสีมา', 'นครศรีธรรมราช', 'นครสวรรค์', 'นนทบุรี', 'นราธิวาส',
-  'น่าน', 'บึงกาฬ', 'บุรีรัมย์', 'ปทุมธานี', 'ประจวบคีรีขันธ์',
-  'ปราจีนบุรี', 'ปัตตานี', 'พระนครศรีอยุธยา', 'พังงา', 'พัทลุง',
-  'พิจิตร', 'พิษณุโลก', 'เพชรบุรี', 'เพชรบูรณ์', 'แพร่',
-  'พะเยา', 'ภูเก็ต', 'มหาสารคาม', 'มุกดาหาร', 'แม่ฮ่องสอน',
-  'ยโสธร', 'ยะลา', 'ร้อยเอ็ด', 'ระนอง', 'ระยอง',
-  'ราชบุรี', 'ลพบุรี', 'ลำปาง', 'ลำพูน', 'เลย',
-  'ศรีสะเกษ', 'สกลนคร', 'สงขลา', 'สตูล', 'สมุทรปราการ',
-  'สมุทรสงคราม', 'สมุทรสาคร', 'สระแก้ว', 'สระบุรี', 'สิงห์บุรี',
-  'สุโขทัย', 'สุพรรณบุรี', 'สุราษฎร์ธานี', 'สุรินทร์', 'หนองคาย',
-  'หนองบัวลำภู', 'อ่างทอง', 'อุดรธานี', 'อุทัยธานี', 'อุตรดิตถ์',
-  'อุบลราชธานี', 'อำนาจเจริญ'
-].sort()
+// Thai provinces data - removed (using ProvinceCombobox instead)
 
 // Form schema
 const formSchema = z.object({
@@ -46,12 +29,12 @@ const formSchema = z.object({
   email: z.string().email('รูปแบบอีเมลไม่ถูกต้อง').optional().or(z.literal('')),
   preferredBranchId: z.string().optional(),
   address: z.object({
-    houseNumber: z.string().min(1, 'กรุณาระบุบ้านเลขที่'),
+    houseNumber: z.string().optional(),
     street: z.string().optional(),
-    subDistrict: z.string().min(1, 'กรุณาระบุแขวง/ตำบล'),
-    district: z.string().min(1, 'กรุณาระบุเขต/อำเภอ'),
-    province: z.string().min(1, 'กรุณาเลือกจังหวัด'),
-    postalCode: z.string().regex(/^[0-9]{5}$/, 'รหัสไปรษณีย์ต้องเป็นตัวเลข 5 หลัก'),
+    subDistrict: z.string().optional(),
+    district: z.string().optional(),
+    province: z.string().optional(),
+    postalCode: z.string().regex(/^[0-9]{5}$/, 'รหัสไปรษณีย์ต้องเป็นตัวเลข 5 หลัก').optional().or(z.literal('')),
   })
 })
 
@@ -67,15 +50,32 @@ function EditParentProfileContent() {
   const [saving, setSaving] = useState(false)
   const [branches, setBranches] = useState<Array<{id: string, name: string}>>([])
   const [authChecked, setAuthChecked] = useState(false)
+  const [navigating, setNavigating] = useState(false)
   
   const {
-    register,
+    control,
     handleSubmit,
     formState: { errors },
     setValue,
-    watch
+    watch,
+    reset
   } = useForm<FormData>({
-    resolver: zodResolver(formSchema)
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      displayName: '',
+      phone: '',
+      emergencyPhone: '',
+      email: '',
+      preferredBranchId: '',
+      address: {
+        houseNumber: '',
+        street: '',
+        subDistrict: '',
+        district: '',
+        province: '',
+        postalCode: '',
+      }
+    }
   })
 
   // Check authentication
@@ -102,27 +102,33 @@ function EditParentProfileContent() {
       
       // Load parent data
       const parent = await getParent(parentId)
+      console.log('[EditParent] Loaded parent data:', parent)
+      
       if (!parent) {
         toast.error('ไม่พบข้อมูล')
-        router.back()
+        navigateBack()
         return
       }
       
-      // Set form values
-      setValue('displayName', parent.displayName)
-      setValue('phone', parent.phone)
-      setValue('emergencyPhone', parent.emergencyPhone || '')
-      setValue('email', parent.email || '')
-      setValue('preferredBranchId', parent.preferredBranchId || '')
-      
-      if (parent.address) {
-        setValue('address.houseNumber', parent.address.houseNumber)
-        setValue('address.street', parent.address.street || '')
-        setValue('address.subDistrict', parent.address.subDistrict)
-        setValue('address.district', parent.address.district)
-        setValue('address.province', parent.address.province)
-        setValue('address.postalCode', parent.address.postalCode)
+      // Reset form with loaded data
+      const formData = {
+        displayName: parent.displayName || '',
+        phone: parent.phone || '',
+        emergencyPhone: parent.emergencyPhone || '',
+        email: parent.email || '',
+        preferredBranchId: parent.preferredBranchId || '',
+        address: {
+          houseNumber: parent.address?.houseNumber || '',
+          street: parent.address?.street || '',
+          subDistrict: parent.address?.subDistrict || '',
+          district: parent.address?.district || '',
+          province: parent.address?.province || '',
+          postalCode: parent.address?.postalCode || '',
+        }
       }
+      
+      console.log('[EditParent] Form data to reset:', formData)
+      reset(formData)
       
       // Load branches
       const branchList = await getActiveBranches()
@@ -136,28 +142,46 @@ function EditParentProfileContent() {
     }
   }
 
+  const navigateBack = () => {
+    setNavigating(true)
+    router.push('/liff/profile')
+  }
+
   const onSubmit = async (data: FormData) => {
     try {
       setSaving(true)
       
-      await updateParent(parentId, {
+      // Prepare update data
+      const updateData: any = {
         displayName: data.displayName,
         phone: data.phone,
-        emergencyPhone: data.emergencyPhone || undefined,
-        email: data.email || undefined,
-        preferredBranchId: data.preferredBranchId || undefined,
-        address: {
-          houseNumber: data.address.houseNumber,
-          street: data.address.street || undefined,
-          subDistrict: data.address.subDistrict,
-          district: data.address.district,
-          province: data.address.province,
-          postalCode: data.address.postalCode,
+      }
+      
+      // Add optional fields
+      if (data.emergencyPhone) updateData.emergencyPhone = data.emergencyPhone
+      if (data.email) updateData.email = data.email
+      if (data.preferredBranchId) updateData.preferredBranchId = data.preferredBranchId
+      
+      // Add address if any field is filled
+      const hasAddress = data.address.houseNumber || data.address.street || 
+                        data.address.subDistrict || data.address.district || 
+                        data.address.province || data.address.postalCode
+      
+      if (hasAddress) {
+        updateData.address = {
+          houseNumber: data.address.houseNumber || '',
+          street: data.address.street || '',
+          subDistrict: data.address.subDistrict || '',
+          district: data.address.district || '',
+          province: data.address.province || '',
+          postalCode: data.address.postalCode || '',
         }
-      })
+      }
+      
+      await updateParent(parentId, updateData)
       
       toast.success('บันทึกข้อมูลเรียบร้อย')
-      router.push('/liff/profile')
+      navigateBack()
       
     } catch (error) {
       console.error('Error saving:', error)
@@ -167,8 +191,8 @@ function EditParentProfileContent() {
     }
   }
 
-  if (liffLoading || !authChecked || loading) {
-    return <TechLoadingAnimation />
+  if (liffLoading || !authChecked || loading || navigating) {
+    return <Loading fullScreen text="กำลังโหลด..." />
   }
 
   return (
@@ -179,7 +203,7 @@ function EditParentProfileContent() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => router.push('/liff/profile')}
+            onClick={navigateBack}
             className="text-white hover:text-white/80 -ml-2"
           >
             <ChevronLeft className="h-5 w-5" />
@@ -188,7 +212,7 @@ function EditParentProfileContent() {
         </div>
       </div>
 
-      <form onSubmit={handleSubmit(onSubmit)} className="p-4 space-y-4">
+      <div className="p-4 space-y-4">
         {/* Personal Information */}
         <Card>
           <CardHeader>
@@ -200,10 +224,16 @@ function EditParentProfileContent() {
           <CardContent className="space-y-4">
             <div>
               <Label htmlFor="displayName">ชื่อ-นามสกุล *</Label>
-              <Input
-                id="displayName"
-                {...register('displayName')}
-                placeholder="ระบุชื่อ-นามสกุล"
+              <Controller
+                name="displayName"
+                control={control}
+                render={({ field }) => (
+                  <Input
+                    {...field}
+                    id="displayName"
+                    placeholder="ระบุชื่อ-นามสกุล"
+                  />
+                )}
               />
               {errors.displayName && (
                 <p className="text-sm text-red-500 mt-1">{errors.displayName.message}</p>
@@ -213,11 +243,17 @@ function EditParentProfileContent() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label htmlFor="phone">เบอร์โทรศัพท์ *</Label>
-                <Input
-                  id="phone"
-                  {...register('phone')}
-                  placeholder="0812345678"
-                  maxLength={10}
+                <Controller
+                  name="phone"
+                  control={control}
+                  render={({ field }) => (
+                    <Input
+                      {...field}
+                      id="phone"
+                      placeholder="0812345678"
+                      maxLength={10}
+                    />
+                  )}
                 />
                 {errors.phone && (
                   <p className="text-sm text-red-500 mt-1">{errors.phone.message}</p>
@@ -226,11 +262,17 @@ function EditParentProfileContent() {
 
               <div>
                 <Label htmlFor="emergencyPhone">เบอร์ฉุกเฉิน</Label>
-                <Input
-                  id="emergencyPhone"
-                  {...register('emergencyPhone')}
-                  placeholder="0812345678"
-                  maxLength={10}
+                <Controller
+                  name="emergencyPhone"
+                  control={control}
+                  render={({ field }) => (
+                    <Input
+                      {...field}
+                      id="emergencyPhone"
+                      placeholder="0812345678"
+                      maxLength={10}
+                    />
+                  )}
                 />
                 {errors.emergencyPhone && (
                   <p className="text-sm text-red-500 mt-1">{errors.emergencyPhone.message}</p>
@@ -240,11 +282,17 @@ function EditParentProfileContent() {
 
             <div>
               <Label htmlFor="email">อีเมล</Label>
-              <Input
-                id="email"
-                type="email"
-                {...register('email')}
-                placeholder="example@email.com"
+              <Controller
+                name="email"
+                control={control}
+                render={({ field }) => (
+                  <Input
+                    {...field}
+                    id="email"
+                    type="email"
+                    placeholder="example@email.com"
+                  />
+                )}
               />
               {errors.email && (
                 <p className="text-sm text-red-500 mt-1">{errors.email.message}</p>
@@ -258,89 +306,97 @@ function EditParentProfileContent() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <MapPin className="h-5 w-5" />
-              ที่อยู่
+              ที่อยู่ (ไม่บังคับ)
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="houseNumber">บ้านเลขที่ *</Label>
-                <Input
-                  id="houseNumber"
-                  {...register('address.houseNumber')}
-                  placeholder="123/45"
+                <Label htmlFor="houseNumber">บ้านเลขที่</Label>
+                <Controller
+                  name="address.houseNumber"
+                  control={control}
+                  render={({ field }) => (
+                    <Input
+                      {...field}
+                      id="houseNumber"
+                      placeholder="123/45"
+                    />
+                  )}
                 />
-                {errors.address?.houseNumber && (
-                  <p className="text-sm text-red-500 mt-1">{errors.address.houseNumber.message}</p>
-                )}
               </div>
 
               <div>
                 <Label htmlFor="street">ถนน</Label>
-                <Input
-                  id="street"
-                  {...register('address.street')}
-                  placeholder="ถนนสุขุมวิท"
+                <Controller
+                  name="address.street"
+                  control={control}
+                  render={({ field }) => (
+                    <Input
+                      {...field}
+                      id="street"
+                      placeholder="ถนนสุขุมวิท"
+                    />
+                  )}
                 />
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="subDistrict">แขวง/ตำบล *</Label>
-                <Input
-                  id="subDistrict"
-                  {...register('address.subDistrict')}
-                  placeholder="คลองตัน"
+                <Label htmlFor="subDistrict">แขวง/ตำบล</Label>
+                <Controller
+                  name="address.subDistrict"
+                  control={control}
+                  render={({ field }) => (
+                    <Input
+                      {...field}
+                      id="subDistrict"
+                      placeholder="คลองตัน"
+                    />
+                  )}
                 />
-                {errors.address?.subDistrict && (
-                  <p className="text-sm text-red-500 mt-1">{errors.address.subDistrict.message}</p>
-                )}
               </div>
 
               <div>
-                <Label htmlFor="district">เขต/อำเภอ *</Label>
-                <Input
-                  id="district"
-                  {...register('address.district')}
-                  placeholder="คลองเตย"
+                <Label htmlFor="district">เขต/อำเภอ</Label>
+                <Controller
+                  name="address.district"
+                  control={control}
+                  render={({ field }) => (
+                    <Input
+                      {...field}
+                      id="district"
+                      placeholder="คลองเตย"
+                    />
+                  )}
                 />
-                {errors.address?.district && (
-                  <p className="text-sm text-red-500 mt-1">{errors.address.district.message}</p>
-                )}
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="province">จังหวัด *</Label>
-                <Select
-                  value={watch('address.province')}
-                  onValueChange={(value) => setValue('address.province', value)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="เลือกจังหวัด" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {provinces.map((province) => (
-                      <SelectItem key={province} value={province}>
-                        {province}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {errors.address?.province && (
-                  <p className="text-sm text-red-500 mt-1">{errors.address.province.message}</p>
-                )}
+                <Label htmlFor="province">จังหวัด</Label>
+                <ProvinceCombobox
+                  value={watch('address.province') || ''}
+                  onChange={(value) => setValue('address.province', value)}
+                  placeholder="เลือกหรือค้นหาจังหวัด..."
+                />
               </div>
 
               <div>
-                <Label htmlFor="postalCode">รหัสไปรษณีย์ *</Label>
-                <Input
-                  id="postalCode"
-                  {...register('address.postalCode')}
-                  placeholder="10110"
-                  maxLength={5}
+                <Label htmlFor="postalCode">รหัสไปรษณีย์</Label>
+                <Controller
+                  name="address.postalCode"
+                  control={control}
+                  render={({ field }) => (
+                    <Input
+                      {...field}
+                      id="postalCode"
+                      placeholder="10110"
+                      maxLength={5}
+                    />
+                  )}
                 />
                 {errors.address?.postalCode && (
                   <p className="text-sm text-red-500 mt-1">{errors.address.postalCode.message}</p>
@@ -360,13 +416,14 @@ function EditParentProfileContent() {
           </CardHeader>
           <CardContent>
             <Select
-              value={watch('preferredBranchId')}
-              onValueChange={(value) => setValue('preferredBranchId', value)}
+              value={watch('preferredBranchId') || 'none'}
+              onValueChange={(value) => setValue('preferredBranchId', value === 'none' ? '' : value)}
             >
               <SelectTrigger>
                 <SelectValue placeholder="เลือกสาขา" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="none">ไม่ระบุ</SelectItem>
                 {branches.map((branch) => (
                   <SelectItem key={branch.id} value={branch.id}>
                     {branch.name}
@@ -378,11 +435,12 @@ function EditParentProfileContent() {
         </Card>
 
         {/* Actions */}
-        <div className="flex gap-2">
+        <div className="flex gap-2 pb-4">
           <Button
-            type="submit"
+            type="button"
             className="flex-1"
             disabled={saving}
+            onClick={handleSubmit(onSubmit)}
           >
             {saving ? (
               <>
@@ -396,13 +454,13 @@ function EditParentProfileContent() {
           <Button
             type="button"
             variant="outline"
-            onClick={() => router.push('/liff/profile')}
+            onClick={navigateBack}
             disabled={saving}
           >
             ยกเลิก
           </Button>
         </div>
-      </form>
+      </div>
     </div>
   )
 }
