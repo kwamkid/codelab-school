@@ -21,6 +21,70 @@ import { useLiff } from '@/components/liff/liff-provider'
 import Image from 'next/image'
 import { toast } from 'sonner'
 
+// Logo Component แยกออกมาเพื่อจัดการ error
+function LogoDisplay({ settings, settingsLoaded }: { settings: any, settingsLoaded: boolean }) {
+  const [imageError, setImageError] = useState(false)
+
+  // ถ้ายังโหลด settings อยู่
+  if (!settingsLoaded) {
+    return <div className="w-[200px] h-[60px] bg-gray-100 animate-pulse rounded-lg" />
+  }
+
+  // ถ้ามี logoUrl และยังไม่ error
+  if (settings?.logoUrl && !imageError) {
+    return (
+      <div className="relative w-[200px] h-[60px]">
+        <Image 
+          src={settings.logoUrl} 
+          alt={settings.schoolName || 'School Logo'} 
+          width={200}
+          height={60}
+          className="object-contain"
+          priority
+          unoptimized
+          onError={() => {
+            console.error('Failed to load logo from:', settings.logoUrl)
+            setImageError(true)
+          }}
+        />
+      </div>
+    )
+  }
+
+  // Default case: แสดง logo.svg เมื่อไม่มี logoUrl หรือโหลดไม่ได้
+  return (
+    <div className="relative w-[200px] h-[60px]">
+      <Image 
+        src="/logo.svg" 
+        alt={settings?.schoolName || 'CodeLab School'} 
+        width={200}
+        height={60}
+        className="object-contain"
+        priority
+        onError={(e) => {
+          console.error('Default logo not found at /logo.svg')
+          // ถ้า logo.svg ก็ไม่มี ให้แสดงเป็นข้อความ
+          const imgElement = e.currentTarget as HTMLImageElement
+          imgElement.style.display = 'none'
+          const fallbackDiv = document.getElementById('text-logo-fallback')
+          if (fallbackDiv) fallbackDiv.style.display = 'flex'
+        }}
+      />
+      <div 
+        id="text-logo-fallback" 
+        className="hidden absolute inset-0 items-center justify-center"
+      >
+        <div className="flex items-center gap-2">
+          <School className="h-10 w-10 text-primary" />
+          <h1 className="text-2xl font-bold text-primary">
+            {settings?.schoolName || 'CodeLab School'}
+          </h1>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // Component หลักที่แสดงเมนู
 function LiffHome() {
   const router = useRouter()
@@ -28,6 +92,9 @@ function LiffHome() {
   const [settings, setSettings] = useState<any>(null)
   const [hasParent, setHasParent] = useState<boolean | null>(null)
   const [checking, setChecking] = useState(true)
+  const [navigating, setNavigating] = useState(false)
+  const [selectedMenu, setSelectedMenu] = useState<string | null>(null)
+  const [settingsLoaded, setSettingsLoaded] = useState(false)
   
   // Clean OAuth parameters from URL
   useEffect(() => {
@@ -46,10 +113,20 @@ function LiffHome() {
   useEffect(() => {
     const loadSettings = async () => {
       try {
+        console.log('[LiffHome] Loading settings...')
         const data = await getGeneralSettings()
+        console.log('[LiffHome] Settings loaded:', {
+          schoolName: data?.schoolName,
+          logoUrl: data?.logoUrl,
+          hasLogo: !!data?.logoUrl
+        })
         setSettings(data)
       } catch (error) {
-        console.error('Error loading settings:', error)
+        console.error('[LiffHome] Error loading settings:', error)
+        // Even if error, set settings to null so we show default
+        setSettings(null)
+      } finally {
+        setSettingsLoaded(true)
       }
     }
     loadSettings()
@@ -72,6 +149,20 @@ function LiffHome() {
     
     checkParentStatus()
   }, [isLoading, isLoggedIn, profile])
+
+  // Handle menu navigation with loading
+  const handleMenuClick = (path: string, menuTitle: string) => {
+    setNavigating(true)
+    setSelectedMenu(menuTitle)
+    router.push(path)
+  }
+
+  // Handle register button click
+  const handleRegisterClick = () => {
+    setNavigating(true)
+    setSelectedMenu('ลงทะเบียน')
+    router.push('/liff/register')
+  }
 
   // Handle sending message when connect existing account is clicked
   const handleConnectExistingAccount = async () => {
@@ -129,13 +220,15 @@ function LiffHome() {
     }
   ]
 
-  // Loading state
-  if (isLoading || checking) {
+  // Loading state with menu info
+  if (isLoading || checking || navigating) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-blue-50 to-white">
         <div className="text-center">
           <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
-          <p className="text-gray-600">กำลังโหลด...</p>
+          <p className="text-gray-600">
+            {navigating ? `กำลังไปหน้า${selectedMenu}...` : 'กำลังโหลด...'}
+          </p>
         </div>
       </div>
     )
@@ -145,36 +238,13 @@ function LiffHome() {
     <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white flex flex-col">
       {/* Header with Logo */}
       <div className="bg-white shadow-sm">
-        <div className="py-6">
-          <div className="flex justify-center mb-2">
-            {settings?.logoUrl ? (
-              <div className="relative w-[200px] h-[60px]">
-                <Image 
-                  src={settings.logoUrl} 
-                  alt="Logo" 
-                  width={200}
-                  height={60}
-                  className="object-contain"
-                  priority
-                  unoptimized
-                />
-              </div>
-            ) : (
-              <div className="relative w-[200px] h-[60px]">
-                <Image 
-                  src="/logo.svg" 
-                  alt="Logo" 
-                  width={200}
-                  height={60}
-                  className="object-contain"
-                  priority
-                />
-              </div>
-            )}
+        <div className="py-4">
+          <div className="flex justify-center mb-2 pt-4">
+            <LogoDisplay settings={settings} settingsLoaded={settingsLoaded} />
           </div>
           
-          <p className="text-center text-gray-600 text-sm px-4">
-            ระบบจัดการโรงเรียนสอนเขียนโปรแกรม
+          <p className="text-center text-gray-600 text-base px-4">
+            ระบบจัดการโรงเรียน CodeLab
           </p>
         </div>
       </div>
@@ -226,7 +296,8 @@ function LiffHome() {
                 <Button 
                   className="w-full text-base bg-primary hover:bg-primary/90" 
                   size="lg"
-                  onClick={() => router.push('/liff/register')}
+                  onClick={handleRegisterClick}
+                  disabled={navigating}
                 >
                   <UserPlus className="h-5 w-5 mr-2" />
                   ลงทะเบียนใหม่
@@ -242,21 +313,21 @@ function LiffHome() {
                 </div>
                 
                 {/* Connect existing account */}
-                <div className="bg-gray-100 border border-gray-300 rounded-lg p-4">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                   <div className="flex items-start gap-3">
-                    <LinkIcon className="h-5 w-5 text-gray-600 mt-0.5" />
+                    <LinkIcon className="h-5 w-5 text-blue-600 mt-0.5" />
                     <div className="flex-1">
-                      <p className="font-medium text-gray-800">
+                      <p className="font-medium text-blue-900">
                         เคยลงทะเบียนที่เคาน์เตอร์แล้ว?
                       </p>
-                      <p className="text-sm text-gray-600 mt-1">
+                      <p className="text-sm text-blue-700 mt-1">
                         คลิกปุ่มด้านล่างเพื่อขอลิงก์เชื่อมต่อบัญชี
                       </p>
                       
                       <Button
                         variant="outline"
                         size="sm"
-                        className="mt-3 w-full border-gray-400 text-gray-700 hover:bg-gray-50"
+                        className="mt-3 w-full border-blue-600 text-blue-600 hover:bg-blue-50"
                         onClick={handleConnectExistingAccount}
                       >
                         <MessageCircle className="h-4 w-4 mr-2" />
@@ -271,9 +342,9 @@ function LiffHome() {
         
         // Registered user - show menu
         ) : (
-          <div className="max-w-md mx-auto w-full space-y-4">
+          <div className="max-w-md mx-auto w-full space-y-3">
             {/* Welcome message */}
-            <div className="text-center mb-6">
+            <div className="text-center mb-2">
               <h2 className="text-xl font-semibold text-gray-800">
                 สวัสดีคุณ {profile?.displayName} 👋
               </h2>
@@ -290,11 +361,13 @@ function LiffHome() {
                 return (
                   <Card
                     key={item.path}
-                    className="cursor-pointer transition-all hover:shadow-lg hover:scale-[1.02] active:scale-[0.98]"
-                    onClick={() => router.push(item.path)}
+                    className={`cursor-pointer transition-all hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] ${
+                      navigating ? 'opacity-50 pointer-events-none' : ''
+                    }`}
+                    onClick={() => handleMenuClick(item.path, item.titleTh)}
                   >
                     <CardContent className="p-4">
-                      <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-3">
                         <div className={`p-3 rounded-xl ${item.color} text-white shadow-md`}>
                           <Icon className="h-7 w-7" />
                         </div>
@@ -317,7 +390,7 @@ function LiffHome() {
       </div>
 
       {/* Footer */}
-      <div className="p-4 text-center text-xs text-gray-500">
+      <div className="p-3 text-center text-xs text-gray-500">
         <p>&copy; 2024 CodeLab School. All rights reserved.</p>
       </div>
     </div>

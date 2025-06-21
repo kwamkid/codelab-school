@@ -11,22 +11,36 @@ import { getParentByLineId, getStudentsByParent } from '@/lib/services/parents'
 import { getBranch } from '@/lib/services/branches'
 import { toast } from 'sonner'
 import type { Parent, Student, Branch } from '@/types/models'
-import AuthWrapper from '@/components/liff/auth-wrapper'
+import { LiffProvider } from '@/components/liff/liff-provider'
+import TechLoadingAnimation from '@/components/liff/tech-loading-animation'
 
 function ProfileContent() {
   const router = useRouter()
-  const { liff, profile, isLoggedIn } = useLiff()
+  const { liff, profile, isLoggedIn, isLoading: liffLoading } = useLiff()
   const [parentData, setParentData] = useState<Parent | null>(null)
   const [students, setStudents] = useState<Student[]>([])
   const [preferredBranch, setPreferredBranch] = useState<Branch | null>(null)
   const [isLoadingData, setIsLoadingData] = useState(true)
   const [parentId, setParentId] = useState<string | null>(null)
+  const [authChecked, setAuthChecked] = useState(false)
+
+  // Check authentication
+  useEffect(() => {
+    if (!liffLoading) {
+      if (!isLoggedIn && liff) {
+        console.log('[ProfileContent] Not logged in, redirecting...')
+        liff.login()
+      } else if (isLoggedIn) {
+        setAuthChecked(true)
+      }
+    }
+  }, [liffLoading, isLoggedIn, liff])
 
   useEffect(() => {
-    if (profile?.userId) {
+    if (profile?.userId && authChecked) {
       loadParentData(profile.userId)
     }
-  }, [profile])
+  }, [profile, authChecked])
 
   const loadParentData = async (lineUserId: string) => {
     try {
@@ -123,6 +137,11 @@ function ProfileContent() {
     return parts.join(' ') || 'ไม่ได้ระบุ'
   }
 
+  // Show loading while checking auth or loading data
+  if (liffLoading || !authChecked || isLoadingData) {
+    return <TechLoadingAnimation />
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header with Back Button */}
@@ -204,7 +223,7 @@ function ProfileContent() {
                       variant="link"
                       size="sm"
                       className="text-xs h-auto p-0 ml-2"
-                      onClick={() => router.push('/liff/edit-profile')}
+                      onClick={() => parentId && router.push(`/liff/profile/${parentId}`)}
                     >
                       กรุณากรอกที่อยู่
                     </Button>
@@ -260,16 +279,13 @@ function ProfileContent() {
             </div>
           </CardHeader>
           <CardContent>
-            {isLoadingData ? (
-              <div className="text-center py-8">
-                <p className="text-muted-foreground">กำลังโหลดข้อมูล...</p>
-              </div>
-            ) : students.length === 0 ? (
+            {students.length === 0 ? (
               <div className="text-center py-8">
                 <p className="text-muted-foreground mb-4">ยังไม่มีข้อมูลนักเรียน</p>
                 <Button 
                   onClick={() => router.push(`/liff/profile/${parentId}/students/new`)}
                   className="gap-2"
+                  disabled={!parentId}
                 >
                   <Users className="h-4 w-4" />
                   ลงทะเบียนนักเรียน
@@ -345,8 +361,8 @@ function ProfileContent() {
 
 export default function ProfilePage() {
   return (
-    <AuthWrapper>
+    <LiffProvider requireLogin={true}>
       <ProfileContent />
-    </AuthWrapper>
+    </LiffProvider>
   );
 }

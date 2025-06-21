@@ -16,7 +16,7 @@ import { z } from 'zod'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import TechLoadingAnimation from '@/components/liff/tech-loading-animation'
-import AuthWrapper from '@/components/liff/auth-wrapper'
+import { LiffProvider } from '@/components/liff/liff-provider'
 
 // Thai provinces data
 const provinces = [
@@ -61,11 +61,12 @@ function EditParentProfileContent() {
   const router = useRouter()
   const params = useParams()
   const parentId = params.id as string
-  const { profile } = useLiff()
+  const { profile, isLoggedIn, isLoading: liffLoading, liff } = useLiff()
   
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [branches, setBranches] = useState<Array<{id: string, name: string}>>([])
+  const [authChecked, setAuthChecked] = useState(false)
   
   const {
     register,
@@ -77,9 +78,23 @@ function EditParentProfileContent() {
     resolver: zodResolver(formSchema)
   })
 
+  // Check authentication
   useEffect(() => {
-    loadData()
-  }, [parentId])
+    if (!liffLoading) {
+      if (!isLoggedIn && liff) {
+        console.log('[EditParentProfileContent] Not logged in, redirecting...')
+        liff.login()
+      } else if (isLoggedIn) {
+        setAuthChecked(true)
+      }
+    }
+  }, [liffLoading, isLoggedIn, liff])
+
+  useEffect(() => {
+    if (parentId && authChecked) {
+      loadData()
+    }
+  }, [parentId, authChecked])
 
   const loadData = async () => {
     try {
@@ -152,7 +167,7 @@ function EditParentProfileContent() {
     }
   }
 
-  if (loading) {
+  if (liffLoading || !authChecked || loading) {
     return <TechLoadingAnimation />
   }
 
@@ -394,8 +409,8 @@ function EditParentProfileContent() {
 
 export default function EditParentProfilePage() {
   return (
-    <AuthWrapper>
+    <LiffProvider requireLogin={true}>
       <EditParentProfileContent />
-    </AuthWrapper>
+    </LiffProvider>
   );
 }

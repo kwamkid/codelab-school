@@ -36,7 +36,7 @@ import { createParent, createStudent } from '@/lib/services/parents';
 import { toast } from 'sonner';
 import { getActiveBranches } from '@/lib/services/branches';
 import { Branch } from '@/types/models';
-import AuthWrapper from '@/components/liff/auth-wrapper';
+import { LiffProvider } from '@/components/liff/liff-provider';
 
 interface StudentFormData {
   name: string;
@@ -51,10 +51,11 @@ interface StudentFormData {
 
 function RegisterContent() {
   const router = useRouter();
-  const { profile } = useLiff();
+  const { profile, isLoggedIn, isLoading, liff } = useLiff();
   const [loading, setLoading] = useState(false);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [currentStep, setCurrentStep] = useState(1);
+  const [isReady, setIsReady] = useState(false);
   
   // Parent data
   const [parentData, setParentData] = useState({
@@ -89,6 +90,30 @@ function RegisterContent() {
   useEffect(() => {
     getActiveBranches().then(setBranches).catch(console.error);
   }, []);
+
+  // Check auth status
+  useEffect(() => {
+    if (!isLoading) {
+      if (!isLoggedIn && liff) {
+        console.log('[RegisterContent] Not logged in, redirecting...');
+        liff.login();
+      } else if (isLoggedIn) {
+        setIsReady(true);
+      }
+    }
+  }, [isLoading, isLoggedIn, liff]);
+
+  // Show loading while checking auth
+  if (isLoading || !isReady) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-blue-50 to-white">
+        <div className="text-center">
+          <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-gray-600">กำลังโหลด...</p>
+        </div>
+      </div>
+    );
+  }
 
   const handleParentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -635,8 +660,8 @@ function RegisterContent() {
 
 export default function LiffRegisterPage() {
   return (
-    <AuthWrapper requireAuth={true}>
+    <LiffProvider requireLogin={true}>
       <RegisterContent />
-    </AuthWrapper>
+    </LiffProvider>
   );
 }

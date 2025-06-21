@@ -13,11 +13,11 @@ import { DatesSetArg } from '@fullcalendar/core'
 import ScheduleCalendar, { ScheduleEvent } from '@/components/liff/schedule-calendar'
 import { Badge } from '@/components/ui/badge'
 import TechLoadingAnimation from '@/components/liff/tech-loading-animation'
-import AuthWrapper from '@/components/liff/auth-wrapper'
+import { LiffProvider } from '@/components/liff/liff-provider'
 
 function ScheduleContent() {
   const router = useRouter()
-  const { profile } = useLiff()
+  const { profile, isLoggedIn, isLoading: liffLoading, liff } = useLiff()
   const [loading, setLoading] = useState(true)
   const [events, setEvents] = useState<ScheduleEvent[]>([])
   const [students, setStudents] = useState<any[]>([])
@@ -25,10 +25,23 @@ function ScheduleContent() {
   const [overallStats, setOverallStats] = useState<Record<string, StudentStats>>({})
   const [loadingStats, setLoadingStats] = useState(true)
   const [dataLoaded, setDataLoaded] = useState(false)
+  const [authChecked, setAuthChecked] = useState(false)
+
+  // Check authentication
+  useEffect(() => {
+    if (!liffLoading) {
+      if (!isLoggedIn && liff) {
+        console.log('[ScheduleContent] Not logged in, redirecting...')
+        liff.login()
+      } else if (isLoggedIn) {
+        setAuthChecked(true)
+      }
+    }
+  }, [liffLoading, isLoggedIn, liff])
 
   // Load all data for the current year
   const loadYearData = useCallback(async () => {
-    if (!profile?.userId || dataLoaded) return
+    if (!profile?.userId || !authChecked || dataLoaded) return
 
     try {
       setLoading(true)
@@ -62,7 +75,7 @@ function ScheduleContent() {
     } finally {
       setLoading(false)
     }
-  }, [profile, selectedStudentId, dataLoaded])
+  }, [profile, selectedStudentId, dataLoaded, authChecked])
 
   // Force refresh function
   const forceRefresh = useCallback(async () => {
@@ -103,10 +116,10 @@ function ScheduleContent() {
 
   // Initial load
   useEffect(() => {
-    if (profile?.userId) {
+    if (profile?.userId && authChecked) {
       loadYearData()
     }
-  }, [profile?.userId, loadYearData])
+  }, [profile?.userId, authChecked, loadYearData])
 
   // Load overall stats when students data is available
   useEffect(() => {
@@ -115,7 +128,8 @@ function ScheduleContent() {
     }
   }, [students, loadOverallStats])
 
-  if (loading && !dataLoaded) {
+  // Show loading while checking auth or loading initial data
+  if (liffLoading || !authChecked || (loading && !dataLoaded)) {
     return <TechLoadingAnimation />
   }
 
@@ -324,8 +338,8 @@ function ScheduleContent() {
 
 export default function SchedulePage() {
   return (
-    <AuthWrapper>
+    <LiffProvider requireLogin={true}>
       <ScheduleContent />
-    </AuthWrapper>
+    </LiffProvider>
   );
 }

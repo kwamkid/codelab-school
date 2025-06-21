@@ -31,7 +31,7 @@ import { toast } from 'sonner'
 import { format } from 'date-fns'
 import { th } from 'date-fns/locale'
 import TechLoadingAnimation from '@/components/liff/tech-loading-animation'
-import AuthWrapper from '@/components/liff/auth-wrapper'
+import { LiffProvider } from '@/components/liff/liff-provider'
 
 interface MakeupData {
   makeup: any
@@ -44,17 +44,30 @@ interface MakeupData {
 
 function MakeupContent() {
   const router = useRouter()
-  const { profile } = useLiff()
+  const { profile, isLoggedIn, isLoading: liffLoading, liff } = useLiff()
   const [students, setStudents] = useState<any[]>([])
   const [selectedStudentId, setSelectedStudentId] = useState<string>('')
   const [makeupData, setMakeupData] = useState<Record<string, MakeupData[]>>({})
   const [loading, setLoading] = useState(true)
+  const [authChecked, setAuthChecked] = useState(false)
+
+  // Check authentication
+  useEffect(() => {
+    if (!liffLoading) {
+      if (!isLoggedIn && liff) {
+        console.log('[MakeupContent] Not logged in, redirecting...')
+        liff.login()
+      } else if (isLoggedIn) {
+        setAuthChecked(true)
+      }
+    }
+  }, [liffLoading, isLoggedIn, liff])
 
   useEffect(() => {
-    if (profile?.userId) {
+    if (profile?.userId && authChecked) {
       loadData(profile.userId)
     }
-  }, [profile])
+  }, [profile, authChecked])
 
   const loadData = async (lineUserId: string) => {
     try {
@@ -174,6 +187,11 @@ function MakeupContent() {
 
   const selectedStudentMakeups = selectedStudentId ? (makeupData[selectedStudentId] || []) : []
 
+  // Show loading while checking auth or loading data
+  if (liffLoading || !authChecked || loading) {
+    return <TechLoadingAnimation />
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -192,9 +210,7 @@ function MakeupContent() {
       </div>
 
       <div className="p-4 space-y-4">
-        {loading ? (
-           <TechLoadingAnimation />
-        ) : students.length === 0 ? (
+        {students.length === 0 ? (
           <Card>
             <CardContent className="pt-6">
               <div className="text-center py-8">
@@ -355,8 +371,8 @@ function MakeupContent() {
 
 export default function MakeupPage() {
   return (
-    <AuthWrapper>
+    <LiffProvider requireLogin={true}>
       <MakeupContent />
-    </AuthWrapper>
+    </LiffProvider>
   );
 }
