@@ -160,9 +160,15 @@ function LiffHome() {
                 />
               </div>
             ) : (
-              <div className="flex items-center gap-2">
-                <School className="h-10 w-10 text-primary" />
-                <h1 className="text-2xl font-bold text-primary">CodeLab School</h1>
+              <div className="relative w-[200px] h-[60px]">
+                <Image 
+                  src="/logo.svg" 
+                  alt="Logo" 
+                  width={200}
+                  height={60}
+                  className="object-contain"
+                  priority
+                />
               </div>
             )}
           </div>
@@ -236,21 +242,21 @@ function LiffHome() {
                 </div>
                 
                 {/* Connect existing account */}
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="bg-gray-100 border border-gray-300 rounded-lg p-4">
                   <div className="flex items-start gap-3">
-                    <LinkIcon className="h-5 w-5 text-blue-600 mt-0.5" />
+                    <LinkIcon className="h-5 w-5 text-gray-600 mt-0.5" />
                     <div className="flex-1">
-                      <p className="font-medium text-blue-900">
+                      <p className="font-medium text-gray-800">
                         เคยลงทะเบียนที่เคาน์เตอร์แล้ว?
                       </p>
-                      <p className="text-sm text-blue-700 mt-1">
+                      <p className="text-sm text-gray-600 mt-1">
                         คลิกปุ่มด้านล่างเพื่อขอลิงก์เชื่อมต่อบัญชี
                       </p>
                       
                       <Button
                         variant="outline"
                         size="sm"
-                        className="mt-3 w-full border-blue-600 text-blue-600 hover:bg-blue-50"
+                        className="mt-3 w-full border-gray-400 text-gray-700 hover:bg-gray-50"
                         onClick={handleConnectExistingAccount}
                       >
                         <MessageCircle className="h-4 w-4 mr-2" />
