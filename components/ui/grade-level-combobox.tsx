@@ -105,11 +105,9 @@ export function GradeLevelCombobox({
       </PopoverTrigger>
       <PopoverContent 
         className="w-[var(--radix-popover-trigger-width)] p-0" 
-  align="start"
-  sideOffset={5}
-  style={{ 
-    marginTop: '2px' // เพิ่ม margin-top เล็กน้อย
-  }}
+        align="start"
+        // แก้ไข: เพิ่ม sideOffset เพื่อให้ dropdown ไม่ชิดกับ button มากเกินไป
+        sideOffset={4}
       >
         <Command>
           <CommandInput 

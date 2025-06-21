@@ -78,6 +78,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { PageLoading } from '@/components/ui/loading';
+
 
 const statusConfig = {
   new: { label: 'ใหม่', color: 'bg-blue-100 text-blue-700', icon: AlertCircle },

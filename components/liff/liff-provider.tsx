@@ -47,7 +47,7 @@ interface LiffProviderProps {
   requireLogin?: boolean
 }
 
-export function LiffProvider({ children, requireLogin = true }: LiffProviderProps) {
+export function LiffProvider({ children, requireLogin = false }: LiffProviderProps) {
   const [liff, setLiff] = useState<Liff | null>(null)
   const [profile, setProfile] = useState<LiffProfile | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -103,19 +103,25 @@ export function LiffProvider({ children, requireLogin = true }: LiffProviderProp
           } catch (profileError: any) {
             console.error('[LiffProvider] Error getting profile:', profileError)
             
-            // If token expired, trigger login
+            // If token expired, trigger login only if requireLogin is true
             if (profileError.message?.includes('expired') || 
                 profileError.message?.includes('401')) {
-              console.log('[LiffProvider] Token expired, need to login again')
+              console.log('[LiffProvider] Token expired')
               if (requireLogin) {
+                console.log('[LiffProvider] requireLogin is true, triggering login...')
                 liffInstance.login()
+              } else {
+                console.log('[LiffProvider] requireLogin is false, not triggering login')
+                // Clear login state
+                setIsLoggedIn(false)
+                setProfile(null)
               }
             } else {
               setError(profileError)
             }
           }
         } else if (requireLogin) {
-          console.log('[LiffProvider] Not logged in, redirecting to login...')
+          console.log('[LiffProvider] Not logged in and requireLogin is true, redirecting to login...')
           liffInstance.login()
         }
         
@@ -129,7 +135,7 @@ export function LiffProvider({ children, requireLogin = true }: LiffProviderProp
     }
 
     init()
-  }, []) // Remove requireLogin from dependencies
+  }, [requireLogin])
 
   if (isLoading) {
     return <LiffLoading />
@@ -137,16 +143,23 @@ export function LiffProvider({ children, requireLogin = true }: LiffProviderProp
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <Card className="w-full max-w-md">
+      <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-b from-red-50 to-white">
+        <Card className="w-full max-w-md border-red-200">
           <CardContent className="pt-6">
             <div className="flex flex-col items-center text-center space-y-4">
-              <AlertCircle className="h-12 w-12 text-red-500" />
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
+                <AlertCircle className="h-8 w-8 text-red-600" />
+              </div>
               <h2 className="text-lg font-semibold">เกิดข้อผิดพลาด</h2>
-              <p className="text-sm text-muted-foreground">
-                {error.message}
+              <p className="text-sm text-gray-600">
+                {error.message === 'Failed to initialize LIFF' 
+                  ? 'ไม่สามารถเริ่มต้นระบบได้ กรุณาลองใหม่อีกครั้ง' 
+                  : error.message}
               </p>
-              <Button onClick={() => window.location.reload()}>
+              <Button 
+                onClick={() => window.location.reload()}
+                className="bg-red-600 hover:bg-red-700"
+              >
                 ลองใหม่
               </Button>
             </div>

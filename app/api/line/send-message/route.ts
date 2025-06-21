@@ -3,6 +3,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getLineSettings } from '@/lib/services/line-settings';
 
+// Force dynamic rendering
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   console.log('=== Send Message API called ===');
   
