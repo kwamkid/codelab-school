@@ -118,3 +118,62 @@
 }
 
 /* Remove import statements that were causing errors */
+/* เพิ่มต่อท้ายไฟล์ app/globals.css */
+
+/* Force active state animation */
+button:active,
+.inline-flex:active {
+  transform: scale(0.95) !important;
+  transition: transform 75ms !important;
+}
+
+/* Add visual feedback for loading */
+button[aria-busy="true"],
+.inline-flex[aria-busy="true"] {
+  position: relative;
+  color: transparent !important;
+}
+
+button[aria-busy="true"]::after,
+.inline-flex[aria-busy="true"]::after {
+  content: "";
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  top: 50%;
+  left: 50%;
+  margin-left: -10px;
+  margin-top: -10px;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  border-top-color: transparent;
+  animation: spinner 0.8s linear infinite;
+}
+
+@keyframes spinner {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Ripple effect */
+@keyframes ripple {
+  0% {
+    transform: scale(0);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(4);
+    opacity: 0;
+  }
+}
+
+.ripple {
+  position: absolute;
+  border-radius: 50%;
+  width: 100px;
+  height: 100px;
+  background: rgba(255, 255, 255, 0.5);
+  animation: ripple 0.6s;
+  pointer-events: none;
+}

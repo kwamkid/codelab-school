@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -16,7 +17,6 @@ import {
 import {
   Home,
   Users,
-  GraduationCap,
   Calendar,
   BookOpen,
   Settings,
@@ -25,58 +25,102 @@ import {
   X,
   Building2,
   UserCog,
-  DollarSign,
-  CalendarCheck,
+  CalendarDays,
   TestTube,
-  FileText,
   Repeat,
   ChevronDown,
   ChevronRight,
   School,
-  CalendarDays,
-  MessageSquare,
-  Sparkles,
-  Gift
+  UserCheck,
+  GraduationCap,
+  Building,
+  Loader2
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/lib/utils';
 import { LoadingProvider } from '@/contexts/LoadingContext';
+import { PageLoading } from '@/components/ui/loading';
 
 const navigation = [
-  { name: 'หน้าหลัก', href: '/dashboard', icon: Home },
-  { name: 'สาขา', href: '/branches', icon: Building2 },
-  { name: 'นักเรียน', href: '/students', icon: Users },
-  { name: 'ผู้ปกครอง', href: '/parents', icon: Users },
-  { name: 'ครู', href: '/teachers', icon: UserCog },
-  { name: 'วิชา', href: '/subjects', icon: BookOpen },
-  {
-    name: 'คลาสเรียน',
-    icon: School,
-    subItems: [
-      { name: 'รายการคลาส', href: '/classes', icon: BookOpen },
-      { name: 'ตารางเรียน', href: '/schedules', icon: Calendar },
-      { name: 'เช็คชื่อ', href: '/attendance', icon: CalendarCheck },
-      { name: 'Makeup Class', href: '/makeup', icon: Repeat },
-    ]
-  },
-  {
-    name: 'การเงิน',
-    icon: DollarSign,
-    subItems: [
-      { name: 'รายการชำระเงิน', href: '/payments', icon: DollarSign },
-      { name: 'ใบเสร็จ', href: '/receipts', icon: FileText },
-    ]
-  },
-  { name: 'ทดลองเรียน', href: '/trial', icon: TestTube },
-  { name: 'วันหยุด', href: '/holidays', icon: CalendarDays },
-  { name: 'โปรโมชั่น', href: '/promotions', icon: Gift },
   { 
-    name: 'LINE Integration', 
-    href: '/line-integration', 
-    icon: MessageSquare,
-    badge: 'New'
+    name: 'Dashboard', 
+    href: '/dashboard', 
+    icon: Home 
+  },
+  {
+    name: 'ข้อมูลพื้นฐาน',
+    icon: Building,
+    subItems: [
+      { name: 'สาขา', href: '/branches', icon: Building2 },
+      { name: 'ห้องเรียน', href: '/rooms', icon: School },
+      { name: 'ครูผู้สอน', href: '/teachers', icon: UserCog },
+      { name: 'วันหยุด', href: '/holidays', icon: CalendarDays },
+      { name: 'วิชา', href: '/subjects', icon: BookOpen },
+      { name: 'คลาสเรียน', href: '/classes', icon: GraduationCap },
+    ]
+  },
+  {
+    name: 'ลูกค้า',
+    icon: Users,
+    subItems: [
+      { name: 'ผู้ปกครอง', href: '/parents', icon: Users },
+      { name: 'นักเรียน', href: '/students', icon: UserCheck },
+    ]
+  },
+  { 
+    name: 'ลงทะเบียนเรียน', 
+    href: '/enrollments', 
+    icon: Calendar 
+  },
+  { 
+    name: 'เรียนชดเชย', 
+    href: '/makeup', 
+    icon: Repeat 
+  },
+  { 
+    name: 'ทดลองเรียน', 
+    href: '/trial', 
+    icon: TestTube 
+  },
+  { 
+    name: 'ตั้งค่า', 
+    href: '/settings', 
+    icon: Settings 
   },
 ];
+
+// Custom Link component with loading
+const MenuLink = ({ href, children, className, onClick }: any) => {
+  const [isLoading, setIsLoading] = useState(false);
+  const router = useRouter();
+  
+  const handleClick = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    
+    // Execute onClick if provided
+    if (onClick) onClick();
+    
+    // Navigate
+    await router.push(href);
+    
+    // Reset loading after navigation
+    setTimeout(() => setIsLoading(false), 500);
+  };
+  
+  return (
+    <Link href={href} onClick={handleClick} className={className}>
+      {isLoading ? (
+        <div className="flex items-center">
+          <Loader2 className="mr-3 h-4 w-4 animate-spin" />
+          <span className="opacity-70">กำลังโหลด...</span>
+        </div>
+      ) : (
+        children
+      )}
+    </Link>
+  );
+};
 
 export default function AdminLayout({
   children,
@@ -88,6 +132,7 @@ export default function AdminLayout({
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
+  const [navigating, setNavigating] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -105,6 +150,11 @@ export default function AdminLayout({
     setExpandedItems(expandedMenus);
   }, [pathname]);
 
+  // Reset navigating state when pathname changes
+  useEffect(() => {
+    setNavigating(false);
+  }, [pathname]);
+
   const toggleExpanded = (itemName: string) => {
     setExpandedItems(prev =>
       prev.includes(itemName)
@@ -119,11 +169,7 @@ export default function AdminLayout({
   };
 
   if (authLoading) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-gray-600" />
-      </div>
-    );
+    return <PageLoading />;
   }
 
   if (!user) {
@@ -144,6 +190,9 @@ export default function AdminLayout({
   return (
     <LoadingProvider>
       <div className="flex h-screen bg-gray-50">
+        {/* Loading overlay - ใช้ PageLoading */}
+        {navigating && <PageLoading />}
+        
         {/* Sidebar */}
         <div
           className={cn(
@@ -153,32 +202,38 @@ export default function AdminLayout({
         >
           <div className="flex h-full flex-col">
             {/* Logo */}
-            <div className="flex h-16 items-center justify-between px-4 shadow-sm">
-              <h1 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-                <Sparkles className="h-6 w-6 text-red-500" />
-                CodeLab School
-              </h1>
+            <div className="flex h-20 items-center justify-between px-6 border-b">
+              <div className="w-full">
+                <Image 
+                  src="/logo.svg" 
+                  alt="CodeLab School" 
+                  width={150}
+                  height={40}
+                  className="w-full max-w-[180px]"
+                  priority
+                />
+              </div>
               <button
                 onClick={() => setSidebarOpen(false)}
-                className="lg:hidden"
+                className="lg:hidden ml-2"
               >
                 <X className="h-6 w-6 text-gray-500" />
               </button>
             </div>
 
             {/* Navigation */}
-            <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-4">
+            <nav className="flex-1 overflow-y-auto px-4 py-6">
               {navigation.map((item) => (
-                <div key={item.name}>
+                <div key={item.name} className="mb-2">
                   {item.subItems ? (
                     <>
                       <button
                         onClick={() => toggleExpanded(item.name)}
                         className={cn(
-                          'flex w-full items-center justify-between rounded-lg px-2 py-2 text-sm font-medium transition-colors',
+                          'flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-base font-normal transition-colors',
                           isSubItemActive(item)
-                            ? 'bg-red-50 text-red-700'
-                            : 'text-gray-700 hover:bg-gray-100'
+                            ? 'bg-red-50/50 text-red-600'
+                            : 'text-gray-700 hover:bg-gray-50'
                         )}
                       >
                         <div className="flex items-center">
@@ -192,66 +247,50 @@ export default function AdminLayout({
                         )}
                       </button>
                       {expandedItems.includes(item.name) && (
-                        <div className="ml-4 mt-1 space-y-1">
+                        <div className="mt-2 ml-8 space-y-1">
                           {item.subItems.map((subItem) => (
-                            <Link
+                            <MenuLink
                               key={subItem.name}
                               href={subItem.href}
                               className={cn(
-                                'flex items-center rounded-lg px-2 py-2 text-sm transition-colors',
+                                'flex items-center rounded-lg px-3 py-2 text-base font-normal transition-colors',
                                 isActive(subItem.href)
-                                  ? 'bg-red-100 text-red-700'
-                                  : 'text-gray-600 hover:bg-gray-100'
+                                  ? 'bg-red-50 text-red-600'
+                                  : 'text-gray-600 hover:bg-gray-50'
                               )}
-                              onClick={() => setSidebarOpen(false)}
+                              onClick={() => {
+                                setSidebarOpen(false);
+                                setNavigating(true);
+                              }}
                             >
                               <subItem.icon className="mr-3 h-4 w-4" />
                               {subItem.name}
-                            </Link>
+                            </MenuLink>
                           ))}
                         </div>
                       )}
                     </>
                   ) : (
-                    <Link
+                    <MenuLink
                       href={item.href}
                       className={cn(
-                        'flex items-center rounded-lg px-2 py-2 text-sm font-medium transition-colors',
+                        'flex items-center rounded-lg px-3 py-2.5 text-base font-normal transition-colors',
                         isActive(item.href)
-                          ? 'bg-red-50 text-red-700'
-                          : 'text-gray-700 hover:bg-gray-100'
+                          ? 'bg-red-50/50 text-red-600'
+                          : 'text-gray-700 hover:bg-gray-50'
                       )}
-                      onClick={() => setSidebarOpen(false)}
+                      onClick={() => {
+                        setSidebarOpen(false);
+                        setNavigating(true);
+                      }}
                     >
                       <item.icon className="mr-3 h-5 w-5" />
                       {item.name}
-                      {item.badge && (
-                        <span className="ml-auto rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-600">
-                          {item.badge}
-                        </span>
-                      )}
-                    </Link>
+                    </MenuLink>
                   )}
                 </div>
               ))}
             </nav>
-
-            {/* Settings */}
-            <div className="border-t p-4">
-              <Link
-                href="/settings"
-                className={cn(
-                  'flex items-center rounded-lg px-2 py-2 text-sm font-medium transition-colors',
-                  isActive('/settings')
-                    ? 'bg-red-50 text-red-700'
-                    : 'text-gray-700 hover:bg-gray-100'
-                )}
-                onClick={() => setSidebarOpen(false)}
-              >
-                <Settings className="mr-3 h-5 w-5" />
-                ตั้งค่า
-              </Link>
-            </div>
           </div>
         </div>
 

@@ -7,6 +7,18 @@ module.exports = {
     "./app/**/*.{ts,tsx}",
     "./src/**/*.{ts,tsx}",
   ],
+  // เพิ่ม safelist เพื่อให้ Tailwind compile classes เหล่านี้แน่นอน
+  safelist: [
+    "active:scale-95",
+    "active:scale-[0.97]",
+    "active:transition-transform",
+    "active:duration-75",
+    "active:bg-primary/80",
+    "active:bg-destructive/80",
+    "active:bg-accent/80",
+    "active:bg-secondary/70",
+    "active:opacity-70",
+  ],
   theme: {
     container: {
       center: true,
