@@ -1,12 +1,15 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import * as z from 'zod';
-import { format } from 'date-fns';
-import { th } from 'date-fns/locale';
-import { Calendar as CalendarIcon, AlertCircle, CheckCircle2, XCircle } from 'lucide-react';
+import { 
+  AlertCircle, 
+  CheckCircle2, 
+  XCircle,
+  Clock,
+  User,
+  MapPin,
+  Loader2
+} from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -15,16 +18,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Calendar } from '@/components/ui/calendar';
-import {
-  Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -32,34 +27,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-import { MakeupClass, Teacher, Branch, Room } from '@/types/models';
+import { MakeupClass, Teacher, Branch, Room, ClassSchedule } from '@/types/models';
 import { scheduleMakeupClass } from '@/lib/services/makeup';
 import { getTeachers } from '@/lib/services/teachers';
 import { getBranches } from '@/lib/services/branches';
 import { getRoomsByBranch } from '@/lib/services/rooms';
+import { getClassSchedule } from '@/lib/services/classes';
 import { checkAvailability, AvailabilityIssue } from '@/lib/utils/availability';
 import { useAuth } from '@/hooks/useAuth';
-
-const formSchema = z.object({
-  date: z.date({
-    required_error: 'กรุณาเลือกวันที่',
-  }),
-  startTime: z.string().min(1, 'กรุณาระบุเวลาเริ่ม'),
-  endTime: z.string().min(1, 'กรุณาระบุเวลาสิ้นสุด'),
-  teacherId: z.string().min(1, 'กรุณาเลือกครู'),
-  branchId: z.string().min(1, 'กรุณาเลือกสาขา'),
-  roomId: z.string().min(1, 'กรุณาเลือกห้อง'),
-});
-
-type FormData = z.infer<typeof formSchema>;
+import { formatDate } from '@/lib/utils';
 
 interface ScheduleMakeupDialogProps {
   open: boolean;
@@ -86,25 +64,18 @@ export default function ScheduleMakeupDialog({
   const [rooms, setRooms] = useState<Room[]>([]);
   const [checkingAvailability, setCheckingAvailability] = useState(false);
   const [availabilityIssues, setAvailabilityIssues] = useState<AvailabilityIssue[]>([]);
-
-  const form = useForm<FormData>({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
-      date: undefined,
-      startTime: '',
-      endTime: '',
-      teacherId: '',
-      branchId: '',
-      roomId: '',
-    },
+  const [originalSchedule, setOriginalSchedule] = useState<ClassSchedule | null>(null);
+  const [branchName, setBranchName] = useState<string>('');
+  
+  // Form data - remove branchId since we'll use the original
+  const [formData, setFormData] = useState({
+    date: '',
+    startTime: '10:00',
+    endTime: '11:00',
+    teacherId: '',
+    branchId: '', // Will be set from class info
+    roomId: '',
   });
-
-  const selectedBranchId = form.watch('branchId');
-  const selectedDate = form.watch('date');
-  const selectedStartTime = form.watch('startTime');
-  const selectedEndTime = form.watch('endTime');
-  const selectedRoomId = form.watch('roomId');
-  const selectedTeacherId = form.watch('teacherId');
 
   // Load initial data
   useEffect(() => {
@@ -119,6 +90,31 @@ export default function ScheduleMakeupDialog({
 
         setTeachers(teachersData.filter(t => t.isActive));
         setBranches(branchesData.filter(b => b.isActive));
+
+        // Load original schedule data
+        if (makeupRequest.originalClassId && makeupRequest.originalScheduleId) {
+          const schedule = await getClassSchedule(
+            makeupRequest.originalClassId, 
+            makeupRequest.originalScheduleId
+          );
+          setOriginalSchedule(schedule);
+        }
+
+        // Get class info to set branch and default values
+        const classesModule = await import('@/lib/services/classes');
+        const classInfo = await classesModule.getClass(makeupRequest.originalClassId);
+        if (classInfo) {
+          const branch = branchesData.find(b => b.id === classInfo.branchId);
+          setBranchName(branch?.name || '');
+          
+          setFormData(prev => ({ 
+            ...prev, 
+            branchId: classInfo.branchId,
+            teacherId: classInfo.teacherId, // Default teacher
+            startTime: classInfo.startTime,
+            endTime: classInfo.endTime
+          }));
+        }
       } catch (error) {
         console.error('Error loading data:', error);
         toast.error('เกิดข้อผิดพลาดในการโหลดข้อมูล');
@@ -126,24 +122,19 @@ export default function ScheduleMakeupDialog({
     };
 
     loadData();
-  }, [open]);
+  }, [open, makeupRequest]);
 
-  // Load rooms when branch changes
+  // Load rooms when we have branchId
   useEffect(() => {
     const loadRooms = async () => {
-      if (!selectedBranchId) {
+      if (!formData.branchId) {
         setRooms([]);
         return;
       }
 
       try {
-        const roomsData = await getRoomsByBranch(selectedBranchId);
+        const roomsData = await getRoomsByBranch(formData.branchId);
         setRooms(roomsData.filter(r => r.isActive));
-        
-        // Reset room selection if not in new branch
-        if (!roomsData.some(r => r.id === form.getValues('roomId'))) {
-          form.setValue('roomId', '');
-        }
       } catch (error) {
         console.error('Error loading rooms:', error);
         toast.error('เกิดข้อผิดพลาดในการโหลดข้อมูลห้อง');
@@ -151,13 +142,28 @@ export default function ScheduleMakeupDialog({
     };
 
     loadRooms();
-  }, [selectedBranchId, form]);
+  }, [formData.branchId]);
+
+  // Auto-set end time when start time changes
+  useEffect(() => {
+    if (formData.startTime) {
+      const [hours, minutes] = formData.startTime.split(':').map(Number);
+      const endHour = hours + 1; // Default 1 hour session
+      const endMinutes = minutes.toString().padStart(2, '0');
+      const newEndTime = `${endHour.toString().padStart(2, '0')}:${endMinutes}`;
+      
+      // Only update if it's a valid time
+      if (endHour < 24) {
+        setFormData(prev => ({ ...prev, endTime: newEndTime }));
+      }
+    }
+  }, [formData.startTime]);
 
   // Check availability when relevant fields change
   useEffect(() => {
     const checkScheduleAvailability = async () => {
-      if (!selectedDate || !selectedStartTime || !selectedEndTime || 
-          !selectedBranchId || !selectedRoomId || !selectedTeacherId) {
+      if (!formData.date || !formData.startTime || !formData.endTime || 
+          !formData.branchId || !formData.roomId || !formData.teacherId) {
         setAvailabilityIssues([]);
         return;
       }
@@ -165,12 +171,12 @@ export default function ScheduleMakeupDialog({
       setCheckingAvailability(true);
       try {
         const result = await checkAvailability({
-          date: selectedDate,
-          startTime: selectedStartTime,
-          endTime: selectedEndTime,
-          branchId: selectedBranchId,
-          roomId: selectedRoomId,
-          teacherId: selectedTeacherId,
+          date: new Date(formData.date),
+          startTime: formData.startTime,
+          endTime: formData.endTime,
+          branchId: formData.branchId,
+          roomId: formData.roomId,
+          teacherId: formData.teacherId,
           excludeId: makeupRequest.id,
           excludeType: 'makeup'
         });
@@ -185,10 +191,18 @@ export default function ScheduleMakeupDialog({
 
     const debounceTimer = setTimeout(checkScheduleAvailability, 500);
     return () => clearTimeout(debounceTimer);
-  }, [selectedDate, selectedStartTime, selectedEndTime, selectedBranchId, 
-      selectedRoomId, selectedTeacherId, makeupRequest.id]);
+  }, [formData, makeupRequest.id]);
 
-  const handleSubmit = async (data: FormData) => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Validate
+    if (!formData.date || !formData.startTime || !formData.endTime || 
+        !formData.teacherId || !formData.roomId) {
+      toast.error('กรุณากรอกข้อมูลให้ครบถ้วน');
+      return;
+    }
+
     if (availabilityIssues.length > 0) {
       toast.error('ไม่สามารถจัด Makeup Class ได้ เนื่องจากมีปัญหาความพร้อมใช้งาน');
       return;
@@ -197,19 +211,28 @@ export default function ScheduleMakeupDialog({
     setLoading(true);
     try {
       await scheduleMakeupClass(makeupRequest.id, {
-        date: data.date,
-        startTime: data.startTime,
-        endTime: data.endTime,
-        teacherId: data.teacherId,
-        branchId: data.branchId,
-        roomId: data.roomId,
+        date: new Date(formData.date),
+        startTime: formData.startTime,
+        endTime: formData.endTime,
+        teacherId: formData.teacherId,
+        branchId: formData.branchId,
+        roomId: formData.roomId,
         confirmedBy: user?.uid || 'admin',
       });
 
       toast.success('จัดตาราง Makeup Class เรียบร้อยแล้ว');
       onSuccess?.();
       onOpenChange(false);
-      form.reset();
+      
+      // Reset form
+      setFormData({
+        date: '',
+        startTime: '10:00',
+        endTime: '11:00',
+        teacherId: '',
+        branchId: '',
+        roomId: '',
+      });
     } catch (error: any) {
       console.error('Error scheduling makeup:', error);
       toast.error(error.message || 'เกิดข้อผิดพลาดในการจัดตาราง');
@@ -218,31 +241,28 @@ export default function ScheduleMakeupDialog({
     }
   };
 
-  // Generate time options
-  const timeOptions = [];
-  for (let hour = 8; hour <= 18; hour++) {
-    for (let minute = 0; minute < 60; minute += 30) {
-      const time = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
-      timeOptions.push(time);
-    }
-  }
-
-  // Get issue icon based on type
-  const getIssueIcon = (type: AvailabilityIssue['type']) => {
-    switch (type) {
-      case 'holiday':
-        return <CalendarIcon className="h-3 w-3 text-red-500" />;
-      case 'room_conflict':
-        return <XCircle className="h-3 w-3 text-orange-500" />;
-      case 'teacher_conflict':
-        return <AlertCircle className="h-3 w-3 text-yellow-600" />;
-      default:
-        return <XCircle className="h-3 w-3 text-red-500" />;
-    }
+  // Filter teachers based on branch
+  const getAvailableTeachers = () => {
+    return teachers.filter(teacher => 
+      !formData.branchId || teacher.availableBranches.includes(formData.branchId)
+    );
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(newOpen) => {
+      onOpenChange(newOpen);
+      if (!newOpen) {
+        // Reset form when closing
+        setFormData({
+          date: '',
+          startTime: '10:00',
+          endTime: '11:00',
+          teacherId: '',
+          branchId: '',
+          roomId: '',
+        });
+      }
+    }}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>จัดตาราง Makeup Class</DialogTitle>
@@ -251,271 +271,205 @@ export default function ScheduleMakeupDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-            {/* Student & Class Info */}
-            <div className="bg-gray-50 p-4 rounded-lg space-y-2">
-              <div className="flex justify-between">
-                <span className="text-sm text-gray-600">นักเรียน:</span>
-                <span className="font-medium">
-                  {makeupRequest.studentNickname || makeupRequest.studentName}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-gray-600">คลาสเดิม:</span>
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Student & Class Info */}
+          <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-gray-600">นักเรียน:</span>
+              <span className="font-medium">
+                {makeupRequest.studentNickname || makeupRequest.studentName}
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-gray-600">คลาสเดิม:</span>
+              <div className="text-right">
                 <span className="font-medium">
                   {makeupRequest.subjectName} - {makeupRequest.className}
                 </span>
+                {originalSchedule && (
+                  <span className="text-sm text-gray-500 ml-2">
+                    (ครั้งที่ {originalSchedule.sessionNumber})
+                  </span>
+                )}
               </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-gray-600">เหตุผล:</span>
-                <span className="font-medium">{makeupRequest.reason}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-gray-600">เหตุผล:</span>
+              <span className="font-medium">{makeupRequest.reason}</span>
+            </div>
+            {branchName && (
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-600">สาขา:</span>
+                <span className="font-medium">{branchName}</span>
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-4">
+            {/* Row 1: Date and Time Range */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Date */}
+              <div className="space-y-2">
+                <Label htmlFor="date">วันที่นัด Makeup *</Label>
+                <Input
+                  id="date"
+                  type="date"
+                  value={formData.date}
+                  onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
+                  min={new Date().toISOString().split('T')[0]}
+                  required
+                />
+              </div>
+
+              {/* Time Range */}
+              <div className="space-y-2">
+                <Label>ช่วงเวลา *</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  <Input
+                    id="startTime"
+                    type="time"
+                    value={formData.startTime}
+                    onChange={(e) => setFormData(prev => ({ ...prev, startTime: e.target.value }))}
+                    step="300" // 5 minute intervals
+                    required
+                  />
+                  <Input
+                    id="endTime"
+                    type="time"
+                    value={formData.endTime}
+                    onChange={(e) => setFormData(prev => ({ ...prev, endTime: e.target.value }))}
+                    step="300" // 5 minute intervals
+                    min={formData.startTime}
+                    required
+                  />
+                </div>
               </div>
             </div>
 
-            {/* Availability Issues Alert */}
-            {availabilityIssues.length > 0 && (
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>
-                  <div className="space-y-1">
-                    <p className="font-medium">ไม่สามารถจัดเวลานี้ได้:</p>
-                    {availabilityIssues.map((issue, index) => (
-                      <div key={index} className="flex items-start gap-2 text-sm">
-                        {getIssueIcon(issue.type)}
-                        <span>{issue.message}</span>
+            {/* Row 2: Teacher and Room */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Teacher */}
+              <div className="space-y-2">
+                <Label htmlFor="teacher">ครูผู้สอน *</Label>
+                <Select
+                  value={formData.teacherId}
+                  onValueChange={(value) => setFormData(prev => ({ ...prev, teacherId: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="เลือกครู" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {getAvailableTeachers().length === 0 ? (
+                      <div className="p-2 text-sm text-gray-500 text-center">
+                        ไม่มีครูที่สอนในสาขานี้
                       </div>
-                    ))}
-                  </div>
-                </AlertDescription>
-              </Alert>
-            )}
+                    ) : (
+                      getAvailableTeachers().map((teacher) => (
+                        <SelectItem key={teacher.id} value={teacher.id}>
+                          {teacher.nickname || teacher.name}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-500">
+                  สามารถเลือกครูคนอื่นที่ไม่ใช่ครูประจำคลาสได้
+                </p>
+              </div>
 
-            {/* Available Alert */}
-            {selectedDate && selectedStartTime && selectedEndTime && 
-             selectedBranchId && selectedRoomId && selectedTeacherId && 
-             availabilityIssues.length === 0 && !checkingAvailability && (
+              {/* Room */}
+              <div className="space-y-2">
+                <Label htmlFor="room">ห้องเรียน *</Label>
+                <Select
+                  value={formData.roomId}
+                  onValueChange={(value) => setFormData(prev => ({ ...prev, roomId: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="เลือกห้อง" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {rooms.map((room) => (
+                      <SelectItem key={room.id} value={room.id}>
+                        {room.name} (จุ {room.capacity} คน)
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+
+          {/* Availability Status - Moved to bottom */}
+          {checkingAvailability ? (
+            <Alert>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <AlertDescription>
+                กำลังตรวจสอบห้องว่าง...
+              </AlertDescription>
+            </Alert>
+          ) : availabilityIssues.length > 0 ? (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                <div className="space-y-1">
+                  <p className="font-medium">ไม่สามารถจองเวลานี้ได้:</p>
+                  {availabilityIssues.map((issue, index) => (
+                    <div key={index} className="flex items-start gap-2 text-sm">
+                      <XCircle className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                      <span>{issue.message}</span>
+                    </div>
+                  ))}
+                </div>
+              </AlertDescription>
+            </Alert>
+          ) : (
+            formData.date && formData.startTime && formData.endTime && 
+            formData.roomId && formData.teacherId && (
               <Alert className="border-green-200 bg-green-50">
                 <CheckCircle2 className="h-4 w-4 text-green-600" />
                 <AlertDescription className="text-green-800">
-                  เวลานี้สามารถจัด Makeup Class ได้
+                  เวลานี้สามารถจองได้
                 </AlertDescription>
               </Alert>
-            )}
+            )
+          )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Branch */}
-              <FormField
-                control={form.control}
-                name="branchId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>สาขา</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="เลือกสาขา" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {branches.map((branch) => (
-                          <SelectItem key={branch.id} value={branch.id}>
-                            {branch.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {/* Room */}
-              <FormField
-                control={form.control}
-                name="roomId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>ห้อง</FormLabel>
-                    <Select 
-                      onValueChange={field.onChange} 
-                      defaultValue={field.value}
-                      disabled={!selectedBranchId}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder={selectedBranchId ? "เลือกห้อง" : "เลือกสาขาก่อน"} />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {rooms.map((room) => (
-                          <SelectItem key={room.id} value={room.id}>
-                            {room.name} (จุ {room.capacity} คน)
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {/* Date */}
-              <FormField
-                control={form.control}
-                name="date"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>วันที่</FormLabel>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <FormControl>
-                          <Button
-                            variant="outline"
-                            className={cn(
-                              'w-full pl-3 text-left font-normal',
-                              !field.value && 'text-muted-foreground'
-                            )}
-                          >
-                            {field.value ? (
-                              format(field.value, 'PPP', { locale: th })
-                            ) : (
-                              <span>เลือกวันที่</span>
-                            )}
-                            <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                          </Button>
-                        </FormControl>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
-                        <Calendar
-                          mode="single"
-                          selected={field.value}
-                          onSelect={field.onChange}
-                          disabled={(date) =>
-                            date < new Date() || date < new Date('1900-01-01')
-                          }
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
-                    <FormDescription>
-                      เลือกวันที่สำหรับ Makeup Class
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {/* Teacher */}
-              <FormField
-                control={form.control}
-                name="teacherId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>ครูผู้สอน</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="เลือกครู" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {teachers.map((teacher) => (
-                          <SelectItem key={teacher.id} value={teacher.id}>
-                            {teacher.nickname || teacher.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormDescription>
-                      สามารถเลือกครูคนอื่นที่ไม่ใช่ครูประจำคลาสได้
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {/* Start Time */}
-              <FormField
-                control={form.control}
-                name="startTime"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>เวลาเริ่ม</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="เลือกเวลาเริ่ม" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {timeOptions.map((time) => (
-                          <SelectItem key={time} value={time}>
-                            {time}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {/* End Time */}
-              <FormField
-                control={form.control}
-                name="endTime"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>เวลาสิ้นสุด</FormLabel>
-                    <Select 
-                      onValueChange={field.onChange} 
-                      defaultValue={field.value}
-                      disabled={!form.watch('startTime')}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="เลือกเวลาสิ้นสุด" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {timeOptions
-                          .filter(time => time > (form.watch('startTime') || ''))
-                          .map((time) => (
-                            <SelectItem key={time} value={time}>
-                              {time}
-                            </SelectItem>
-                          ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            {/* Actions */}
-            <div className="flex justify-end gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  onOpenChange(false);
-                  form.reset();
-                }}
-                disabled={loading}
-              >
-                ยกเลิก
-              </Button>
-              <Button 
-                type="submit" 
-                disabled={loading || checkingAvailability || availabilityIssues.length > 0}
-              >
-                {loading ? 'กำลังบันทึก...' : 'จัดตาราง'}
-              </Button>
-            </div>
-          </form>
-        </Form>
+          {/* Actions */}
+          <div className="flex justify-end gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                onOpenChange(false);
+                setFormData({
+                  date: '',
+                  startTime: '10:00',
+                  endTime: '11:00',
+                  teacherId: '',
+                  branchId: '',
+                  roomId: '',
+                });
+              }}
+              disabled={loading}
+            >
+              ยกเลิก
+            </Button>
+            <Button 
+              type="submit" 
+              disabled={loading || checkingAvailability || availabilityIssues.length > 0}
+              className="bg-red-500 hover:bg-red-600"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  กำลังบันทึก...
+                </>
+              ) : (
+                'จัดตาราง'
+              )}
+            </Button>
+          </div>
+        </form>
       </DialogContent>
     </Dialog>
   );
