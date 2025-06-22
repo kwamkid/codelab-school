@@ -180,11 +180,10 @@ export default function UsersPage() {
           <p className="text-gray-600 mt-1">จัดการผู้ใช้งานและสิทธิ์การเข้าถึง</p>
         </div>
         <div className="flex gap-2">
-          <Button 
+         <Button 
             onClick={() => setShowCreateDialog(true)}
             className="bg-red-500 hover:bg-red-600"
-            disabled // ปิดไว้ก่อน
-          >
+            >
             <Plus className="h-4 w-4 mr-2" />
             เพิ่มผู้ใช้งาน
           </Button>

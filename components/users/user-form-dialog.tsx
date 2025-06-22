@@ -214,10 +214,20 @@ const onSubmit = async (data: FormData) => {
     onOpenChange(false);
   } catch (error: any) {
     console.error('Error saving user:', error);
-    toast.error(error.message || 'เกิดข้อผิดพลาดในการบันทึกข้อมูล');
-  } finally {
+
+    // เพิ่ม error handling ที่ละเอียดขึ้น
+    if (error.message?.includes('FIREBASE_ADMIN')) {
+        toast.error('ไม่สามารถสร้างผู้ใช้ได้: กรุณาตั้งค่า Firebase Admin');
+    } else if (error.message?.includes('auth/email-already-exists')) {
+        toast.error('อีเมลนี้มีผู้ใช้งานแล้ว');
+    } else if (error.message?.includes('auth/weak-password')) {
+        toast.error('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร');
+    } else {
+        toast.error(error.message || 'เกิดข้อผิดพลาดในการบันทึกข้อมูล');
+    }
+    } finally {
     setLoading(false);
-  }
+    }
 };
 
   const isSuperAdmin = watchRole === 'super_admin';
