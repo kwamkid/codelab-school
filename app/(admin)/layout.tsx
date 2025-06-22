@@ -190,30 +190,37 @@ export default function AdminLayout({
   }, [showNotifications]);
 
   // Filter navigation based on role
-  const filterNavigation = (items: NavigationItem[]): NavigationItem[] => {
-    return items.filter(item => {
-      // Check role
-      if (item.requiredRole && adminUser) {
-        if (!item.requiredRole.includes(adminUser.role)) {
-          return false;
-        }
+  // Filter navigation based on role
+const filterNavigation = (items: NavigationItem[]): NavigationItem[] => {
+  return items.filter(item => {
+    // Check role
+    if (item.requiredRole && adminUser) {
+      if (!item.requiredRole.includes(adminUser.role)) {
+        return false;
       }
-      
-      // Check permission
-      if (item.requiredPermission) {
-        if (item.requiredPermission === 'canManageSettings' && !canManageSettings()) {
-          return false;
-        }
+    }
+    
+    // Check permission - แก้ไขส่วนนี้
+    if (item.requiredPermission) {
+      if (item.requiredPermission === 'canManageSettings') {
+        // Super admin สามารถเข้าได้เสมอ
+        if (adminUser?.role === 'super_admin') return true;
+        // อื่นๆ ตรวจสอบ permission
+        if (!canManageSettings()) return false;
       }
-      
-      // Filter sub items
-      if (item.subItems) {
-        item.subItems = filterNavigation(item.subItems);
-      }
-      
-      return true;
-    });
-  };
+    }
+    
+    // Filter sub items recursively
+    if (item.subItems) {
+      const filteredSubItems = filterNavigation(item.subItems);
+      // ถ้าไม่มี sub items ที่แสดงได้ ให้ซ่อน parent ด้วย
+      if (filteredSubItems.length === 0) return false;
+      item.subItems = filteredSubItems;
+    }
+    
+    return true;
+  });
+};
 
   const navigation: NavigationItem[] = [
     { 

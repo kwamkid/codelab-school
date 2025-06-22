@@ -43,9 +43,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           
           if (docSnap.exists()) {
             const data = docSnap.data();
+            
+            // ตรวจสอบและเพิ่ม default permissions สำหรับ super_admin
+            let permissions = data.permissions || {};
+            if (data.role === 'super_admin') {
+              permissions = {
+                canManageUsers: true,
+                canManageSettings: true,
+                canViewReports: true,
+                canManageAllBranches: true,
+                ...permissions
+              };
+            }
+            
             setAdminUser({
               id: docSnap.id,
               ...data,
+              permissions,
               createdAt: data.createdAt?.toDate() || new Date(),
               updatedAt: data.updatedAt?.toDate()
             } as AdminUser);
@@ -58,6 +72,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               displayName: user.displayName || user.email || '',
               role: 'super_admin',
               branchIds: [],
+              permissions: {
+                canManageUsers: true,
+                canManageSettings: true,
+                canViewReports: true,
+                canManageAllBranches: true
+              },
               isActive: true,
               createdAt: new Date(),
               createdBy: 'system'
@@ -116,11 +136,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return adminUser.branchIds.includes(branchId);
   };
 
-  const isSuperAdmin = () => adminUser?.role === 'super_admin';
+  const isSuperAdmin = () => {
+    return adminUser?.role === 'super_admin';
+  };
 
   const canManageSettings = () => {
     if (!adminUser) return false;
-    if (isSuperAdmin()) return true;
+    if (adminUser.role === 'super_admin') return true;
     return adminUser.permissions?.canManageSettings || false;
   };
 
