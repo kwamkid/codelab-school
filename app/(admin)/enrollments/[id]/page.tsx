@@ -74,6 +74,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { getMakeupClassesByStudent } from '@/lib/services/makeup';
+
 
 const statusColors = {
   'active': 'bg-green-100 text-green-700',
@@ -123,6 +125,8 @@ export default function EnrollmentDetailPage() {
   const [cancelReason, setCancelReason] = useState('');
   const [cancelling, setCancelling] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [makeupClasses, setMakeupClasses] = useState<any[]>([]);
+
   
   // Quick payment update states
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);

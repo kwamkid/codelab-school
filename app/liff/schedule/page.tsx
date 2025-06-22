@@ -4,16 +4,15 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { ChevronLeft, Loader2, Calendar, Users } from 'lucide-react'
+import { Badge } from "@/components/ui/badge"
+import { ChevronLeft, Loader2, Calendar, Users, Clock, MapPin, User } from 'lucide-react'
 import { useLiff } from '@/components/liff/liff-provider'
 import { getParentScheduleEvents, getStudentOverallStats, StudentStats } from '@/lib/services/liff-schedule'
 import { toast } from 'sonner'
 import { DatesSetArg } from '@fullcalendar/core'
 import ScheduleCalendar, { ScheduleEvent } from '@/components/liff/schedule-calendar'
-import { Badge } from '@/components/ui/badge'
-import TechLoadingAnimation from '@/components/liff/tech-loading-animation'
 import { LiffProvider } from '@/components/liff/liff-provider'
+import { PageLoading, SectionLoading } from '@/components/ui/loading'
 
 function ScheduleContent() {
   const router = useRouter()
@@ -65,7 +64,11 @@ function ScheduleContent() {
       
       // Set default selected student
       if (studentsData.length > 0 && !selectedStudentId) {
-        setSelectedStudentId(studentsData[0].student.id)
+        // If only one student, select that student automatically
+        if (studentsData.length === 1) {
+          setSelectedStudentId(studentsData[0].student.id)
+        }
+        // If multiple students, show all by default
       }
       
       console.log(`Loaded ${fetchedEvents.length} events for the year`)
@@ -130,10 +133,11 @@ function ScheduleContent() {
 
   // Show loading while checking auth or loading initial data
   if (liffLoading || !authChecked || (loading && !dataLoaded)) {
-    return <TechLoadingAnimation />
+    return <PageLoading />
   }
 
   // Get stats for selected student
+  const selectedStudent = students.find(s => s.student.id === selectedStudentId)
   const selectedStudentStats = selectedStudentId && overallStats[selectedStudentId]
     ? overallStats[selectedStudentId]
     : null
@@ -156,48 +160,59 @@ function ScheduleContent() {
       </div>
 
       <div className="p-4 space-y-4">
-        {/* Student Selector */}
+        {/* Student Selector - Simple buttons */}
         {students.length > 1 && (
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Users className="h-4 w-4" />
-                เลือกนักเรียน
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex gap-2 overflow-x-auto pb-2">
-                <Button
-                  variant={!selectedStudentId ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setSelectedStudentId('')}
-                  className="whitespace-nowrap"
-                >
-                  ทุกคน
-                </Button>
-                {students.map((data) => (
-                  <Button
-                    key={data.student.id}
-                    variant={selectedStudentId === data.student.id ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setSelectedStudentId(data.student.id)}
-                    className="flex items-center gap-2 whitespace-nowrap"
-                  >
-                    <Avatar className="h-6 w-6">
-                      <AvatarImage src={data.student.profileImage} />
-                      <AvatarFallback className="text-xs">
-                        {data.student.nickname?.charAt(0) || data.student.name.charAt(0)}
-                      </AvatarFallback>
-                    </Avatar>
-                    {data.student.nickname || data.student.name}
-                  </Button>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+          <div className="flex gap-2 overflow-x-auto pb-2">
+            <Button
+              variant={!selectedStudentId ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSelectedStudentId('')}
+              className="whitespace-nowrap"
+            >
+              ทุกคน
+            </Button>
+            {students.map((data) => (
+              <Button
+                key={data.student.id}
+                variant={selectedStudentId === data.student.id ? "default" : "outline"}
+                size="sm"
+                onClick={() => setSelectedStudentId(data.student.id)}
+                className="whitespace-nowrap"
+              >
+                {data.student.nickname || data.student.name}
+              </Button>
+            ))}
+          </div>
         )}
 
-        {/* Overall Statistics */}
+        {/* Calendar - No border, full width */}
+        <div className="relative -mx-4 px-4 bg-white">
+          {loading && <SectionLoading />}
+          
+          {students.length === 0 && !loading ? (
+            <Card>
+              <CardContent className="pt-6">
+                <div className="text-center py-8">
+                  <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <p className="text-muted-foreground mb-4">ไม่มีข้อมูลตารางเรียน</p>
+                  <Button onClick={() => router.push('/liff/profile')}>
+                    กลับไปหน้าโปรไฟล์
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <ScheduleCalendar 
+              events={events}
+              onDatesSet={handleDatesSet}
+              loading={loading}
+              selectedStudentId={selectedStudentId}
+              onRefreshNeeded={forceRefresh}
+            />
+          )}
+        </div>
+
+        {/* Statistics - Moved to bottom */}
         {selectedStudentStats && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <Card>
@@ -253,84 +268,45 @@ function ScheduleContent() {
 
         {/* Show overall stats for all students when no student is selected */}
         {!selectedStudentId && students.length > 0 && (
-          <div className="space-y-3">
-            <p className="text-sm font-medium text-muted-foreground">สรุปรายนักเรียน</p>
-            {students.map((data) => {
-              const stats = overallStats[data.student.id]
-              return (
-                <Card key={data.student.id}>
-                  <CardContent className="p-4">
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-3">
-                        <Avatar className="h-10 w-10">
-                          <AvatarImage src={data.student.profileImage} />
-                          <AvatarFallback>
-                            {data.student.nickname?.charAt(0) || data.student.name.charAt(0)}
-                          </AvatarFallback>
-                        </Avatar>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">สรุปรายนักเรียน</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {students.map((data) => {
+                const stats = overallStats[data.student.id]
+                return (
+                  <div key={data.student.id} className="flex items-start justify-between border-b pb-3 last:border-0">
+                    <div>
+                      <p className="font-medium">{data.student.nickname || data.student.name}</p>
+                      <p className="text-sm text-muted-foreground">{data.student.name}</p>
+                    </div>
+                    {stats && (
+                      <div className="grid grid-cols-4 gap-3 text-center">
                         <div>
-                          <p className="font-medium">{data.student.nickname || data.student.name}</p>
-                          <p className="text-sm text-muted-foreground">{data.student.name}</p>
+                          <p className="text-sm font-bold">{stats.totalClasses}</p>
+                          <p className="text-xs text-muted-foreground">ทั้งหมด</p>
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-green-600">{stats.completedClasses}</p>
+                          <p className="text-xs text-muted-foreground">เรียนแล้ว</p>
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-blue-600">{stats.upcomingClasses}</p>
+                          <p className="text-xs text-muted-foreground">จะถึง</p>
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-purple-600">{stats.makeupClasses}</p>
+                          <p className="text-xs text-muted-foreground">ชดเชย</p>
                         </div>
                       </div>
-                      {stats && (
-                        <div className="grid grid-cols-4 gap-2 text-center">
-                          <div>
-                            <p className="text-sm font-bold">{stats.totalClasses}</p>
-                            <p className="text-xs text-muted-foreground">ทั้งหมด</p>
-                          </div>
-                          <div>
-                            <p className="text-sm font-bold text-green-600">{stats.completedClasses}</p>
-                            <p className="text-xs text-muted-foreground">เรียนแล้ว</p>
-                          </div>
-                          <div>
-                            <p className="text-sm font-bold text-blue-600">{stats.upcomingClasses}</p>
-                            <p className="text-xs text-muted-foreground">จะถึง</p>
-                          </div>
-                          <div>
-                            <p className="text-sm font-bold text-purple-600">{stats.makeupClasses}</p>
-                            <p className="text-xs text-muted-foreground">ชดเชย</p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              )
-            })}
-          </div>
+                    )}
+                  </div>
+                )
+              })}
+            </CardContent>
+          </Card>
         )}
-
-        {/* Calendar */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Calendar className="h-5 w-5" />
-              ปฏิทินตารางเรียน
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="relative">
-            {loading && <TechLoadingAnimation />}
-            
-            {students.length === 0 && !loading ? (
-              <div className="text-center py-8">
-                <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <p className="text-muted-foreground mb-4">ไม่มีข้อมูลตารางเรียน</p>
-                <Button onClick={() => router.push('/liff/profile')}>
-                  กลับไปหน้าโปรไฟล์
-                </Button>
-              </div>
-            ) : (
-              <ScheduleCalendar 
-                events={events}
-                onDatesSet={handleDatesSet}
-                loading={loading}
-                selectedStudentId={selectedStudentId}
-                onRefreshNeeded={forceRefresh}
-              />
-            )}
-          </CardContent>
-        </Card>
       </div>
     </div>
   )

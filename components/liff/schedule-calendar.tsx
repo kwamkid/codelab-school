@@ -156,47 +156,67 @@ export default function ScheduleCalendar({
     const isDayView = eventInfo.view.type === 'timeGridDay';
     const isWeekView = eventInfo.view.type === 'timeGridWeek';
     
-    // For list view
+    // For list view - Improved layout
     if (isListView) {
       return (
-        <div className="flex items-center gap-2 py-1">
-          <div className="flex-1">
-            <div className="font-medium text-sm flex items-center gap-2">
-              {props.subjectColor && (
-                <div 
-                  className="w-3 h-3 rounded-full flex-shrink-0" 
-                  style={{ backgroundColor: props.subjectColor }}
-                />
-              )}
-              {isMakeup && <span className="text-purple-600">[Makeup] </span>}
-              <span>{props.studentNickname || props.studentName}</span>
-              <span className="text-gray-500">
-                - {props.className || props.subjectName}
-                {props.sessionNumber && (
-                  <span className="ml-1">(ครั้งที่ {props.sessionNumber})</span>
+        <div className="flex flex-col gap-1 py-2">
+          <div className="flex items-start gap-2">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-medium text-sm">
+                  {props.studentNickname || props.studentName}
+                </span>
+                {isMakeup && (
+                  <Badge variant="secondary" className="bg-purple-100 text-purple-700 text-xs px-1.5 py-0">
+                    Makeup
+                  </Badge>
                 )}
-              </span>
-            </div>
-            <div className="text-xs text-gray-600 flex items-center gap-3 mt-0.5">
-              <span className="flex items-center gap-1">
-                <Clock className="h-3 w-3" />
-                {eventInfo.timeText}
-              </span>
-              <span className="flex items-center gap-1">
-                <MapPin className="h-3 w-3" />
-                {props.roomName}
-              </span>
-              <span className="flex items-center gap-1">
-                <User className="h-3 w-3" />
-                {props.teacherName}
-              </span>
+              </div>
+              
+              <div className="mt-1 space-y-0.5">
+                <div className="text-sm font-medium flex items-center gap-2">
+                  {props.subjectColor && (
+                    <div 
+                      className="w-3 h-3 rounded-full flex-shrink-0" 
+                      style={{ backgroundColor: props.subjectColor }}
+                    />
+                  )}
+                  <span>
+                    {props.className || props.subjectName}
+                    {props.sessionNumber && !isMakeup && (
+                      <span className="text-muted-foreground ml-1">
+                        (ครั้งที่ {props.sessionNumber})
+                      </span>
+                    )}
+                  </span>
+                </div>
+                
+                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                  {/* <span>
+                    {eventInfo.timeText}
+                  </span> */}
+                  <span className="flex items-center gap-1">
+                    <MapPin className="h-3 w-3" />
+                    {props.branchName} - {props.roomName}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <User className="h-3 w-3" />
+                    ครู{props.teacherName}
+                  </span>
+                </div>
+                
+                {/* Show makeup info if this is rescheduled */}
+                {props.hasMakeupRequest && props.makeupScheduled && (
+                  <div className="bg-purple-50 text-purple-700 text-xs px-2 py-1 rounded mt-1">
+                    เรียนชดเชย: {new Date(props.makeupDate).toLocaleDateString('th-TH', { 
+                      day: 'numeric',
+                      month: 'short'
+                    })} เวลา {props.makeupTime}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-          {props.sessionNumber && !isMakeup && (
-            <div className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-1 rounded">
-              ครั้งที่ {props.sessionNumber}
-            </div>
-          )}
         </div>
       );
     }
@@ -424,6 +444,69 @@ export default function ScheduleCalendar({
             color: #065F46 !important;
           }
           
+          /* List view button styling - Make it stand out */
+          .liff-schedule-calendar .fc-listWeek-button {
+            background-color: #4B5563 !important;
+            color: white !important;
+            border: 1px solid #374151 !important;
+            margin-left: 0.5rem !important;
+            font-weight: 500 !important;
+          }
+          
+          .liff-schedule-calendar .fc-listWeek-button:hover {
+            background-color: #374151 !important;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+          }
+          
+          .liff-schedule-calendar .fc-listWeek-button.fc-button-active {
+            background-color: #DC2626 !important;
+            color: white !important;
+            border-color: #DC2626 !important;
+            box-shadow: 0 2px 8px rgba(220, 38, 38, 0.2);
+          }
+          
+          /* Separate list button from other view buttons */
+          .liff-schedule-calendar .fc-button-group {
+            gap: 0;
+          }
+          
+          /* List view specific styles */
+          .liff-schedule-calendar .fc-list-view .fc-list-event {
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+          }
+          
+          .liff-schedule-calendar .fc-list-view .fc-list-event:hover {
+            background-color: #f9fafb;
+          }
+          
+          /* Hide ALL event dots in list view - Force override */
+          .liff-schedule-calendar .fc-list-view .fc-list-event-dot,
+          .liff-schedule-calendar .fc-list-view .fc-event-dot,
+          .liff-schedule-calendar .fc .fc-list-event-dot {
+            display: none !important;
+            border: none !important;
+            width: 0 !important;
+            height: 0 !important;
+            visibility: hidden !important;
+          }
+          
+          /* Remove any colored circles from list view */
+          .liff-schedule-calendar .fc-list-view .fc-list-event-graphic {
+            padding: 0 0.5rem;
+            min-width: 0;
+          }
+          
+          .liff-schedule-calendar .fc-list-view .fc-list-event-graphic::before,
+          .liff-schedule-calendar .fc-list-view .fc-list-event-graphic::after {
+            display: none !important;
+          }
+          
+          .liff-schedule-calendar .fc-list-view .fc-list-event-title {
+            padding: 0.5rem;
+          }
+          
           /* Mobile responsive */
           @media (max-width: 640px) {
             .liff-schedule-calendar .fc-toolbar {
@@ -438,6 +521,15 @@ export default function ScheduleCalendar({
             .liff-schedule-calendar .fc-button {
               padding: 0.25rem 0.5rem;
               font-size: 0.875rem;
+            }
+            
+            /* Make list view take full width on mobile */
+            .liff-schedule-calendar .fc-list-view {
+              font-size: 0.875rem;
+            }
+            
+            .liff-schedule-calendar .fc-list-view .fc-list-event-title {
+              padding: 0.75rem 0.5rem;
             }
           }
         `}</style>

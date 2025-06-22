@@ -13,7 +13,9 @@ import {
   setDoc
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
-import { Enrollment, Class } from '@/types/models';  // <-- เพิ่ม Class ที่นี่
+import { Enrollment, Class } from '@/types/models';
+import { getClassSchedules } from './classes';
+import { createMakeupRequest } from './makeup';
 import { getClass } from './classes';
 
 const COLLECTION_NAME = 'enrollments';
@@ -219,10 +221,80 @@ export async function createEnrollment(
     // 3. Commit the batch
     await batch.commit();
     
+    // 4. Check for missed sessions and create makeup requests
+    await createMakeupForMissedSessions(
+      enrollmentRef.id,
+      enrollmentData.classId,
+      enrollmentData.studentId,
+      enrollmentData.parentId
+    );
+    
     return enrollmentRef.id;
   } catch (error) {
     console.error('Error creating enrollment:', error);
     throw error;
+  }
+}
+
+// เพิ่มฟังก์ชันใหม่
+async function createMakeupForMissedSessions(
+  enrollmentId: string,
+  classId: string,
+  studentId: string,
+  parentId: string
+): Promise<void> {
+  try {
+    // Get class data
+    const classData = await getClass(classId);
+    if (!classData) return;
+    
+    // Get all class schedules
+    const schedules = await getClassSchedules(classId);
+    
+    // Filter missed sessions (sessions that have already passed)
+    const now = new Date();
+    const missedSchedules = schedules.filter(schedule => {
+      const sessionDate = new Date(schedule.sessionDate);
+      const [hours, minutes] = classData.endTime.split(':').map(Number);
+      sessionDate.setHours(hours, minutes, 0, 0);
+      
+      return sessionDate < now && 
+             schedule.status !== 'cancelled' &&
+             schedule.status !== 'rescheduled';
+    });
+    
+    // Create makeup requests for each missed session
+    for (const schedule of missedSchedules) {
+      try {
+        await createMakeupRequest({
+          type: 'ad-hoc',
+          originalClassId: classId,
+          originalScheduleId: schedule.id,
+          studentId: studentId,
+          parentId: parentId,
+          requestDate: new Date(),
+          requestedBy: 'system', // ระบุว่าเป็น system auto-create
+          reason: 'สมัครเรียนหลังจากคลาสเริ่มแล้ว (Auto-generated)',
+          status: 'pending',
+          originalSessionNumber: schedule.sessionNumber,
+          originalSessionDate: schedule.sessionDate
+        });
+        
+        console.log(`Created makeup request for session ${schedule.sessionNumber}`);
+      } catch (error) {
+        console.error(`Error creating makeup for session ${schedule.sessionNumber}:`, error);
+        // Continue with other sessions even if one fails
+      }
+    }
+    
+    // Notify admin if makeup classes were created
+    if (missedSchedules.length > 0) {
+      console.log(`Created ${missedSchedules.length} makeup requests for enrollment ${enrollmentId}`);
+      // TODO: Send notification to admin
+    }
+  } catch (error) {
+    console.error('Error creating makeup for missed sessions:', error);
+    // Don't throw - this should not break enrollment creation
   }
 }
 
