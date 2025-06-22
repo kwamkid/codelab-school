@@ -70,6 +70,7 @@ import CreateMakeupDialog from '@/components/makeup/create-makeup-dialog';
 import { auth } from '@/lib/firebase/client';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { useMakeup } from '@/contexts/MakeupContext';
 
 type StudentWithParent = Student & { parentName: string; parentPhone: string };
 
@@ -96,6 +97,7 @@ const statusIcons = {
 
 export default function MakeupPage() {
   const router = useRouter();
+  const { refreshMakeupCount } = useMakeup(); // เพิ่มบรรทัดนี้
   const [makeupClasses, setMakeupClasses] = useState<MakeupClass[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -176,6 +178,9 @@ export default function MakeupPage() {
       
       console.log('=== Final schedules object:', schedules);
       setOriginalSchedules(schedules);
+      
+      // Refresh makeup count in sidebar
+      await refreshMakeupCount();
     } catch (error) {
       console.error('Error in loadData:', error);
       toast.error('ไม่สามารถโหลดข้อมูลได้');
@@ -289,7 +294,7 @@ export default function MakeupPage() {
       await deleteMakeupClass(selectedMakeup.id, currentUser.uid, deleteReason);
       toast.success('ลบ Makeup Class เรียบร้อยแล้ว');
       setShowDeleteDialog(false);
-      loadData();
+      await loadData(); // ใช้ await
     } catch (error: any) {
       console.error('Error deleting makeup:', error);
       if (error.message === 'Cannot delete completed makeup class') {
@@ -730,9 +735,9 @@ export default function MakeupPage() {
               return classInfo ? getSubjectName(classInfo.subjectId) : '';
             })(),
           }}
-          onSuccess={() => {
+          onSuccess={async () => {
             setShowScheduleDialog(false);
-            loadData();
+            await loadData(); // ใช้ await
           }}
         />
       )}
@@ -743,9 +748,9 @@ export default function MakeupPage() {
         onOpenChange={setShowCreateDialog}
         classes={classes}
         students={students}
-        onCreated={() => {
+        onCreated={async () => {
           setShowCreateDialog(false);
-          loadData();
+          await loadData(); // ใช้ await
           toast.success('สร้าง Makeup Request เรียบร้อยแล้ว');
         }}
       />
