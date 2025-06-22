@@ -20,6 +20,26 @@ export interface Parent {
   lastLoginAt: Date;
 }
 
+// เพิ่มใน types/models.ts หลัง Parent interface
+export interface AdminUser {
+  id: string; // uid จาก Firebase Auth
+  email: string;
+  displayName: string;
+  role: 'super_admin' | 'branch_admin' | 'teacher';
+  branchIds: string[]; // สาขาที่ดูแลได้ (empty array = ทุกสาขา)
+  permissions?: {
+    canManageUsers?: boolean;
+    canManageSettings?: boolean;
+    canViewReports?: boolean;
+    canManageAllBranches?: boolean;
+  };
+  isActive: boolean;
+  createdAt: Date;
+  createdBy: string;
+  updatedAt?: Date;
+  updatedBy?: string;
+}
+
 export interface Student {
   id: string;
   parentId: string;

@@ -99,7 +99,7 @@ export function Loading({
 
 // Wrapper components for common use cases
 export function PageLoading() {
-  return <Loading fullScreen text="กำลังโหลด..." />
+  return <Loading fullScreen />
 }
 
 export function SectionLoading() {
