@@ -56,6 +56,23 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  /* Prevent unwanted scrolling */
+  html,
+  body {
+    overflow-x: hidden;
+    height: 100%;
+  }
+
+  /* Fix for form pages to prevent extra scroll space */
+  main > div {
+    min-height: 100%;
+  }
+
+  /* Ensure the root div takes full height */
+  #__next {
+    height: 100%;
+  }
 }
 
 /* Custom styles */
