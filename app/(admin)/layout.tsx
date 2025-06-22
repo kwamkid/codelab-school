@@ -34,60 +34,25 @@ import {
   UserCheck,
   GraduationCap,
   Building,
-  Loader2
+  Loader2,
+  Bell
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/lib/utils';
 import { LoadingProvider } from '@/contexts/LoadingContext';
 import { PageLoading } from '@/components/ui/loading';
+import { getMakeupClasses } from '@/lib/services/makeup';
+import { getUnreadNotifications, markNotificationAsRead } from '@/lib/services/notifications';
+import { formatDate } from '@/lib/utils';
 
-const navigation = [
-  { 
-    name: 'Dashboard', 
-    href: '/dashboard', 
-    icon: Home 
-  },
-  {
-    name: 'ข้อมูลพื้นฐาน',
-    icon: Building,
-    subItems: [
-      { name: 'สาขา', href: '/branches', icon: Building2 },
-      { name: 'ห้องเรียน', href: '/rooms', icon: School },
-      { name: 'ครูผู้สอน', href: '/teachers', icon: UserCog },
-      { name: 'วันหยุด', href: '/holidays', icon: CalendarDays },
-      { name: 'วิชา', href: '/subjects', icon: BookOpen },
-      { name: 'คลาสเรียน', href: '/classes', icon: GraduationCap },
-    ]
-  },
-  {
-    name: 'ลูกค้า',
-    icon: Users,
-    subItems: [
-      { name: 'ผู้ปกครอง', href: '/parents', icon: Users },
-      { name: 'นักเรียน', href: '/students', icon: UserCheck },
-    ]
-  },
-  { 
-    name: 'ลงทะเบียนเรียน', 
-    href: '/enrollments', 
-    icon: Calendar 
-  },
-  { 
-    name: 'เรียนชดเชย', 
-    href: '/makeup', 
-    icon: Repeat 
-  },
-  { 
-    name: 'ทดลองเรียน', 
-    href: '/trial', 
-    icon: TestTube 
-  },
-  { 
-    name: 'ตั้งค่า', 
-    href: '/settings', 
-    icon: Settings 
-  },
-];
+// Navigation types
+interface NavigationItem {
+  name: string;
+  href?: string;
+  icon: any;
+  badge?: number;
+  subItems?: NavigationItem[];
+}
 
 // Custom Link component with loading
 const MenuLink = ({ href, children, className, onClick }: any) => {
@@ -133,6 +98,56 @@ export default function AdminLayout({
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
   const [navigating, setNavigating] = useState(false);
+  
+  // Makeup badge state
+  const [pendingMakeupCount, setPendingMakeupCount] = useState(0);
+  
+  // Notifications state
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+
+  // Load pending makeup count
+  useEffect(() => {
+    const loadMakeupCount = async () => {
+      try {
+        const makeupClasses = await getMakeupClasses();
+        // นับเฉพาะที่เป็น pending และสร้างโดย system
+        const pendingAuto = makeupClasses.filter(
+          m => m.status === 'pending' && m.requestedBy === 'system'
+        ).length;
+        setPendingMakeupCount(pendingAuto);
+      } catch (error) {
+        console.error('Error loading makeup count:', error);
+      }
+    };
+    
+    if (user) {
+      loadMakeupCount();
+      // Refresh ทุก 30 วินาที
+      const interval = setInterval(loadMakeupCount, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [user]);
+
+  // Load notifications
+  useEffect(() => {
+    const loadNotifications = async () => {
+      if (user) {
+        try {
+          const unread = await getUnreadNotifications(user.uid);
+          setNotifications(unread);
+        } catch (error) {
+          console.error('Error loading notifications:', error);
+        }
+      }
+    };
+    
+    if (user) {
+      loadNotifications();
+      const interval = setInterval(loadNotifications, 60000); // ทุก 1 นาที
+      return () => clearInterval(interval);
+    }
+  }, [user]);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -144,7 +159,7 @@ export default function AdminLayout({
   useEffect(() => {
     const expandedMenus = navigation
       .filter(item => 
-        item.subItems?.some(sub => pathname.startsWith(sub.href))
+        item.subItems?.some(sub => pathname.startsWith(sub.href!))
       )
       .map(item => item.name);
     setExpandedItems(expandedMenus);
@@ -154,6 +169,70 @@ export default function AdminLayout({
   useEffect(() => {
     setNavigating(false);
   }, [pathname]);
+
+  // Click outside to close notifications
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest('.notification-dropdown') && !target.closest('.notification-bell')) {
+        setShowNotifications(false);
+      }
+    };
+
+    if (showNotifications) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showNotifications]);
+
+  const navigation: NavigationItem[] = [
+    { 
+      name: 'Dashboard', 
+      href: '/dashboard', 
+      icon: Home 
+    },
+    {
+      name: 'ข้อมูลพื้นฐาน',
+      icon: Building,
+      subItems: [
+        { name: 'สาขา', href: '/branches', icon: Building2 },
+        { name: 'ห้องเรียน', href: '/rooms', icon: School },
+        { name: 'ครูผู้สอน', href: '/teachers', icon: UserCog },
+        { name: 'วันหยุด', href: '/holidays', icon: CalendarDays },
+        { name: 'วิชา', href: '/subjects', icon: BookOpen },
+        { name: 'คลาสเรียน', href: '/classes', icon: GraduationCap },
+      ]
+    },
+    {
+      name: 'ลูกค้า',
+      icon: Users,
+      subItems: [
+        { name: 'ผู้ปกครอง', href: '/parents', icon: Users },
+        { name: 'นักเรียน', href: '/students', icon: UserCheck },
+      ]
+    },
+    { 
+      name: 'ลงทะเบียนเรียน', 
+      href: '/enrollments', 
+      icon: Calendar 
+    },
+    { 
+      name: 'เรียนชดเชย', 
+      href: '/makeup', 
+      icon: Repeat,
+      badge: pendingMakeupCount > 0 ? pendingMakeupCount : undefined
+    },
+    { 
+      name: 'ทดลองเรียน', 
+      href: '/trial', 
+      icon: TestTube 
+    },
+    { 
+      name: 'ตั้งค่า', 
+      href: '/settings', 
+      icon: Settings 
+    },
+  ];
 
   const toggleExpanded = (itemName: string) => {
     setExpandedItems(prev =>
@@ -187,10 +266,19 @@ export default function AdminLayout({
     return item.subItems?.some((sub: any) => pathname.startsWith(sub.href));
   };
 
+  const handleNotificationClick = async (notif: any) => {
+    if (notif.actionUrl) {
+      router.push(notif.actionUrl);
+    }
+    await markNotificationAsRead(user.uid, notif.id);
+    setNotifications(prev => prev.filter(n => n.id !== notif.id));
+    setShowNotifications(false);
+  };
+
   return (
     <LoadingProvider>
       <div className="flex h-screen bg-gray-50">
-        {/* Loading overlay - ใช้ PageLoading */}
+        {/* Loading overlay */}
         {navigating && <PageLoading />}
         
         {/* Sidebar */}
@@ -254,7 +342,7 @@ export default function AdminLayout({
                               href={subItem.href}
                               className={cn(
                                 'flex items-center rounded-lg px-3 py-2 text-base font-normal transition-colors',
-                                isActive(subItem.href)
+                                isActive(subItem.href!)
                                   ? 'bg-red-50 text-red-600'
                                   : 'text-gray-600 hover:bg-gray-50'
                               )}
@@ -275,7 +363,7 @@ export default function AdminLayout({
                       href={item.href}
                       className={cn(
                         'flex items-center rounded-lg px-3 py-2.5 text-base font-normal transition-colors',
-                        isActive(item.href)
+                        isActive(item.href!)
                           ? 'bg-red-50/50 text-red-600'
                           : 'text-gray-700 hover:bg-gray-50'
                       )}
@@ -284,8 +372,17 @@ export default function AdminLayout({
                         setNavigating(true);
                       }}
                     >
-                      <item.icon className="mr-3 h-5 w-5" />
-                      {item.name}
+                      <div className="flex items-center justify-between w-full">
+                        <div className="flex items-center">
+                          <item.icon className="mr-3 h-5 w-5" />
+                          {item.name}
+                        </div>
+                        {item.badge && (
+                          <span className="ml-auto inline-flex items-center justify-center h-5 min-w-[20px] px-1.5 text-xs font-medium text-white bg-red-500 rounded-full">
+                            {item.badge}
+                          </span>
+                        )}
+                      </div>
                     </MenuLink>
                   )}
                 </div>
@@ -306,6 +403,52 @@ export default function AdminLayout({
             </button>
 
             <div className="flex items-center gap-4 ml-auto">
+              {/* Notification Bell */}
+              <div className="relative">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="relative notification-bell"
+                  onClick={() => setShowNotifications(!showNotifications)}
+                >
+                  <Bell className="h-5 w-5" />
+                  {notifications.length > 0 && (
+                    <span className="absolute -top-1 -right-1 h-5 w-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
+                      {notifications.length}
+                    </span>
+                  )}
+                </Button>
+                
+                {/* Notification Dropdown */}
+                {showNotifications && (
+                  <div className="notification-dropdown absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border z-50">
+                    <div className="p-4 border-b">
+                      <h3 className="font-semibold">การแจ้งเตือน</h3>
+                    </div>
+                    <div className="max-h-96 overflow-y-auto">
+                      {notifications.length === 0 ? (
+                        <p className="p-4 text-gray-500 text-center">ไม่มีการแจ้งเตือนใหม่</p>
+                      ) : (
+                        notifications.map(notif => (
+                          <div
+                            key={notif.id}
+                            className="p-4 border-b hover:bg-gray-50 cursor-pointer"
+                            onClick={() => handleNotificationClick(notif)}
+                          >
+                            <p className="font-medium text-sm">{notif.title}</p>
+                            <p className="text-sm text-gray-600 mt-1">{notif.body}</p>
+                            <p className="text-xs text-gray-400 mt-2">
+                              {formatDate(notif.sentAt, 'short')}
+                            </p>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* User Dropdown */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button

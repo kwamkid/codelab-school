@@ -288,9 +288,23 @@ async function createMakeupForMissedSessions(
     }
     
     // Notify admin if makeup classes were created
+    // หลังจากสร้าง makeup requests เสร็จแล้ว
     if (missedSchedules.length > 0) {
       console.log(`Created ${missedSchedules.length} makeup requests for enrollment ${enrollmentId}`);
-      // TODO: Send notification to admin
+      
+      // Get student and class info for notification
+      const { getStudent } = await import('./parents');
+      const studentInfo = await getStudent(parentId, studentId);
+      
+      if (studentInfo && classData) {
+        // Send notification to admin
+        const { notifyAdminNewMakeup } = await import('./notifications');
+        await notifyAdminNewMakeup(
+          studentInfo.nickname || studentInfo.name,
+          classData.name,
+          missedSchedules.length
+        );
+      }
     }
   } catch (error) {
     console.error('Error creating makeup for missed sessions:', error);
