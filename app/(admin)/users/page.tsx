@@ -34,10 +34,11 @@ import {
   CheckCircle,
   Loader2,
   Users,
-  Building2
+  Building2,
+  Trash2,
 } from 'lucide-react';
 import { AdminUser } from '@/types/models';
-import { getAdminUsers, updateAdminUser, sendPasswordReset } from '@/lib/services/admin-users';
+import { getAdminUsers, updateAdminUser, sendPasswordReset , deleteAdminUser} from '@/lib/services/admin-users';
 import { getBranches } from '@/lib/services/branches';
 import { Branch } from '@/types/models';
 import { toast } from 'sonner';
@@ -113,14 +114,38 @@ export default function UsersPage() {
     }
   };
 
+  const handleDelete = async (user: AdminUser) => {
+  if (user.id === adminUser?.id) {
+    toast.error('ไม่สามารถลบตัวเองได้');
+    return;
+  }
+
+  if (!confirm(`ต้องการลบผู้ใช้ ${user.displayName} (${user.email}) ใช่หรือไม่?\n\nการลบจะไม่สามารถยกเลิกได้`)) {
+    return;
+  }
+  
+  try {
+    await deleteAdminUser(user.id, adminUser?.id || '');
+    toast.success('ลบผู้ใช้งานเรียบร้อย');
+    await loadData();
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    toast.error('เกิดข้อผิดพลาดในการลบผู้ใช้');
+  }
+};
+
+
   // Filter users
-  const filteredUsers = users.filter(user => {
+    const filteredUsers = users.filter(user => {
+    // ไม่แสดง user ที่ถูกลบ
+    if ((user as any).isDeleted) return false;
+    
     const search = searchTerm.toLowerCase();
     return (
-      user.displayName.toLowerCase().includes(search) ||
-      user.email.toLowerCase().includes(search)
+        user.displayName.toLowerCase().includes(search) ||
+        user.email.toLowerCase().includes(search)
     );
-  });
+    });
 
   // Get role display
   const getRoleDisplay = (role: string) => {
@@ -321,40 +346,50 @@ export default function UsersPage() {
                         <DropdownMenuLabel>จัดการ</DropdownMenuLabel>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem 
-                          onClick={() => {
+                            onClick={() => {
                             setEditingUser(user);
                             setShowCreateDialog(true);
-                          }}
-                          disabled={user.id === adminUser?.id}
+                            }}
+                            disabled={user.id === adminUser?.id}
                         >
-                          <Edit className="h-4 w-4 mr-2" />
-                          แก้ไขข้อมูล
+                            <Edit className="h-4 w-4 mr-2" />
+                            แก้ไขข้อมูล
                         </DropdownMenuItem>
                         <DropdownMenuItem 
-                          onClick={() => handleResetPassword(user)}
+                            onClick={() => handleResetPassword(user)}
                         >
-                          <Key className="h-4 w-4 mr-2" />
-                          รีเซ็ตรหัสผ่าน
+                            <Key className="h-4 w-4 mr-2" />
+                            รีเซ็ตรหัสผ่าน
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem 
-                          onClick={() => handleToggleActive(user)}
-                          disabled={user.id === adminUser?.id}
-                          className={user.isActive ? 'text-red-600' : ''}
+                            onClick={() => handleToggleActive(user)}
+                            disabled={user.id === adminUser?.id}
+                            className={user.isActive ? 'text-orange-600' : ''}
                         >
-                          {user.isActive ? (
+                            {user.isActive ? (
                             <>
-                              <Ban className="h-4 w-4 mr-2" />
-                              ระงับการใช้งาน
+                                <Ban className="h-4 w-4 mr-2" />
+                                ระงับการใช้งาน
                             </>
-                          ) : (
+                            ) : (
                             <>
-                              <CheckCircle className="h-4 w-4 mr-2" />
-                              เปิดใช้งาน
+                                <CheckCircle className="h-4 w-4 mr-2" />
+                                เปิดใช้งาน
                             </>
-                          )}
+                            )}
                         </DropdownMenuItem>
-                      </DropdownMenuContent>
+                        
+                        {/* เพิ่มปุ่มลบ */}
+                        <DropdownMenuItem 
+                            onClick={() => handleDelete(user)}
+                            disabled={user.id === adminUser?.id || user.role === 'super_admin'}
+                            className="text-red-600 focus:text-red-600"
+                        >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            ลบผู้ใช้งาน
+                        </DropdownMenuItem>
+                        </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
                 </TableRow>

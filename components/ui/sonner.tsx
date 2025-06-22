@@ -25,12 +25,11 @@ const Toaster = ({ ...props }: ToasterProps) => {
             group-[.toaster]:min-h-[64px]
             group-[.toaster]:px-6
             group-[.toaster]:backdrop-blur-none
-            group-[.toaster]:font-[family-name:var(--font-ibm-plex-sans-thai)]
           `,
-          title: "group-[.toast]:font-medium group-[.toast]:text-base group-[.toast]:font-[family-name:var(--font-ibm-plex-sans-thai)]",
-          description: "group-[.toast]:text-gray-300 group-[.toast]:text-sm group-[.toast]:font-[family-name:var(--font-ibm-plex-sans-thai)]",
-          actionButton: "group-[.toast]:bg-white group-[.toast]:text-gray-900 group-[.toast]:font-medium group-[.toast]:hover:bg-gray-100 group-[.toast]:font-[family-name:var(--font-ibm-plex-sans-thai)]",
-          cancelButton: "group-[.toast]:text-gray-300 group-[.toast]:hover:text-white group-[.toast]:font-[family-name:var(--font-ibm-plex-sans-thai)]",
+          title: "group-[.toast]:font-medium group-[.toast]:text-base",
+          description: "group-[.toast]:text-gray-300 group-[.toast]:text-sm",
+          actionButton: "group-[.toast]:bg-white group-[.toast]:text-gray-900 group-[.toast]:font-medium group-[.toast]:hover:bg-gray-100",
+          cancelButton: "group-[.toast]:text-gray-300 group-[.toast]:hover:text-white",
           closeButton: "group-[.toast]:text-gray-400 group-[.toast]:hover:text-white",
           error: "group-[.toaster]:bg-red-600",
           success: "group-[.toaster]:bg-green-600",
@@ -42,7 +41,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
           color: 'white',
           opacity: 1,
           backdropFilter: 'none',
-          fontFamily: 'inherit',
+          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans Thai", "Prompt", "IBM Plex Sans Thai", "Sarabun", system-ui, sans-serif',
         }
       }}
       {...props}

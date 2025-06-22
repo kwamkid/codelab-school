@@ -11,6 +11,9 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import { getGeneralSettings } from '@/lib/services/settings';
 import Image from 'next/image';
+import { sendPasswordResetEmail } from 'firebase/auth';
+import { auth } from '@/lib/firebase/client';
+import { toast } from 'sonner';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -18,6 +21,9 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [settings, setSettings] = useState<any>(null);
+  const [showResetDialog, setShowResetDialog] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [isResetting, setIsResetting] = useState(false);
   const { signIn, user } = useAuth();
   const router = useRouter();
 
@@ -40,6 +46,32 @@ export default function LoginPage() {
     loadSettings();
   }, []);
 
+  const handleResetPassword = async () => {
+    if (!resetEmail) {
+      toast.error('กรุณากรอกอีเมล');
+      return;
+    }
+
+    try {
+      setIsResetting(true);
+      await sendPasswordResetEmail(auth, resetEmail);
+      toast.success('ส่งลิงก์รีเซ็ตรหัสผ่านไปที่อีเมลแล้ว');
+      setShowResetDialog(false);
+      setResetEmail('');
+    } catch (error: any) {
+      console.error('Reset password error:', error);
+      if (error.code === 'auth/user-not-found') {
+        toast.error('ไม่พบอีเมลนี้ในระบบ');
+      } else if (error.code === 'auth/invalid-email') {
+        toast.error('รูปแบบอีเมลไม่ถูกต้อง');
+      } else {
+        toast.error('เกิดข้อผิดพลาด กรุณาลองใหม่');
+      }
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -55,6 +87,8 @@ export default function LoginPage() {
         setError('รหัสผ่านไม่ถูกต้อง');
       } else if (err.code === 'auth/invalid-email') {
         setError('รูปแบบอีเมลไม่ถูกต้อง');
+      } else if (err.message === 'บัญชีถูกระงับการใช้งาน') {
+        setError('บัญชีถูกระงับการใช้งาน');
       } else {
         setError('เกิดข้อผิดพลาดในการเข้าสู่ระบบ กรุณาลองใหม่อีกครั้ง');
       }
@@ -151,10 +185,71 @@ export default function LoginPage() {
           </form>
           
           <div className="mt-4 text-center text-sm text-gray-600">
-            ลืมรหัสผ่าน? <a href="#" className="text-red-600 hover:underline">ติดต่อผู้ดูแลระบบ</a>
+            ลืมรหัสผ่าน? 
+            <button
+              type="button"
+              onClick={() => setShowResetDialog(true)}
+              className="text-red-600 hover:underline ml-1"
+            >
+              รีเซ็ตรหัสผ่าน
+            </button>
           </div>
         </CardContent>
       </Card>
+
+      {/* Reset Password Dialog */}
+      {showResetDialog && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <Card className="w-full max-w-md">
+            <CardHeader>
+              <CardTitle>ลืมรหัสผ่าน</CardTitle>
+              <CardDescription>
+                กรอกอีเมลที่ใช้สมัคร เราจะส่งลิงก์รีเซ็ตรหัสผ่านไปให้
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <Label htmlFor="reset-email">อีเมล</Label>
+                <Input
+                  id="reset-email"
+                  type="email"
+                  placeholder="admin@codelabschool.com"
+                  value={resetEmail}
+                  onChange={(e) => setResetEmail(e.target.value)}
+                  disabled={isResetting}
+                />
+              </div>
+              
+              <div className="flex gap-2">
+                <Button
+                  onClick={handleResetPassword}
+                  disabled={isResetting}
+                  className="flex-1 bg-red-500 hover:bg-red-600"
+                >
+                  {isResetting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      กำลังส่ง...
+                    </>
+                  ) : (
+                    'ส่งลิงก์รีเซ็ต'
+                  )}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowResetDialog(false);
+                    setResetEmail('');
+                  }}
+                  disabled={isResetting}
+                >
+                  ยกเลิก
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

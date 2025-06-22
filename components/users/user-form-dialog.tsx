@@ -96,38 +96,38 @@ export default function UserFormDialog({
   });
 
   // Load user data when editing
-  useEffect(() => {
+    useEffect(() => {
     if (user) {
-      form.reset({
-        displayName: user.displayName,
+        form.reset({
+        displayName: user.email, // ใช้ email เป็น displayName
         email: user.email,
         role: user.role,
         branchIds: user.branchIds || [],
         permissions: user.permissions || {
-          canManageUsers: false,
-          canManageSettings: false,
-          canViewReports: false,
-          canManageAllBranches: false,
+            canManageUsers: false,
+            canManageSettings: false,
+            canViewReports: false,
+            canManageAllBranches: false,
         },
         isActive: user.isActive,
-      });
+        });
     } else {
-      form.reset({
-        displayName: '',
+        form.reset({
+        displayName: '', // จะถูก set จาก email อัตโนมัติ
         email: '',
         password: '',
         role: 'branch_admin',
         branchIds: [],
         permissions: {
-          canManageUsers: false,
-          canManageSettings: false,
-          canViewReports: false,
-          canManageAllBranches: false,
+            canManageUsers: false,
+            canManageSettings: false,
+            canViewReports: false,
+            canManageAllBranches: false,
         },
         isActive: true,
-      });
+        });
     }
-  }, [user, form]);
+    }, [user, form]);
 
   // Watch role changes
   const watchRole = form.watch('role');
@@ -152,8 +152,7 @@ export default function UserFormDialog({
     }
   }, [watchRole, form]);
 
-  // ในส่วน onSubmit
-const onSubmit = async (data: FormData) => {
+  const onSubmit = async (data: FormData) => {
   try {
     setLoading(true);
 
@@ -162,7 +161,7 @@ const onSubmit = async (data: FormData) => {
       await updateAdminUser(
         user.id,
         {
-          displayName: data.displayName,
+          displayName: data.email, // ใช้ email เป็น displayName
           role: data.role,
           branchIds: data.branchIds,
           permissions: data.permissions,
@@ -193,20 +192,24 @@ const onSubmit = async (data: FormData) => {
         throw new Error('No auth token');
       }
 
-     // เพิ่ม type casting
-    await createAdminUser(
-    data.email,
-    data.password,
-    {
-        displayName: data.displayName,
+      // สร้าง userData object โดยใช้ email เป็น displayName
+      const userData = {
+        displayName: data.email, // ใช้ email แทน displayName
         role: data.role,
         branchIds: data.branchIds,
         permissions: data.permissions,
         isActive: data.isActive,
-    } as any, // ใช้ any ชั่วคราว
-    adminUser?.id || '',
-    token
-    );
+      };
+
+      // ใช้ userData ตรงนี้
+      await createAdminUser(
+        data.email,
+        data.password,
+        userData, // ส่ง userData ที่สร้างไว้
+        adminUser?.id || '',
+        token
+      );
+      
       toast.success('เพิ่มผู้ใช้งานเรียบร้อย');
     }
 
@@ -214,20 +217,20 @@ const onSubmit = async (data: FormData) => {
     onOpenChange(false);
   } catch (error: any) {
     console.error('Error saving user:', error);
-
-    // เพิ่ม error handling ที่ละเอียดขึ้น
+    
+    // Error handling
     if (error.message?.includes('FIREBASE_ADMIN')) {
-        toast.error('ไม่สามารถสร้างผู้ใช้ได้: กรุณาตั้งค่า Firebase Admin');
+      toast.error('ไม่สามารถสร้างผู้ใช้ได้: กรุณาตั้งค่า Firebase Admin');
     } else if (error.message?.includes('auth/email-already-exists')) {
-        toast.error('อีเมลนี้มีผู้ใช้งานแล้ว');
+      toast.error('อีเมลนี้มีผู้ใช้งานแล้ว');
     } else if (error.message?.includes('auth/weak-password')) {
-        toast.error('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร');
+      toast.error('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร');
     } else {
-        toast.error(error.message || 'เกิดข้อผิดพลาดในการบันทึกข้อมูล');
+      toast.error(error.message || 'เกิดข้อผิดพลาดในการบันทึกข้อมูล');
     }
-    } finally {
+  } finally {
     setLoading(false);
-    }
+  }
 };
 
   const isSuperAdmin = watchRole === 'super_admin';
@@ -247,77 +250,88 @@ const onSubmit = async (data: FormData) => {
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
             {/* Basic Info */}
-            <div className="space-y-4">
-              <h3 className="text-sm font-medium">ข้อมูลพื้นฐาน</h3>
-              
-              <FormField
-                control={form.control}
-                name="displayName"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>ชื่อผู้ใช้งาน</FormLabel>
-                    <FormControl>
-                      <Input {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>อีเมล</FormLabel>
-                    <FormControl>
-                      <Input {...field} type="email" disabled={isEditing} />
-                    </FormControl>
-                    <FormDescription>
-                      {isEditing ? 'ไม่สามารถเปลี่ยนอีเมลได้' : 'ใช้สำหรับเข้าสู่ระบบ'}
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {!isEditing && (
+                <div className="space-y-4">
+                <h3 className="text-sm font-medium">ข้อมูลพื้นฐาน</h3>
+                
                 <FormField
-                  control={form.control}
-                  name="password"
-                  render={({ field }) => (
+                    control={form.control}
+                    name="email"
+                    render={({ field }) => (
                     <FormItem>
-                      <FormLabel>รหัสผ่าน</FormLabel>
-                      <FormControl>
-                        <div className="relative">
-                          <Input 
+                        <FormLabel>อีเมล (ใช้เป็นชื่อผู้ใช้งานด้วย)</FormLabel>
+                        <FormControl>
+                        <Input 
                             {...field} 
-                            type={showPassword ? 'text' : 'password'}
-                          />
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                            onClick={() => setShowPassword(!showPassword)}
-                          >
-                            {showPassword ? (
-                              <EyeOff className="h-4 w-4" />
-                            ) : (
-                              <Eye className="h-4 w-4" />
-                            )}
-                          </Button>
-                        </div>
-                      </FormControl>
-                      <FormDescription>
-                        อย่างน้อย 6 ตัวอักษร
-                      </FormDescription>
-                      <FormMessage />
+                            type="email" 
+                            disabled={isEditing}
+                            onChange={(e) => {
+                            field.onChange(e);
+                            // ถ้ายังไม่ได้แก้ไข displayName ให้ใช้ email เป็น displayName
+                            if (!form.getValues('displayName') || form.getValues('displayName') === form.getValues('email')) {
+                                form.setValue('displayName', e.target.value);
+                            }
+                            }}
+                        />
+                        </FormControl>
+                        <FormDescription>
+                        {isEditing ? 'ไม่สามารถเปลี่ยนอีเมลได้' : 'ใช้สำหรับเข้าสู่ระบบและแสดงเป็นชื่อผู้ใช้'}
+                        </FormDescription>
+                        <FormMessage />
                     </FormItem>
-                  )}
+                    )}
                 />
-              )}
-            </div>
+
+                {/* ซ่อน displayName field */}
+                {/* <FormField
+                    control={form.control}
+                    name="displayName"
+                    render={({ field }) => (
+                    <FormItem>
+                        <FormLabel>ชื่อผู้ใช้งาน</FormLabel>
+                        <FormControl>
+                        <Input {...field} />
+                        </FormControl>
+                        <FormMessage />
+                    </FormItem>
+                    )}
+                /> */}
+
+                {!isEditing && (
+                    <FormField
+                    control={form.control}
+                    name="password"
+                    render={({ field }) => (
+                        <FormItem>
+                        <FormLabel>รหัสผ่าน</FormLabel>
+                        <FormControl>
+                            <div className="relative">
+                            <Input 
+                                {...field} 
+                                type={showPassword ? 'text' : 'password'}
+                                className="pr-10" // เพิ่ม padding ด้านขวา
+                            />
+                            <button
+                                type="button"
+                                onClick={() => setShowPassword(!showPassword)}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 rounded"
+                            >
+                                {showPassword ? (
+                                <EyeOff className="h-4 w-4 text-gray-500" />
+                                ) : (
+                                <Eye className="h-4 w-4 text-gray-500" />
+                                )}
+                            </button>
+                            </div>
+                        </FormControl>
+                        <FormDescription>
+                            อย่างน้อย 6 ตัวอักษร
+                        </FormDescription>
+                        <FormMessage />
+                        </FormItem>
+                    )}
+                    />
+                )}
+                </div>
 
             {/* Role & Permissions */}
             <div className="space-y-4">
@@ -358,7 +372,7 @@ const onSubmit = async (data: FormData) => {
               {!isSuperAdmin && (
                 <>
                   {/* Branch Selection */}
-                  <FormField
+                  {/* <FormField
                     control={form.control}
                     name="branchIds"
                     render={({ field }) => (
@@ -387,7 +401,7 @@ const onSubmit = async (data: FormData) => {
                         <FormMessage />
                       </FormItem>
                     )}
-                  />
+                  /> */}
 
                   {/* Permissions */}
                   {watchRole === 'branch_admin' && (

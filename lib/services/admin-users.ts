@@ -63,24 +63,28 @@ export async function getAdminUser(userId: string): Promise<AdminUser | null> {
 }
 
 // Create new admin user
+// Create new admin user
 export async function createAdminUser(
   email: string,
   password: string,
-  userData: Omit<AdminUser, 'id' | 'email' | 'createdAt' | 'updatedAt'>,
+  userData: Omit<AdminUser, 'id' | 'email' | 'createdAt' | 'updatedAt' | 'createdBy' | 'updatedBy'>, // เพิ่ม 'createdBy' และ 'updatedBy'
   createdBy: string,
-  authToken: string // เพิ่ม parameter นี้
+  authToken: string
 ): Promise<string> {
   try {
     const response = await fetch('/api/admin/create-user', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authToken}` // ส่ง token
+        'Authorization': `Bearer ${authToken}`
       },
       body: JSON.stringify({
         email,
         password,
-        userData,
+        userData: {
+          ...userData,
+          email // เพิ่ม email เข้าไปใน userData ที่จะส่ง
+        },
         createdBy
       })
     });
@@ -170,6 +174,26 @@ export async function createAdminUserSimple(
     });
   } catch (error) {
     console.error('Error creating admin user:', error);
+    throw error;
+  }
+}
+
+// Delete admin user
+export async function deleteAdminUser(
+  userId: string,
+  deletedBy: string
+): Promise<void> {
+  try {
+    // Soft delete - เปลี่ยนสถานะเป็น inactive และเพิ่ม deleted flag
+    const docRef = doc(db, 'adminUsers', userId);
+    await updateDoc(docRef, {
+      isActive: false,
+      isDeleted: true,
+      deletedAt: serverTimestamp(),
+      deletedBy
+    });
+  } catch (error) {
+    console.error('Error deleting admin user:', error);
     throw error;
   }
 }
