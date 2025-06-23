@@ -9,22 +9,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { 
   Save, 
   Loader2, 
   MessageSquare,
   Key,
   Webhook,
-  Menu,
   Bot,
-  Clock,
   TestTube,
   CheckCircle,
   XCircle,
@@ -41,7 +32,6 @@ import {
   validateLineSettings,
   testLineChannel,
   generateWebhookUrl,
-  formatBusinessHours,
   LineSettings
 } from '@/lib/services/line-settings';
 import { auth } from '@/lib/firebase/client';
@@ -58,6 +48,7 @@ export default function LineSettingsComponent() {
   // Test notification states
   const [testUserId, setTestUserId] = useState('');
   const [sendingTest, setSendingTest] = useState(false);
+  const [testType, setTestType] = useState<'class' | 'makeup' | 'trial'>('class');
   
   // Load settings on mount
   useEffect(() => {
@@ -154,41 +145,94 @@ export default function LineSettingsComponent() {
     setSendingTest(true);
     
     try {
-      // ตรวจสอบว่ามี Access Token หรือไม่
       if (!settings?.messagingChannelAccessToken) {
         toast.error('กรุณาตั้งค่า Channel Access Token ก่อน');
         setSendingTest(false);
         return;
       }
       
-      // สร้างข้อความทดสอบ
-      const testMessage = settings?.notificationTemplates?.classReminder || 
-        'แจ้งเตือน: น้อง{studentName} มีคลาส {subjectName} พรุ่งนี้\n📅 {date}\n⏰ {time}\n📍 {location}\n\nอย่าลืมมาเรียนนะคะ 😊';
+      // เตรียมข้อมูลทดสอบตามประเภท
+      let flexData;
+      let template;
+      let altText;
       
-      // แทนที่ variables ด้วยข้อมูลตัวอย่าง
-      const formattedMessage = testMessage
-        .replace('{studentName}', 'น้องทดสอบ')
-        .replace('{subjectName}', 'Scratch Programming')
-        .replace('{date}', new Date(Date.now() + 86400000).toLocaleDateString('th-TH', { 
-          weekday: 'long', 
-          year: 'numeric', 
-          month: 'long', 
-          day: 'numeric' 
-        }))
-        .replace('{time}', '10:00-11:30')
-        .replace('{location}', 'สาขาสุขุมวิท ห้อง A');
+      switch (testType) {
+        case 'class':
+          flexData = {
+            studentName: 'น้องทดสอบ',
+            className: 'Scratch Programming',
+            sessionNumber: 5,
+            date: new Date(Date.now() + 86400000).toLocaleDateString('th-TH', { 
+              weekday: 'long', 
+              year: 'numeric', 
+              month: 'long', 
+              day: 'numeric' 
+            }),
+            startTime: '10:00',
+            endTime: '11:30',
+            teacherName: 'ครูทดสอบ',
+            location: 'สาขาสุขุมวิท',
+            roomName: 'ห้อง A'
+          };
+          template = 'classReminder';
+          altText = '[ทดสอบ] แจ้งเตือนคลาสเรียนพรุ่งนี้';
+          break;
+          
+        case 'makeup':
+          flexData = {
+            studentName: 'น้องทดสอบ',
+            className: 'Python Programming',
+            sessionNumber: 3,
+            date: new Date(Date.now() + 172800000).toLocaleDateString('th-TH', { 
+              weekday: 'long', 
+              year: 'numeric', 
+              month: 'long', 
+              day: 'numeric' 
+            }),
+            startTime: '14:00',
+            endTime: '15:30',
+            teacherName: 'ครูชดเชย',
+            location: 'สาขาพระราม 9',
+            roomName: 'ห้อง B'
+          };
+          template = 'makeupConfirmation';
+          altText = '[ทดสอบ] ยืนยันการนัด Makeup Class';
+          break;
+          
+        case 'trial':
+          flexData = {
+            studentName: 'น้องทดลองเรียน',
+            subjectName: 'Robotics for Kids',
+            date: new Date(Date.now() + 259200000).toLocaleDateString('th-TH', { 
+              weekday: 'long', 
+              year: 'numeric', 
+              month: 'long', 
+              day: 'numeric' 
+            }),
+            startTime: '16:00',
+            endTime: '17:00',
+            location: 'สาขาเอกมัย',
+            roomName: 'ห้อง Trial',
+            contactPhone: '02-123-4567'
+          };
+          template = 'trialConfirmation';
+          altText = '[ทดสอบ] ยืนยันการทดลองเรียน';
+          break;
+      }
       
-      console.log('Sending test message to:', testUserId);
-      console.log('Message:', formattedMessage);
+      console.log('Sending test flex message:', { template, flexData });
       
-      const response = await fetch('/api/line/send-message', {
+      const response = await fetch('/api/line/send-flex-message', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           userId: testUserId,
-          message: `[ทดสอบระบบ]\n\n${formattedMessage}`
+          template,
+          data: flexData,
+          altText,
+          accessToken: settings.messagingChannelAccessToken
         })
       });
       
@@ -214,19 +258,6 @@ export default function LineSettingsComponent() {
     toast.success('คัดลอกแล้ว');
   };
   
-  const toggleBusinessDay = (day: number) => {
-    if (!settings) return;
-    
-    const days = settings.businessHours.days.includes(day)
-      ? settings.businessHours.days.filter(d => d !== day)
-      : [...settings.businessHours.days, day].sort();
-    
-    setSettings({
-      ...settings,
-      businessHours: { ...settings.businessHours, days }
-    });
-  };
-  
   if (loading) {
     return (
       <div className="flex items-center justify-center p-12">
@@ -248,7 +279,7 @@ export default function LineSettingsComponent() {
   return (
     <div className="space-y-6">
       <Tabs defaultValue="channels" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="channels">
             <Key className="h-4 w-4 mr-2" />
             Channels
@@ -257,13 +288,9 @@ export default function LineSettingsComponent() {
             <Webhook className="h-4 w-4 mr-2" />
             Webhook & LIFF
           </TabsTrigger>
-          <TabsTrigger value="messages">
-            <MessageSquare className="h-4 w-4 mr-2" />
-            ข้อความ
-          </TabsTrigger>
-          <TabsTrigger value="settings">
+          <TabsTrigger value="notification">
             <Bot className="h-4 w-4 mr-2" />
-            ตั้งค่า
+            แจ้งเตือนอัตโนมัติ
           </TabsTrigger>
           <TabsTrigger value="test">
             <TestTube className="h-4 w-4 mr-2" />
@@ -404,7 +431,7 @@ export default function LineSettingsComponent() {
                 </div>
               </CardTitle>
               <CardDescription>
-                ใช้สำหรับส่งข้อความแจ้งเตือน และ Chatbot
+                ใช้สำหรับส่งข้อความแจ้งเตือน
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -564,7 +591,7 @@ export default function LineSettingsComponent() {
                 <Info className="h-4 w-4" />
                 <AlertDescription>
                   <div className="space-y-2">
-                    <p>สร้าง LIFF App ได้ที่ LINE Login Channel = LIFF tab</p>
+                    <p>สร้าง LIFF App ได้ที่ LINE Login Channel → LIFF tab</p>
                     <p className="text-sm">
                       <strong>Size:</strong> Full | 
                       <strong> Scope:</strong> profile, openid | 
@@ -661,403 +688,95 @@ export default function LineSettingsComponent() {
           </Card>
         </TabsContent>
         
-        {/* Messages Tab */}
-        <TabsContent value="messages" className="space-y-6">
-          {/* Quick Reply Templates */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Quick Reply Templates</CardTitle>
-              <CardDescription>
-                ข้อความตอบกลับด่วนสำหรับผู้ปกครอง
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>ดูตารางเรียน</Label>
-                  <Input
-                    value={settings.quickReplyTemplates?.scheduleInquiry || ''}
-                    onChange={(e) => setSettings({
-                      ...settings,
-                      quickReplyTemplates: {
-                        ...settings.quickReplyTemplates,
-                        scheduleInquiry: e.target.value
-                      }
-                    })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>ขอเรียนชดเชย</Label>
-                  <Input
-                    value={settings.quickReplyTemplates?.makeupRequest || ''}
-                    onChange={(e) => setSettings({
-                      ...settings,
-                      quickReplyTemplates: {
-                        ...settings.quickReplyTemplates,
-                        makeupRequest: e.target.value
-                      }
-                    })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>จองทดลองเรียน</Label>
-                  <Input
-                    value={settings.quickReplyTemplates?.trialBooking || ''}
-                    onChange={(e) => setSettings({
-                      ...settings,
-                      quickReplyTemplates: {
-                        ...settings.quickReplyTemplates,
-                        trialBooking: e.target.value
-                      }
-                    })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>ติดต่อสอบถาม</Label>
-                  <Input
-                    value={settings.quickReplyTemplates?.contactUs || ''}
-                    onChange={(e) => setSettings({
-                      ...settings,
-                      quickReplyTemplates: {
-                        ...settings.quickReplyTemplates,
-                        contactUs: e.target.value
-                      }
-                    })}
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          
-          {/* Auto Reply Messages */}
-          <Card>
-            <CardHeader>
-              <CardTitle>ข้อความตอบกลับอัตโนมัติ</CardTitle>
-              <CardDescription>
-                ข้อความที่ระบบจะตอบกลับอัตโนมัติ
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>ข้อความต้อนรับ</Label>
-                <Textarea
-                  value={settings.autoReplyMessages?.welcome || ''}
-                  onChange={(e) => setSettings({
-                    ...settings,
-                    autoReplyMessages: {
-                      ...settings.autoReplyMessages,
-                      welcome: e.target.value
-                    }
-                  })}
-                  rows={3}
-                  placeholder="สวัสดีค่ะ ยินดีต้อนรับ..."
-                />
-                <p className="text-sm text-gray-500">
-                  ใช้ {'{schoolName}'} เพื่อแทนชื่อโรงเรียน
-                </p>
-              </div>
-              
-              <div className="space-y-2">
-                <Label>ไม่เข้าใจคำสั่ง</Label>
-                <Textarea
-                  value={settings.autoReplyMessages?.unknownCommand || ''}
-                  onChange={(e) => setSettings({
-                    ...settings,
-                    autoReplyMessages: {
-                      ...settings.autoReplyMessages,
-                      unknownCommand: e.target.value
-                    }
-                  })}
-                  rows={2}
-                />
-                <p className="text-sm text-gray-500">
-                  ใช้ {'{contactPhone}'} เพื่อแทนเบอร์โทร
-                </p>
-              </div>
-              
-              <div className="space-y-2">
-                <Label>นอกเวลาทำการ</Label>
-                <Textarea
-                  value={settings.autoReplyMessages?.outsideHours || ''}
-                  onChange={(e) => setSettings({
-                    ...settings,
-                    autoReplyMessages: {
-                      ...settings.autoReplyMessages,
-                      outsideHours: e.target.value
-                    }
-                  })}
-                  rows={3}
-                />
-                <p className="text-sm text-gray-500">
-                  ใช้ {'{businessHours}'} เพื่อแทนเวลาทำการ
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-          
-          {/* Notification Templates */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Template การแจ้งเตือน</CardTitle>
-              <CardDescription>
-                รูปแบบข้อความแจ้งเตือนต่างๆ
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>แจ้งเตือนก่อนเรียน</Label>
-                <Textarea
-                  value={settings.notificationTemplates?.classReminder || ''}
-                  onChange={(e) => setSettings({
-                    ...settings,
-                    notificationTemplates: {
-                      ...settings.notificationTemplates,
-                      classReminder: e.target.value
-                    }
-                  })}
-                  rows={3}
-                />
-                <p className="text-sm text-gray-500">
-                  Variables: {'{studentName}'}, {'{subjectName}'}, {'{date}'}, {'{time}'}, {'{location}'}
-                </p>
-              </div>
-              
-              <div className="space-y-2">
-                <Label>ยืนยันการเรียนชดเชย</Label>
-                <Textarea
-                  value={settings.notificationTemplates?.makeupConfirmation || ''}
-                  onChange={(e) => setSettings({
-                    ...settings,
-                    notificationTemplates: {
-                      ...settings.notificationTemplates,
-                      makeupConfirmation: e.target.value
-                    }
-                  })}
-                  rows={3}
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <Label>แจ้งเตือนชำระค่าเรียน</Label>
-                <Textarea
-                  value={settings.notificationTemplates?.paymentReminder || ''}
-                  onChange={(e) => setSettings({
-                    ...settings,
-                    notificationTemplates: {
-                      ...settings.notificationTemplates,
-                      paymentReminder: e.target.value
-                    }
-                  })}
-                  rows={3}
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <Label>ยืนยันการทดลองเรียน</Label>
-                <Textarea
-                  value={settings.notificationTemplates?.trialConfirmation || ''}
-                  onChange={(e) => setSettings({
-                    ...settings,
-                    notificationTemplates: {
-                      ...settings.notificationTemplates,
-                      trialConfirmation: e.target.value
-                    }
-                  })}
-                  rows={4}
-                />
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-        
-        {/* Settings Tab */}
-        <TabsContent value="settings" className="space-y-6">
-          {/* Bot Settings */}
+        {/* Notification Tab */}
+        <TabsContent value="notification" className="space-y-6">
+          {/* Notification Settings */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Bot className="h-5 w-5" />
-                ตั้งค่า Bot
+                การแจ้งเตือนอัตโนมัติ
               </CardTitle>
               <CardDescription>
-                กำหนดการทำงานของ LINE Bot
+                ระบบจะส่งการแจ้งเตือนอัตโนมัติไปยังผู้ปกครองผ่าน LINE
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label>เปิดใช้งานตอบกลับอัตโนมัติ</Label>
-                    <p className="text-sm text-gray-500">
-                      Bot จะตอบกลับข้อความอัตโนมัติ
-                    </p>
-                  </div>
-                  <Switch
-                    checked={settings.enableAutoReply}
-                    onCheckedChange={(checked) => 
-                      setSettings({...settings, enableAutoReply: checked})
-                    }
-                  />
+              <div className="flex items-center justify-between p-4 border rounded-lg">
+                <div className="space-y-0.5">
+                  <Label className="text-base">เปิดใช้งานการแจ้งเตือน</Label>
+                  <p className="text-sm text-gray-500">
+                    ส่งข้อความแจ้งเตือนอัตโนมัติไปยังผู้ปกครอง
+                  </p>
                 </div>
-                
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label>เปิดใช้งานการแจ้งเตือน</Label>
-                    <p className="text-sm text-gray-500">
-                      ส่งข้อความแจ้งเตือนไปยังผู้ปกครอง
-                    </p>
-                  </div>
-                  <Switch
-                    checked={settings.enableNotifications}
-                    onCheckedChange={(checked) => 
-                      setSettings({...settings, enableNotifications: checked})
-                    }
-                  />
-                </div>
-                
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label>เปิดใช้งาน Rich Menu</Label>
-                    <p className="text-sm text-gray-500">
-                      แสดงเมนูด้านล่างใน LINE
-                    </p>
-                  </div>
-                  <Switch
-                    checked={settings.richMenuEnabled}
-                    onCheckedChange={(checked) => 
-                      setSettings({...settings, richMenuEnabled: checked})
-                    }
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          
-          {/* Business Hours */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Clock className="h-5 w-5" />
-                เวลาทำการ
-              </CardTitle>
-              <CardDescription>
-                กำหนดเวลาที่ Bot จะตอบกลับ
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>เวลาเปิด</Label>
-                  <Input
-                    type="time"
-                    value={settings.businessHours.start}
-                    onChange={(e) => setSettings({
-                      ...settings,
-                      businessHours: {
-                        ...settings.businessHours,
-                        start: e.target.value
-                      }
-                    })}
-                  />
-                </div>
-                
-                <div className="space-y-2">
-                  <Label>เวลาปิด</Label>
-                  <Input
-                    type="time"
-                    value={settings.businessHours.end}
-                    onChange={(e) => setSettings({
-                      ...settings,
-                      businessHours: {
-                        ...settings.businessHours,
-                        end: e.target.value
-                      }
-                    })}
-                  />
-                  {errors.businessHours && (
-                    <p className="text-sm text-red-500">{errors.businessHours}</p>
-                  )}
-                </div>
-              </div>
-              
-              <div className="space-y-2">
-                <Label>วันทำการ</Label>
-                <div className="grid grid-cols-7 gap-2">
-                  {dayNames.map((day, index) => (
-                    <Button
-                      key={index}
-                      type="button"
-                      variant={settings.businessHours.days.includes(index) ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => toggleBusinessDay(index)}
-                      className="w-full"
-                    >
-                      {day.slice(0, 2)}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-              
-              <div className="p-4 bg-gray-50 rounded-lg">
-                <p className="text-sm text-gray-600">
-                  เวลาทำการปัจจุบัน: <span className="font-medium">{formatBusinessHours(settings)}</span>
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-          
-          {/* Rich Menu Settings */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Menu className="h-5 w-5" />
-                Rich Menu
-              </CardTitle>
-              <CardDescription>
-                เมนูด้านล่างใน LINE Chat
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="richMenuId">Rich Menu ID</Label>
-                <Input
-                  id="richMenuId"
-                  value={settings.richMenuId || ''}
-                  onChange={(e) => setSettings({...settings, richMenuId: e.target.value})}
-                  placeholder="richmenu-xxxxx"
+                <Switch
+                  checked={settings.enableNotifications}
+                  onCheckedChange={(checked) => 
+                    setSettings({...settings, enableNotifications: checked})
+                  }
                 />
               </div>
               
-              <Alert>
-                <Info className="h-4 w-4" />
-                <AlertDescription>
-                  สร้างและจัดการ Rich Menu ได้ที่{' '}
-                  <a 
-                    href="https://manager.line.biz/" 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="text-blue-600 hover:underline inline-flex items-center gap-1"
-                  >
-                    LINE Official Account Manager
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                </AlertDescription>
-              </Alert>
+              {settings.enableNotifications && (
+                <div className="space-y-4">
+                  <h4 className="font-medium text-sm">ประเภทการแจ้งเตือนที่ส่ง:</h4>
+                  <div className="grid gap-3">
+                    <div className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                      <div className="p-2 bg-blue-100 rounded-full">
+                        <MessageSquare className="h-4 w-4 text-blue-600" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-medium text-sm">แจ้งเตือนก่อนเรียน</p>
+                        <p className="text-sm text-gray-500">ส่งก่อนวันเรียน 1 วัน เวลา 19:00 น.</p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                      <div className="p-2 bg-green-100 rounded-full">
+                        <CheckCircle className="h-4 w-4 text-green-600" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-medium text-sm">ยืนยันการเรียนชดเชย</p>
+                        <p className="text-sm text-gray-500">ส่งทันทีเมื่อนัดหมายสำเร็จ และแจ้งเตือนก่อนเรียน 1 วัน</p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                      <div className="p-2 bg-purple-100 rounded-full">
+                        <MessageSquare className="h-4 w-4 text-purple-600" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-medium text-sm">ยืนยันการทดลองเรียน</p>
+                        <p className="text-sm text-gray-500">ส่งทันทีเมื่อจองสำเร็จ</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {!settings.enableNotifications && (
+                <Alert className="bg-gray-50">
+                  <Info className="h-4 w-4" />
+                  <AlertDescription>
+                    การแจ้งเตือนถูกปิดอยู่ ระบบจะไม่ส่งข้อความใดๆ ไปยังผู้ปกครอง
+                  </AlertDescription>
+                </Alert>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
         
         {/* Test Tab */}
         <TabsContent value="test" className="space-y-6">
-          {/* Test Class Reminder */}
+          {/* Test Notifications */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Send className="h-5 w-5" />
-                ทดสอบส่งข้อความแจ้งเตือนเรียน
+                ทดสอบส่งข้อความแจ้งเตือน
               </CardTitle>
               <CardDescription>
-                ทดสอบส่งข้อความแจ้งเตือนก่อนเรียนไปยัง LINE User ID ที่ระบุ
+                ทดสอบส่งข้อความแจ้งเตือนแบบต่างๆ ไปยัง LINE User ID ที่ระบุ
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -1068,7 +787,7 @@ export default function LineSettingsComponent() {
                   <ol className="list-decimal list-inside mt-2 space-y-1">
                     <li>เพิ่ม LINE Official Account เป็นเพื่อน</li>
                     <li>ส่งข้อความอะไรก็ได้ไปที่ Official Account</li>
-                    <li>ดู User ID จาก webhook logs ใน LINE Developers Console</li>
+                    <li>กดปุ่ม "ดู User ID" ด้านบน เพื่อดู webhook logs</li>
                   </ol>
                 </AlertDescription>
               </Alert>
@@ -1087,32 +806,86 @@ export default function LineSettingsComponent() {
                 </p>
               </div>
               
+              {/* เลือกประเภทการแจ้งเตือน */}
+              <div className="space-y-2">
+                <Label>ประเภทการแจ้งเตือน</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  <Button
+                    type="button"
+                    variant={testType === 'class' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setTestType('class')}
+                  >
+                    แจ้งเตือนก่อนเรียน
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={testType === 'makeup' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setTestType('makeup')}
+                  >
+                    ยืนยัน Makeup
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={testType === 'trial' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setTestType('trial')}
+                  >
+                    ยืนยันทดลองเรียน
+                  </Button>
+                </div>
+              </div>
+              
               {/* Preview */}
               <div className="space-y-2">
                 <Label>ตัวอย่างข้อความที่จะส่ง</Label>
                 <div className="p-4 bg-gray-50 rounded-lg">
-                  <pre className="text-sm whitespace-pre-wrap">
-                    {`[ทดสอบระบบ]\n\n${
-                      (settings.notificationTemplates?.classReminder || 
-                      'แจ้งเตือน: น้อง{studentName} มีคลาส {subjectName} พรุ่งนี้\n📅 {date}\n⏰ {time}\n📍 {location}\n\nอย่าลืมมาเรียนนะคะ 😊')
-                      .replace('{studentName}', 'น้องทดสอบ')
-                      .replace('{subjectName}', 'Scratch Programming')
-                      .replace('{date}', new Date(Date.now() + 86400000).toLocaleDateString('th-TH', { 
-                        weekday: 'long', 
-                        year: 'numeric', 
-                        month: 'long', 
-                        day: 'numeric' 
-                      }))
-                      .replace('{time}', '10:00-11:30')
-                      .replace('{location}', 'สาขาสุขุมวิท ห้อง A')
-                    }`}
-                  </pre>
+                  {testType === 'class' && (
+                    <div className="space-y-2 text-sm">
+                      <p className="font-semibold">🔔 แจ้งเตือนคลาสเรียนพรุ่งนี้</p>
+                      <p>👦 นักเรียน: น้องทดสอบ</p>
+                      <p>📚 คลาสเรียน: Scratch Programming (ครั้งที่ 5)</p>
+                      <p>📅 วันที่: {new Date(Date.now() + 86400000).toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                      <p>⏰ เวลา: 10:00 - 11:30</p>
+                      <p>👩‍🏫 ครูผู้สอน: ครูทดสอบ</p>
+                      <p>📍 สถานที่: สาขาสุขุมวิท</p>
+                      <p>🚪 ห้องเรียน: ห้อง A</p>
+                    </div>
+                  )}
+                  
+                  {testType === 'makeup' && (
+                    <div className="space-y-2 text-sm">
+                      <p className="font-semibold">✅ ยืนยันการนัด Makeup Class</p>
+                      <p>👦 นักเรียน: น้องทดสอบ</p>
+                      <p>📚 คลาสเรียน: Python Programming (ครั้งที่ 3)</p>
+                      <p>📅 วันที่: {new Date(Date.now() + 172800000).toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                      <p>⏰ เวลา: 14:00 - 15:30</p>
+                      <p>👩‍🏫 ครูผู้สอน: ครูชดเชย</p>
+                      <p>📍 สถานที่: สาขาพระราม 9</p>
+                      <p>🚪 ห้องเรียน: ห้อง B</p>
+                    </div>
+                  )}
+                  
+                  {testType === 'trial' && (
+                    <div className="space-y-2 text-sm">
+                      <p className="font-semibold">✅ ยืนยันการทดลองเรียน</p>
+                      <p className="text-green-600 font-medium">จองสำเร็จแล้ว!</p>
+                      <p>👦 นักเรียน: น้องทดลองเรียน</p>
+                      <p>📚 วิชา: Robotics for Kids</p>
+                      <p>📅 วันที่: {new Date(Date.now() + 259200000).toLocaleDateString('th-TH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                      <p>⏰ เวลา: 16:00 - 17:00</p>
+                      <p>📍 สถานที่: สาขาเอกมัย</p>
+                      <p>🚪 ห้องเรียน: ห้อง Trial</p>
+                      <p className="text-gray-500 text-xs mt-2">หากต้องการเปลี่ยนแปลง กรุณาติดต่อ 02-123-4567</p>
+                    </div>
+                  )}
                 </div>
               </div>
               
               <Button
                 onClick={handleTestNotification}
-                disabled={sendingTest || !testUserId.trim()}
+                disabled={sendingTest || !testUserId.trim() || !settings.enableNotifications}
                 className="w-full"
               >
                 {sendingTest ? (
@@ -1127,27 +900,27 @@ export default function LineSettingsComponent() {
                   </>
                 )}
               </Button>
+              
+              {!settings.enableNotifications && (
+                <Alert className="bg-yellow-50 border-yellow-200">
+                  <Info className="h-4 w-4 text-yellow-600" />
+                  <AlertDescription className="text-yellow-800">
+                    การแจ้งเตือนถูกปิดอยู่ กรุณาเปิดใช้งานในแท็บ "ตั้งค่า" ก่อนทดสอบ
+                  </AlertDescription>
+                </Alert>
+              )}
             </CardContent>
           </Card>
           
           {/* Other Test Options */}
           <Card>
             <CardHeader>
-              <CardTitle>ทดสอบอื่นๆ</CardTitle>
+              <CardTitle>เครื่องมือทดสอบอื่นๆ</CardTitle>
               <CardDescription>
-                ทดสอบฟีเจอร์อื่นๆ ของ LINE Integration
+                ลิงก์และเครื่องมือที่เป็นประโยชน์
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              <Button 
-                variant="outline" 
-                className="w-full"
-                onClick={() => window.open('/test-line-message', '_blank')}
-              >
-                <MessageSquare className="h-4 w-4 mr-2" />
-                ไปหน้าทดสอบส่งข้อความแบบเต็ม
-              </Button>
-              
               <Button 
                 variant="outline" 
                 className="w-full"
@@ -1155,6 +928,15 @@ export default function LineSettingsComponent() {
               >
                 <ExternalLink className="h-4 w-4 mr-2" />
                 เปิด LINE Developers Console
+              </Button>
+              
+              <Button 
+                variant="outline" 
+                className="w-full"
+                onClick={() => window.open('https://manager.line.biz/', '_blank')}
+              >
+                <ExternalLink className="h-4 w-4 mr-2" />
+                เปิด LINE Official Account Manager
               </Button>
             </CardContent>
           </Card>

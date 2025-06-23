@@ -31,37 +31,8 @@ export interface LineSettings {
   richMenuId?: string;
   richMenuEnabled: boolean;
   
-  // Quick Reply Templates
-  quickReplyTemplates?: {
-    scheduleInquiry?: string;
-    makeupRequest?: string;
-    trialBooking?: string;
-    contactUs?: string;
-  };
-  
-  // Auto Reply Messages
-  autoReplyMessages?: {
-    welcome?: string;
-    unknownCommand?: string;
-    outsideHours?: string;
-  };
-  
-  // Notification Templates
-  notificationTemplates?: {
-    classReminder?: string;
-    makeupConfirmation?: string;
-    paymentReminder?: string;
-    trialConfirmation?: string;
-  };
-  
-  // Settings
-  enableAutoReply: boolean;
+  // Settings - เหลือแค่เปิด/ปิด
   enableNotifications: boolean;
-  businessHours: {
-    start: string; // "09:00"
-    end: string;   // "18:00"
-    days: number[]; // [1,2,3,4,5] = Mon-Fri
-  };
   
   // Metadata
   updatedAt?: Date;
@@ -135,30 +106,7 @@ export function getDefaultLineSettings(): LineSettings {
   return {
     webhookVerified: false,
     richMenuEnabled: false,
-    enableAutoReply: true,
-    enableNotifications: true,
-    businessHours: {
-      start: '09:00',
-      end: '18:00',
-      days: [1, 2, 3, 4, 5] // Mon-Fri
-    },
-    quickReplyTemplates: {
-      scheduleInquiry: 'ต้องการดูตารางเรียน',
-      makeupRequest: 'ขอเรียนชดเชย',
-      trialBooking: 'จองทดลองเรียน',
-      contactUs: 'ติดต่อสอบถาม'
-    },
-    autoReplyMessages: {
-      welcome: 'สวัสดีค่ะ 🙏 ยินดีต้อนรับสู่ {schoolName}\n\nกรุณาเลือกเมนูด้านล่างเพื่อใช้งาน หรือพิมพ์ข้อความเพื่อสอบถามข้อมูลเพิ่มเติมค่ะ',
-      unknownCommand: 'ขออภัยค่ะ ไม่เข้าใจคำสั่ง กรุณาเลือกจากเมนูด้านล่าง หรือติดต่อ {contactPhone}',
-      outsideHours: 'ขณะนี้อยู่นอกเวลาทำการ ({businessHours})\n\nกรุณาติดต่อใหม่ในเวลาทำการ หรือฝากข้อความไว้ เจ้าหน้าที่จะติดต่อกลับค่ะ'
-    },
-    notificationTemplates: {
-      classReminder: 'แจ้งเตือน: น้อง{studentName} มีคลาส {subjectName} พรุ่งนี้\n📅 {date}\n⏰ {time}\n📍 {location}\n\nอย่าลืมมาเรียนนะคะ 😊',
-      makeupConfirmation: 'ยืนยันการเรียนชดเชย\n\nน้อง{studentName}\nวิชา: {subjectName}\n📅 {date}\n⏰ {time}\n👩‍🏫 ครู{teacherName}\n📍 {location}',
-      paymentReminder: 'แจ้งเตือนชำระค่าเรียน\n\nคอร์ส: {courseName}\nจำนวน: {amount} บาท\nกำหนดชำระ: {dueDate}\n\nชำระได้ที่: {paymentInfo}',
-      trialConfirmation: 'ยืนยันการทดลองเรียน\n\n✅ จองสำเร็จแล้ว!\nน้อง{studentName}\nวิชา: {subjectName}\n📅 {date}\n⏰ {time}\n📍 {location}\n\nหากต้องการเปลี่ยนแปลง กรุณาติดต่อ {contactPhone}'
-    }
+    enableNotifications: true
   };
 }
 
@@ -200,23 +148,6 @@ export function validateLineSettings(settings: Partial<LineSettings>): {
   // Validate Webhook URL
   if (settings.webhookUrl && !settings.webhookUrl.startsWith('https://')) {
     errors.webhookUrl = 'Webhook URL ต้องเริ่มต้นด้วย https://';
-  }
-  
-  // Validate business hours
-  if (settings.businessHours) {
-    const startTime = settings.businessHours.start.split(':');
-    const endTime = settings.businessHours.end.split(':');
-    
-    if (startTime.length !== 2 || endTime.length !== 2) {
-      errors.businessHours = 'รูปแบบเวลาไม่ถูกต้อง';
-    } else {
-      const startHour = parseInt(startTime[0]);
-      const endHour = parseInt(endTime[0]);
-      
-      if (startHour >= endHour) {
-        errors.businessHours = 'เวลาเปิดต้องน้อยกว่าเวลาปิด';
-      }
-    }
   }
   
   return {
@@ -371,15 +302,4 @@ export function generateWebhookUrl(baseUrl: string): string {
   
   // Add webhook endpoint
   return `${cleanUrl}/api/webhooks/line`;
-}
-
-// Format business hours display
-export function formatBusinessHours(settings: LineSettings): string {
-  const days = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
-  const activeDays = settings.businessHours.days
-    .sort((a, b) => a - b)
-    .map(d => days[d])
-    .join(', ');
-  
-  return `${activeDays} ${settings.businessHours.start}-${settings.businessHours.end} น.`;
 }

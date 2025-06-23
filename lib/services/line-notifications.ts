@@ -34,6 +34,13 @@ export async function sendLineMessage(
       return { success: false, error: 'ไม่พบ Channel Access Token' };
     }
     
+    // ตรวจสอบว่าเปิดการแจ้งเตือนหรือไม่
+    const settings = await getLineSettings();
+    if (!settings?.enableNotifications) {
+      console.log('Notifications are disabled');
+      return { success: false, error: 'การแจ้งเตือนถูกปิดอยู่' };
+    }
+    
     // ถ้าต้องการส่งแบบ Flex Message
     if (options?.useFlexMessage && options?.flexTemplate && options?.flexData) {
       const response = await fetch('/api/line/send-flex-message', {
@@ -132,21 +139,8 @@ export async function sendClassReminder(
     const roomDoc = await getDoc(doc(db, 'branches', classData.branchId, 'rooms', classData.roomId));
     const room = roomDoc.exists() ? roomDoc.data() : null;
     
-    // ดึง template
-    const settings = await getLineSettings();
-    let template = settings?.notificationTemplates?.classReminder || 
-      'แจ้งเตือน: น้อง{studentName} มีคลาส {subjectName} พรุ่งนี้\n📅 {date}\n⏰ {time}\n📍 {location}\n\nอย่าลืมมาเรียนนะคะ 😊';
-    
-    // แทนที่ตัวแปร
-    const message = template
-      .replace('{studentName}', student.nickname || student.name)
-      .replace('{subjectName}', subject?.name || classData.name)
-      .replace('{date}', formatDate(scheduleDate, 'full'))
-      .replace('{time}', `${formatTime(classData.startTime)} - ${formatTime(classData.endTime)}`)
-      .replace('{location}', `${branch?.name || ''} ${room?.name ? 'ห้อง ' + room.name : ''}`);
-    
     // ส่งข้อความแบบ Flex Message
-    const result = await sendLineMessage(parent.lineUserId, message, undefined, {
+    const result = await sendLineMessage(parent.lineUserId, '', undefined, {
       useFlexMessage: true,
       flexTemplate: 'classReminder',
       flexData: {
@@ -228,33 +222,11 @@ export async function sendMakeupNotification(
     const roomDoc = await getDoc(doc(db, 'branches', makeup.makeupSchedule.branchId, 'rooms', makeup.makeupSchedule.roomId));
     const room = roomDoc.exists() ? roomDoc.data() : null;
     
-    // ดึง template
-    const settings = await getLineSettings();
-    let template = settings?.notificationTemplates?.makeupConfirmation || 
-      'ยืนยันการเรียนชดเชย\n\nน้อง{studentName}\nวิชา: {subjectName}\n📅 {date}\n⏰ {time}\n👩‍🏫 ครู{teacherName}\n📍 {location}';
-    
     // แปลง Timestamp เป็น Date
     const makeupDate = makeup.makeupSchedule.date.toDate ? makeup.makeupSchedule.date.toDate() : new Date(makeup.makeupSchedule.date);
     
-    // แทนที่ตัวแปร - ใช้ formatDate แบบ 'long' เพื่อไม่ให้มีเวลา
-    let message = template
-      .replace('{studentName}', student.nickname || student.name)
-      .replace('{subjectName}', subject?.name || classData?.name || 'ไม่ระบุ')
-      .replace('{date}', formatDate(makeupDate, 'long'))  // เปลี่ยนจาก 'full' เป็น 'long'
-      .replace('{time}', `${formatTime(makeup.makeupSchedule.startTime)} - ${formatTime(makeup.makeupSchedule.endTime)}`)
-      .replace('{teacherName}', teacher?.nickname || teacher?.name || 'ไม่ระบุ')
-      .replace('{location}', `${branch?.name || ''} ${room?.name ? 'ห้อง ' + room.name : ''}`);
-    
-    // ถ้าเป็น reminder (แจ้งเตือนก่อนเรียน 1 วัน)
-    if (type === 'reminder') {
-      message = `⏰ [แจ้งเตือน Makeup Class พรุ่งนี้]\n\n${message}`;
-    } else {
-      // type: 'scheduled' (แจ้งเตือนตอนนัดวัน)
-      message = `✅ [ยืนยันการนัด Makeup Class]\n\n${message}\n\nหากติดปัญหาหรือต้องการเปลี่ยนแปลง กรุณาติดต่อเจ้าหน้าที่`;
-    }
-    
     // ส่งข้อความแบบ Flex Message
-    const result = await sendLineMessage(parent.lineUserId, message, undefined, {
+    const result = await sendLineMessage(parent.lineUserId, '', undefined, {
       useFlexMessage: true,
       flexTemplate: type === 'reminder' ? 'makeupReminder' : 'makeupConfirmation',
       flexData: {
@@ -311,20 +283,27 @@ export async function sendTrialConfirmation(
     const branchDoc = await getDoc(doc(db, 'branches', trial.branchId));
     const branch = branchDoc.exists() ? branchDoc.data() : null;
     
-    // ดึง template  
-    const settings = await getLineSettings();
-    let template = settings?.notificationTemplates?.trialConfirmation || 
-      'ยืนยันการทดลองเรียน\n\n✅ จองสำเร็จแล้ว!\nน้อง{studentName}\nวิชา: {subjectName}\n📅 {date}\n⏰ {time}\n📍 {location}\n\nหากต้องการเปลี่ยนแปลง กรุณาติดต่อ {contactPhone}';
+    // ดึงข้อมูลห้อง
+    const roomDoc = await getDoc(doc(db, 'branches', trial.branchId, 'rooms', trial.roomId));
+    const room = roomDoc.exists() ? roomDoc.data() : null;
     
-    const message = template
-      .replace('{studentName}', trial.studentName)
-      .replace('{subjectName}', subject?.name || 'ไม่ระบุ')
-      .replace('{date}', formatDate(trial.scheduledDate.toDate(), 'full'))
-      .replace('{time}', `${formatTime(trial.startTime)} - ${formatTime(trial.endTime)}`)
-      .replace('{location}', branch?.name || 'ไม่ระบุ')
-      .replace('{contactPhone}', branch?.phone || '081-234-5678');
+    // ส่งข้อความแบบ Flex Message
+    const result = await sendLineMessage(booking.parentLineId, '', undefined, {
+      useFlexMessage: true,
+      flexTemplate: 'trialConfirmation',
+      flexData: {
+        studentName: trial.studentName,
+        subjectName: subject?.name || 'ไม่ระบุ',
+        date: formatDate(trial.scheduledDate.toDate(), 'long'),
+        startTime: formatTime(trial.startTime),
+        endTime: formatTime(trial.endTime),
+        location: branch?.name || 'ไม่ระบุ',
+        roomName: room?.name || trial.roomName || 'ไม่ระบุ',
+        contactPhone: branch?.phone || '081-234-5678'
+      },
+      altText: `ยืนยันการทดลองเรียน - น้อง${trial.studentName}`
+    });
     
-    const result = await sendLineMessage(booking.parentLineId, message);
     return result.success;
   } catch (error) {
     console.error('Error sending trial confirmation:', error);
