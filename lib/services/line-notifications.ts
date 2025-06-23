@@ -11,11 +11,17 @@ async function getLineSettings() {
   return docSnap.exists() ? docSnap.data() : null;
 }
 
-// ส่งข้อความผ่าน LINE API
+// ส่งข้อความผ่าน LINE API (รองรับทั้ง text และ flex)
 export async function sendLineMessage(
   userId: string,
   message: string,
-  accessToken?: string
+  accessToken?: string,
+  options?: {
+    useFlexMessage?: boolean;
+    flexTemplate?: string;
+    flexData?: any;
+    altText?: string;
+  }
 ): Promise<{ success: boolean; error?: string }> {
   try {
     // ถ้าไม่ได้ส่ง token มา ให้ดึงจาก settings
@@ -28,7 +34,26 @@ export async function sendLineMessage(
       return { success: false, error: 'ไม่พบ Channel Access Token' };
     }
     
-    const response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || ''}/api/line/send-message-v2`, {
+    // ถ้าต้องการส่งแบบ Flex Message
+    if (options?.useFlexMessage && options?.flexTemplate && options?.flexData) {
+      const response = await fetch('/api/line/send-flex-message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          userId, 
+          template: options.flexTemplate,
+          data: options.flexData,
+          altText: options.altText || message.split('\n')[0], // ใช้บรรทัดแรกเป็น alt text
+          accessToken 
+        })
+      });
+      
+      const result = await response.json();
+      return result;
+    }
+    
+    // ส่งแบบ text ปกติ
+    const response = await fetch('/api/line/send-message-v2', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
@@ -53,15 +78,38 @@ export async function sendClassReminder(
   scheduleDate: Date
 ): Promise<boolean> {
   try {
-    // ดึงข้อมูลนักเรียน
-    const studentDoc = await getDoc(doc(db, 'students', studentId));
-    if (!studentDoc.exists()) return false;
-    const student = studentDoc.data();
+    // ดึงข้อมูลนักเรียน - ใช้วิธีตรงๆ แทน
+    const enrollmentsQuery = query(
+      collection(db, 'enrollments'),
+      where('studentId', '==', studentId),
+      where('classId', '==', classId),
+      where('status', '==', 'active')
+    );
+    const enrollmentSnapshot = await getDocs(enrollmentsQuery);
+    
+    if (enrollmentSnapshot.empty) {
+      console.log('No active enrollment found');
+      return false;
+    }
+    
+    const enrollment = enrollmentSnapshot.docs[0].data();
+    const parentId = enrollment.parentId;
     
     // ดึงข้อมูลผู้ปกครอง
-    const parentDoc = await getDoc(doc(db, 'parents', student.parentId));
-    if (!parentDoc.exists() || !parentDoc.data().lineUserId) return false;
+    const parentDoc = await getDoc(doc(db, 'parents', parentId));
+    if (!parentDoc.exists() || !parentDoc.data().lineUserId) {
+      console.log('Parent not found or no LINE ID');
+      return false;
+    }
     const parent = parentDoc.data();
+    
+    // ดึงข้อมูลนักเรียน
+    const studentDoc = await getDoc(doc(db, 'parents', parentId, 'students', studentId));
+    if (!studentDoc.exists()) {
+      console.log('Student not found');
+      return false;
+    }
+    const student = studentDoc.data();
     
     // ดึงข้อมูลคลาส
     const classDoc = await getDoc(doc(db, 'classes', classId));
@@ -97,8 +145,23 @@ export async function sendClassReminder(
       .replace('{time}', `${formatTime(classData.startTime)} - ${formatTime(classData.endTime)}`)
       .replace('{location}', `${branch?.name || ''} ${room?.name ? 'ห้อง ' + room.name : ''}`);
     
-    // ส่งข้อความ
-    const result = await sendLineMessage(parent.lineUserId, message);
+    // ส่งข้อความแบบ Flex Message
+    const result = await sendLineMessage(parent.lineUserId, message, undefined, {
+      useFlexMessage: true,
+      flexTemplate: 'classReminder',
+      flexData: {
+        studentName: student.nickname || student.name,
+        className: classData.name,
+        sessionNumber: undefined, // จะเพิ่มเมื่อมีข้อมูล session number
+        date: formatDate(scheduleDate, 'long'),
+        startTime: formatTime(classData.startTime),
+        endTime: formatTime(classData.endTime),
+        teacherName: `ครู${teacher?.nickname || teacher?.name || 'ไม่ระบุ'}`,
+        location: branch?.name || '',
+        roomName: room?.name || classData.roomId
+      },
+      altText: `แจ้งเตือนคลาสเรียนพรุ่งนี้ - น้อง${student.nickname || student.name}`
+    });
     
     if (result.success) {
       console.log(`Sent class reminder for student ${studentId} class ${classId}`);
@@ -119,20 +182,32 @@ export async function sendMakeupNotification(
   try {
     // ดึงข้อมูล makeup
     const makeupDoc = await getDoc(doc(db, 'makeupClasses', makeupId));
-    if (!makeupDoc.exists()) return false;
+    if (!makeupDoc.exists()) {
+      console.log('Makeup not found');
+      return false;
+    }
     const makeup = makeupDoc.data();
     
-    if (!makeup.makeupSchedule) return false;
-    
-    // ดึงข้อมูลนักเรียน
-    const studentDoc = await getDoc(doc(db, 'students', makeup.studentId));
-    if (!studentDoc.exists()) return false;
-    const student = studentDoc.data();
+    if (!makeup.makeupSchedule) {
+      console.log('No makeup schedule');
+      return false;
+    }
     
     // ดึงข้อมูลผู้ปกครอง
-    const parentDoc = await getDoc(doc(db, 'parents', student.parentId));
-    if (!parentDoc.exists() || !parentDoc.data().lineUserId) return false;
+    const parentDoc = await getDoc(doc(db, 'parents', makeup.parentId));
+    if (!parentDoc.exists() || !parentDoc.data().lineUserId) {
+      console.log('Parent not found or no LINE ID');
+      return false;
+    }
     const parent = parentDoc.data();
+    
+    // ดึงข้อมูลนักเรียน
+    const studentDoc = await getDoc(doc(db, 'parents', makeup.parentId, 'students', makeup.studentId));
+    if (!studentDoc.exists()) {
+      console.log('Student not found');
+      return false;
+    }
+    const student = studentDoc.data();
     
     // ดึงข้อมูลคลาสเดิม
     const classDoc = await getDoc(doc(db, 'classes', makeup.originalClassId));
@@ -158,11 +233,14 @@ export async function sendMakeupNotification(
     let template = settings?.notificationTemplates?.makeupConfirmation || 
       'ยืนยันการเรียนชดเชย\n\nน้อง{studentName}\nวิชา: {subjectName}\n📅 {date}\n⏰ {time}\n👩‍🏫 ครู{teacherName}\n📍 {location}';
     
-    // แทนที่ตัวแปร
+    // แปลง Timestamp เป็น Date
+    const makeupDate = makeup.makeupSchedule.date.toDate ? makeup.makeupSchedule.date.toDate() : new Date(makeup.makeupSchedule.date);
+    
+    // แทนที่ตัวแปร - ใช้ formatDate แบบ 'long' เพื่อไม่ให้มีเวลา
     let message = template
       .replace('{studentName}', student.nickname || student.name)
       .replace('{subjectName}', subject?.name || classData?.name || 'ไม่ระบุ')
-      .replace('{date}', formatDate(makeup.makeupSchedule.date.toDate(), 'full'))
+      .replace('{date}', formatDate(makeupDate, 'long'))  // เปลี่ยนจาก 'full' เป็น 'long'
       .replace('{time}', `${formatTime(makeup.makeupSchedule.startTime)} - ${formatTime(makeup.makeupSchedule.endTime)}`)
       .replace('{teacherName}', teacher?.nickname || teacher?.name || 'ไม่ระบุ')
       .replace('{location}', `${branch?.name || ''} ${room?.name ? 'ห้อง ' + room.name : ''}`);
@@ -175,10 +253,30 @@ export async function sendMakeupNotification(
       message = `✅ [ยืนยันการนัด Makeup Class]\n\n${message}\n\nหากติดปัญหาหรือต้องการเปลี่ยนแปลง กรุณาติดต่อเจ้าหน้าที่`;
     }
     
-    const result = await sendLineMessage(parent.lineUserId, message);
+    // ส่งข้อความแบบ Flex Message
+    const result = await sendLineMessage(parent.lineUserId, message, undefined, {
+      useFlexMessage: true,
+      flexTemplate: type === 'reminder' ? 'makeupReminder' : 'makeupConfirmation',
+      flexData: {
+        studentName: student.nickname || student.name,
+        className: classData?.name || 'Makeup Class',
+        sessionNumber: makeup.originalSessionNumber,
+        date: formatDate(makeupDate, 'long'),
+        startTime: formatTime(makeup.makeupSchedule.startTime),
+        endTime: formatTime(makeup.makeupSchedule.endTime),
+        teacherName: `ครู${teacher?.nickname || teacher?.name || 'ไม่ระบุ'}`,
+        location: branch?.name || '',
+        roomName: room?.name || makeup.makeupSchedule.roomId
+      },
+      altText: type === 'reminder' 
+        ? `แจ้งเตือน Makeup Class พรุ่งนี้ - น้อง${student.nickname || student.name}`
+        : `ยืนยันการนัด Makeup Class - น้อง${student.nickname || student.name}`
+    });
     
     if (result.success) {
       console.log(`Sent makeup ${type} for makeup ${makeupId}`);
+    } else {
+      console.error(`Failed to send makeup ${type}:`, result.error);
     }
     
     return result.success;
