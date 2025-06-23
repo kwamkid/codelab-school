@@ -17,6 +17,7 @@ import {
 import { db } from '@/lib/firebase/client';
 import { MakeupClass } from '@/types/models';
 import { getClassSchedule, updateClassSchedule } from './classes';
+import { sendMakeupNotification } from './line-notifications';
 
 const COLLECTION_NAME = 'makeupClasses';
 
@@ -316,7 +317,7 @@ export async function createMakeupRequest(
   }
 }
 
-// Schedule makeup class
+// Schedule makeup class with LINE notification
 export async function scheduleMakeupClass(
   makeupId: string,
   scheduleData: MakeupClass['makeupSchedule'] & { confirmedBy: string }
@@ -324,6 +325,7 @@ export async function scheduleMakeupClass(
   try {
     const docRef = doc(db, COLLECTION_NAME, makeupId);
     
+    // Update makeup class
     await updateDoc(docRef, {
       status: 'scheduled',
       makeupSchedule: {
@@ -333,6 +335,15 @@ export async function scheduleMakeupClass(
       },
       updatedAt: serverTimestamp(),
     });
+    
+    // Send LINE notification for scheduled makeup
+    try {
+      await sendMakeupNotification(makeupId, 'scheduled');
+      console.log(`LINE notification sent for scheduled makeup ${makeupId}`);
+    } catch (notificationError) {
+      console.error('Error sending LINE notification:', notificationError);
+      // Don't throw - notification failure shouldn't break the scheduling
+    }
   } catch (error) {
     console.error('Error scheduling makeup class:', error);
     throw error;
@@ -417,6 +428,42 @@ export async function getUpcomingMakeupClasses(
   } catch (error) {
     console.error('Error getting upcoming makeup classes:', error);
     throw error;
+  }
+}
+
+// Get makeup classes that need reminder tomorrow
+export async function getMakeupClassesForReminder(tomorrowDate: Date): Promise<MakeupClass[]> {
+  try {
+    const startOfDay = new Date(tomorrowDate);
+    startOfDay.setHours(0, 0, 0, 0);
+    
+    const endOfDay = new Date(tomorrowDate);
+    endOfDay.setHours(23, 59, 59, 999);
+    
+    const q = query(
+      collection(db, COLLECTION_NAME),
+      where('status', '==', 'scheduled'),
+      where('makeupSchedule.date', '>=', Timestamp.fromDate(startOfDay)),
+      where('makeupSchedule.date', '<=', Timestamp.fromDate(endOfDay))
+    );
+    
+    const querySnapshot = await getDocs(q);
+    
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      requestDate: doc.data().requestDate?.toDate() || new Date(),
+      createdAt: doc.data().createdAt?.toDate() || new Date(),
+      updatedAt: doc.data().updatedAt?.toDate(),
+      makeupSchedule: doc.data().makeupSchedule ? {
+        ...doc.data().makeupSchedule,
+        date: doc.data().makeupSchedule.date?.toDate() || new Date(),
+        confirmedAt: doc.data().makeupSchedule.confirmedAt?.toDate(),
+      } : undefined,
+    } as MakeupClass));
+  } catch (error) {
+    console.error('Error getting makeup classes for reminder:', error);
+    return [];
   }
 }
 
@@ -506,6 +553,7 @@ export async function revertMakeupToScheduled(
     throw error;
   }
 }
+
 export async function deleteMakeupClass(
   makeupId: string,
   deletedBy: string,
@@ -569,6 +617,7 @@ export async function deleteMakeupClass(
     throw error;
   }
 }
+
 export async function checkTeacherAvailability(
   teacherId: string,
   date: Date,
