@@ -1,10 +1,27 @@
 // app/api/line/send-message/route.ts
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getLineSettings } from '@/lib/services/line-settings';
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic';
+
+// ดึง settings โดยใช้ Admin SDK
+async function getLineSettingsViaAdmin() {
+  try {
+    // Dynamic import เพื่อป้องกัน build error
+    const { adminDb } = await import('@/lib/firebase/admin');
+    const docRef = adminDb.collection('settings').doc('line');
+    const doc = await docRef.get();
+    
+    if (doc.exists) {
+      return doc.data();
+    }
+    return null;
+  } catch (error) {
+    console.error('Error getting settings via admin:', error);
+    return null;
+  }
+}
 
 export async function POST(request: NextRequest) {
   console.log('=== Send Message API called ===');
@@ -22,14 +39,25 @@ export async function POST(request: NextRequest) {
       });
     }
     
-    // Get LINE settings
-    const settings = await getLineSettings();
-    console.log('Has Access Token:', !!settings.messagingChannelAccessToken);
+    // Get LINE settings using Admin SDK
+    const settings = await getLineSettingsViaAdmin();
+    console.log('Settings retrieved via Admin SDK:', {
+      hasSettings: !!settings,
+      hasToken: !!settings?.messagingChannelAccessToken,
+      tokenLength: settings?.messagingChannelAccessToken?.length || 0,
+      tokenPreview: settings?.messagingChannelAccessToken 
+        ? `${settings.messagingChannelAccessToken.substring(0, 20)}...`
+        : 'not set'
+    });
     
-    if (!settings.messagingChannelAccessToken) {
+    if (!settings || !settings.messagingChannelAccessToken) {
       return NextResponse.json({
         success: false,
-        message: 'ยังไม่ได้ตั้งค่า Channel Access Token'
+        message: 'ยังไม่ได้ตั้งค่า Channel Access Token',
+        debug: {
+          settingsFound: !!settings,
+          tokenFound: !!settings?.messagingChannelAccessToken
+        }
       });
     }
     
