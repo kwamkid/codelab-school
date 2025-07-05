@@ -36,7 +36,8 @@ import {
   Building,
   Loader2,
   Bell,
-  Shield
+  Shield,
+  BarChart3
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/lib/utils';
@@ -267,6 +268,13 @@ export default function AdminLayout({
       name: 'ทดลองเรียน', 
       href: '/trial', 
       icon: TestTube 
+    },
+    {
+      name: 'รายงาน',
+      icon: BarChart3,
+      subItems: [
+        { name: 'ห้องและครูว่าง', href: '/reports/availability', icon: Calendar },
+      ]
     },
     {
       name: 'ผู้ใช้งาน',
