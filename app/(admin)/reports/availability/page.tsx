@@ -13,10 +13,7 @@ import {
   Building2, 
   Users, 
   Clock, 
-  Calendar as CalendarIcon,
   Filter,
-  Download,
-  ChevronRight,
   MapPin,
   Phone,
   BookOpen,
@@ -268,17 +265,11 @@ export default function AvailabilityReportPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">รายงานห้องและครูว่าง</h1>
-          <p className="text-gray-600 mt-1">
-            ตรวจสอบห้องเรียนและครูที่ว่างในแต่ละช่วงเวลา
-          </p>
-        </div>
-        <Button variant="outline">
-          <Download className="h-4 w-4 mr-2" />
-          Export PDF
-        </Button>
+      <div>
+        <h1 className="text-3xl font-bold">รายงานห้องและครูว่าง</h1>
+        <p className="text-gray-600 mt-1">
+          ตรวจสอบห้องเรียนและครูที่ว่างในแต่ละช่วงเวลา
+        </p>
       </div>
 
       {/* Filters */}
@@ -290,9 +281,9 @@ export default function AvailabilityReportPage() {
           </div>
         </CardHeader>
         <CardContent className="pb-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-6 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
             {/* สาขา */}
-            <div className="md:col-span-2">
+            <div className="md:col-span-3">
               <label className="text-sm font-medium mb-2 block">สาขา</label>
               <BranchSelector 
                 value={selectedBranch}
@@ -308,13 +299,13 @@ export default function AvailabilityReportPage() {
                 type="date"
                 value={selectedDate.toISOString().split('T')[0]}
                 onChange={(e) => setSelectedDate(new Date(e.target.value))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent h-9"
               />
             </div>
             
-            {/* ช่วงเวลา */}
-            <div className="md:col-span-2 lg:col-span-1">
-              <label className="text-sm font-medium mb-2 block">เวลาเริ่ม</label>
+            {/* เวลาเริ่ม */}
+            <div className="md:col-span-2">
+              <label className="text-sm font-medium mb-2 block">เริ่ม</label>
               <Select
                 value={timeRange.start}
                 onValueChange={(value) => setTimeRange(prev => ({ ...prev, start: value }))}
@@ -333,8 +324,9 @@ export default function AvailabilityReportPage() {
               </Select>
             </div>
             
-            <div className="md:col-span-2 lg:col-span-1">
-              <label className="text-sm font-medium mb-2 block">เวลาสิ้นสุด</label>
+            {/* เวลาสิ้นสุด */}
+            <div className="md:col-span-2">
+              <label className="text-sm font-medium mb-2 block">สิ้นสุด</label>
               <Select
                 value={timeRange.end}
                 onValueChange={(value) => setTimeRange(prev => ({ ...prev, end: value }))}
@@ -352,38 +344,38 @@ export default function AvailabilityReportPage() {
                 </SelectContent>
               </Select>
             </div>
-          </div>
-          
-          {/* แสดงช่วงเวลา */}
-          <div className="mt-4 pt-4 border-t">
-            <div className="flex items-center gap-4 text-sm">
-              <span className="text-gray-600">แสดงช่วงเวลา:</span>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="alignment"
-                  checked={timeAlignment === '00'}
-                  onChange={() => setTimeAlignment('00')}
-                  className="w-4 h-4 text-red-600 border-gray-300 focus:ring-red-500"
-                />
-                <span className={cn(
-                  "font-medium",
-                  timeAlignment === '00' ? "text-gray-900" : "text-gray-500"
-                )}>xx:00 - xx:00</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="alignment"
-                  checked={timeAlignment === '30'}
-                  onChange={() => setTimeAlignment('30')}
-                  className="w-4 h-4 text-red-600 border-gray-300 focus:ring-red-500"
-                />
-                <span className={cn(
-                  "font-medium",
-                  timeAlignment === '30' ? "text-gray-900" : "text-gray-500"
-                )}>xx:30 - xx:30</span>
-              </label>
+            
+            {/* แสดงช่วงเวลา */}
+            <div className="md:col-span-3">
+              <label className="text-sm font-medium mb-2 block">แสดงช่วง</label>
+              <div className="flex gap-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="alignment"
+                    checked={timeAlignment === '00'}
+                    onChange={() => setTimeAlignment('00')}
+                    className="w-4 h-4 text-red-600 border-gray-300 focus:ring-red-500"
+                  />
+                  <span className={cn(
+                    "text-sm font-medium",
+                    timeAlignment === '00' ? "text-gray-900" : "text-gray-500"
+                  )}>xx:00</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="alignment"
+                    checked={timeAlignment === '30'}
+                    onChange={() => setTimeAlignment('30')}
+                    className="w-4 h-4 text-red-600 border-gray-300 focus:ring-red-500"
+                  />
+                  <span className={cn(
+                    "text-sm font-medium",
+                    timeAlignment === '30' ? "text-gray-900" : "text-gray-500"
+                  )}>xx:30</span>
+                </label>
+              </div>
             </div>
           </div>
         </CardContent>
@@ -397,63 +389,6 @@ export default function AvailabilityReportPage() {
             <p className="font-medium text-red-900">วันนี้เป็นวันหยุด</p>
             <p className="text-sm text-red-700">{dayInfo.holidayName}</p>
           </div>
-        </div>
-      )}
-
-      {/* Summary Cards */}
-      {selectedBranch && !loading && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-600">ห้องทั้งหมด</p>
-                  <p className="text-2xl font-bold">{roomAvailability.length}</p>
-                </div>
-                <Building2 className="h-8 w-8 text-gray-400" />
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-600">ห้องว่าง</p>
-                  <p className="text-2xl font-bold text-green-600">
-                    {getAvailableRoomCount()}
-                  </p>
-                </div>
-                <Building2 className="h-8 w-8 text-green-400" />
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-600">ครูทั้งหมด</p>
-                  <p className="text-2xl font-bold">{teacherAvailability.length}</p>
-                </div>
-                <Users className="h-8 w-8 text-gray-400" />
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-600">ครูว่าง</p>
-                  <p className="text-2xl font-bold text-green-600">
-                    {getAvailableTeacherCount()}
-                  </p>
-                </div>
-                <Users className="h-8 w-8 text-green-400" />
-              </div>
-            </CardContent>
-          </Card>
         </div>
       )}
 
@@ -673,7 +608,7 @@ export default function AvailabilityReportPage() {
                     {/* Time Header */}
                     <div className="flex border-b pb-2 mb-4">
                       <div className="w-32 font-medium text-sm">ห้อง / เวลา</div>
-                      <div className="flex-1 relative" style={{ minHeight: '40px' }}>
+                      <div className="flex-1 relative h-10">
                         {/* Time labels */}
                         <div className="absolute inset-0 flex">
                           {generateTimeSlots(timeRange.start, timeRange.end).map((slot, idx) => (
@@ -706,13 +641,13 @@ export default function AvailabilityReportPage() {
                             </div>
                             
                             {/* Timeline */}
-                            <div className="flex-1 relative bg-gray-50 rounded-lg" style={{ height: '60px' }}>
+                            <div className="flex-1 relative bg-gray-50 rounded-lg h-16">
                               {/* Grid lines */}
                               <div className="absolute inset-0 flex">
                                 {generateTimeSlots(timeRange.start, timeRange.end).map((_, idx) => (
                                   <div key={idx} className="flex-1 border-l border-gray-200 first:border-l-0" />
                                 ))}
-                                <div className="border-l border-gray-200" style={{ width: '1px' }} />
+                                <div className="border-l border-gray-200 w-px" />
                               </div>
                               
                               {/* Busy Slots */}
