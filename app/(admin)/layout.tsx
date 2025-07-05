@@ -242,7 +242,6 @@ export default function AdminLayout({
         { name: 'ครูผู้สอน', href: '/teachers', icon: UserCog },
         { name: 'วันหยุด', href: '/holidays', icon: CalendarDays },
         { name: 'วิชา', href: '/subjects', icon: BookOpen },
-        { name: 'คลาสเรียน', href: '/classes', icon: GraduationCap },
       ]
     },
     {
@@ -252,6 +251,11 @@ export default function AdminLayout({
         { name: 'ผู้ปกครอง', href: '/parents', icon: Users },
         { name: 'นักเรียน', href: '/students', icon: UserCheck },
       ]
+    },
+      { 
+      name: 'คลาสเรียน', 
+      href: '/classes', 
+      icon: GraduationCap 
     },
     { 
       name: 'ลงทะเบียนเรียน', 

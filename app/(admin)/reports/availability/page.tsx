@@ -22,7 +22,8 @@ import {
   BookOpen,
   Projector,
   PenTool,
-  AlertCircle
+  AlertCircle,
+  UserCheck
 } from 'lucide-react';
 import { 
   Select,
@@ -39,6 +40,12 @@ import { getTeachersByBranch } from '@/lib/services/teachers';
 import { getSubjects } from '@/lib/services/subjects';
 import { Room, Teacher, Subject } from '@/types/models';
 import { toast } from 'sonner';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 interface TimeSlot {
   startTime: string;
@@ -61,10 +68,23 @@ interface TeacherAvailability {
   specialties: Subject[];
 }
 
+// Generate time options (00:00, 00:30, 01:00, ...)
+const generateTimeOptions = () => {
+  const options = [];
+  for (let hour = 0; hour < 24; hour++) {
+    options.push(`${String(hour).padStart(2, '0')}:00`);
+    options.push(`${String(hour).padStart(2, '0')}:30`);
+  }
+  return options;
+};
+
+const timeOptions = generateTimeOptions();
+
 export default function AvailabilityReportPage() {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
-  const [timeRange, setTimeRange] = useState({ start: '09:00', end: '17:00' });
+  const [timeRange, setTimeRange] = useState({ start: '08:00', end: '19:00' });
+  const [timeAlignment, setTimeAlignment] = useState<'00' | '30'>('30'); // เปลี่ยน default เป็น '30'
   const [loading, setLoading] = useState(false);
   
   // Data states
@@ -76,6 +96,7 @@ export default function AvailabilityReportPage() {
     busySlots: any[];
   } | null>(null);
   const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
 
   // Load initial data
   useEffect(() => {
@@ -87,7 +108,7 @@ export default function AvailabilityReportPage() {
     if (selectedBranch && selectedDate) {
       loadAvailability();
     }
-  }, [selectedBranch, selectedDate, timeRange]);
+  }, [selectedBranch, selectedDate, timeRange, timeAlignment]);
 
   const loadSubjects = async () => {
     try {
@@ -114,6 +135,7 @@ export default function AvailabilityReportPage() {
 
       // Get teachers
       const teachers = await getTeachersByBranch(selectedBranch);
+      setTeachers(teachers);
       const teacherData = await processTeacherAvailability(teachers, conflicts.busySlots);
       setTeacherAvailability(teacherData);
 
@@ -186,8 +208,16 @@ export default function AvailabilityReportPage() {
 
   const generateTimeSlots = (start: string, end: string): TimeSlot[] => {
     const slots: TimeSlot[] = [];
-    const [startHour, startMin] = start.split(':').map(Number);
+    let [startHour, startMin] = start.split(':').map(Number);
     const [endHour, endMin] = end.split(':').map(Number);
+    
+    // Adjust start time based on alignment preference
+    if (timeAlignment === '30' && startMin === 0) {
+      startMin = 30;
+    } else if (timeAlignment === '00' && startMin === 30) {
+      startHour += 1;
+      startMin = 0;
+    }
     
     let currentHour = startHour;
     let currentMin = startMin;
@@ -197,6 +227,8 @@ export default function AvailabilityReportPage() {
       
       // Add 1 hour
       currentHour += 1;
+      
+      // Don't exceed end time
       if (currentHour > endHour || (currentHour === endHour && currentMin > endMin)) {
         currentHour = endHour;
         currentMin = endMin;
@@ -251,9 +283,16 @@ export default function AvailabilityReportPage() {
 
       {/* Filters */}
       <Card>
-        <CardContent className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div>
+        <CardHeader className="pb-4">
+          <div className="flex items-center gap-2">
+            <Filter className="h-5 w-5 text-gray-500" />
+            <CardTitle className="text-lg">ตัวกรองการค้นหา</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="pb-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-6 gap-4">
+            {/* สาขา */}
+            <div className="md:col-span-2">
               <label className="text-sm font-medium mb-2 block">สาขา</label>
               <BranchSelector 
                 value={selectedBranch}
@@ -262,56 +301,89 @@ export default function AvailabilityReportPage() {
               />
             </div>
             
-            <div>
+            {/* วันที่ */}
+            <div className="md:col-span-2">
               <label className="text-sm font-medium mb-2 block">วันที่</label>
-              <Button
-                variant="outline"
-                className="w-full justify-start text-left font-normal"
-                onClick={() => {
-                  // TODO: Show calendar popover
-                }}
-              >
-                <CalendarIcon className="mr-2 h-4 w-4" />
-                {formatDate(selectedDate, 'long')}
-              </Button>
+              <input
+                type="date"
+                value={selectedDate.toISOString().split('T')[0]}
+                onChange={(e) => setSelectedDate(new Date(e.target.value))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+              />
             </div>
             
-            <div>
+            {/* ช่วงเวลา */}
+            <div className="md:col-span-2 lg:col-span-1">
               <label className="text-sm font-medium mb-2 block">เวลาเริ่ม</label>
               <Select
                 value={timeRange.start}
                 onValueChange={(value) => setTimeRange(prev => ({ ...prev, start: value }))}
               >
                 <SelectTrigger>
+                  <Clock className="h-4 w-4 mr-2 text-gray-500" />
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {Array.from({ length: 10 }, (_, i) => i + 8).map(hour => (
-                    <SelectItem key={hour} value={`${String(hour).padStart(2, '0')}:00`}>
-                      {`${String(hour).padStart(2, '0')}:00`}
+                  {timeOptions.map(time => (
+                    <SelectItem key={time} value={time}>
+                      {time} น.
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             
-            <div>
+            <div className="md:col-span-2 lg:col-span-1">
               <label className="text-sm font-medium mb-2 block">เวลาสิ้นสุด</label>
               <Select
                 value={timeRange.end}
                 onValueChange={(value) => setTimeRange(prev => ({ ...prev, end: value }))}
               >
                 <SelectTrigger>
+                  <Clock className="h-4 w-4 mr-2 text-gray-500" />
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {Array.from({ length: 10 }, (_, i) => i + 9).map(hour => (
-                    <SelectItem key={hour} value={`${String(hour).padStart(2, '0')}:00`}>
-                      {`${String(hour).padStart(2, '0')}:00`}
+                  {timeOptions.filter(time => time > timeRange.start).map(time => (
+                    <SelectItem key={time} value={time}>
+                      {time} น.
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+          </div>
+          
+          {/* แสดงช่วงเวลา */}
+          <div className="mt-4 pt-4 border-t">
+            <div className="flex items-center gap-4 text-sm">
+              <span className="text-gray-600">แสดงช่วงเวลา:</span>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="alignment"
+                  checked={timeAlignment === '00'}
+                  onChange={() => setTimeAlignment('00')}
+                  className="w-4 h-4 text-red-600 border-gray-300 focus:ring-red-500"
+                />
+                <span className={cn(
+                  "font-medium",
+                  timeAlignment === '00' ? "text-gray-900" : "text-gray-500"
+                )}>xx:00 - xx:00</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="alignment"
+                  checked={timeAlignment === '30'}
+                  onChange={() => setTimeAlignment('30')}
+                  className="w-4 h-4 text-red-600 border-gray-300 focus:ring-red-500"
+                />
+                <span className={cn(
+                  "font-medium",
+                  timeAlignment === '30' ? "text-gray-900" : "text-gray-500"
+                )}>xx:30 - xx:30</span>
+              </label>
             </div>
           </div>
         </CardContent>
@@ -387,11 +459,11 @@ export default function AvailabilityReportPage() {
 
       {/* Main Content */}
       {selectedBranch && !loading && (
-        <Tabs defaultValue="rooms" className="space-y-4">
+        <Tabs defaultValue="timeline" className="space-y-4">
           <TabsList>
+            <TabsTrigger value="timeline">Timeline</TabsTrigger>
             <TabsTrigger value="rooms">ห้องว่าง</TabsTrigger>
             <TabsTrigger value="teachers">ครูว่าง</TabsTrigger>
-            <TabsTrigger value="timeline">Timeline</TabsTrigger>
           </TabsList>
 
           {/* Rooms Tab */}
@@ -597,58 +669,209 @@ export default function AvailabilityReportPage() {
             <Card>
               <CardContent className="p-6">
                 <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b">
-                        <th className="text-left p-3 font-medium">เวลา</th>
-                        {roomAvailability.map(({ room }) => (
-                          <th key={room.id} className="text-center p-3 font-medium min-w-[120px]">
-                            {room.name}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {generateTimeSlots(timeRange.start, timeRange.end).map((slot, idx) => (
-                        <tr key={idx} className="border-b">
-                          <td className="p-3 font-medium">
-                            {slot.startTime} - {slot.endTime}
-                          </td>
-                          {roomAvailability.map(({ room, slots }) => {
-                            const roomSlot = slots[idx];
-                            return (
-                              <td 
-                                key={room.id} 
-                                className={cn(
-                                  "p-3 text-center",
-                                  roomSlot?.available 
-                                    ? "bg-green-50" 
-                                    : "bg-red-50"
-                                )}
-                              >
-                                {roomSlot?.available ? (
-                                  <Badge 
-                                    variant="outline" 
-                                    className="text-green-600 border-green-500 bg-green-50"
+                  <div className="min-w-[800px]">
+                    {/* Time Header */}
+                    <div className="flex border-b pb-2 mb-4">
+                      <div className="w-32 font-medium text-sm">ห้อง / เวลา</div>
+                      <div className="flex-1 relative" style={{ minHeight: '40px' }}>
+                        {/* Time labels */}
+                        <div className="absolute inset-0 flex">
+                          {generateTimeSlots(timeRange.start, timeRange.end).map((slot, idx) => (
+                            <div 
+                              key={idx} 
+                              className="flex-1 text-center text-sm text-gray-600 border-l first:border-l-0"
+                            >
+                              {slot.startTime}
+                            </div>
+                          ))}
+                          <div className="text-center text-sm text-gray-600 border-l px-2">
+                            {timeRange.end}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Room Rows */}
+                    <div className="space-y-2">
+                      {roomAvailability.map(({ room }) => {
+                        // Get busy slots for this room
+                        const roomBusySlots = dayInfo?.busySlots.filter(slot => slot.roomId === room.id) || [];
+                        
+                        return (
+                          <div key={room.id} className="flex items-stretch">
+                            {/* Room Name */}
+                            <div className="w-32 py-3 pr-4">
+                              <div className="font-medium text-sm">{room.name}</div>
+                              <div className="text-xs text-gray-500">จุ {room.capacity} คน</div>
+                            </div>
+                            
+                            {/* Timeline */}
+                            <div className="flex-1 relative bg-gray-50 rounded-lg" style={{ height: '60px' }}>
+                              {/* Grid lines */}
+                              <div className="absolute inset-0 flex">
+                                {generateTimeSlots(timeRange.start, timeRange.end).map((_, idx) => (
+                                  <div key={idx} className="flex-1 border-l border-gray-200 first:border-l-0" />
+                                ))}
+                                <div className="border-l border-gray-200" style={{ width: '1px' }} />
+                              </div>
+                              
+                              {/* Busy Slots */}
+                              {roomBusySlots.map((busySlot, idx) => {
+                                const startPercent = getTimePercentage(busySlot.startTime, timeRange.start, timeRange.end);
+                                const endPercent = getTimePercentage(busySlot.endTime, timeRange.start, timeRange.end);
+                                const width = endPercent - startPercent;
+                                
+                                // Get subject color if it's a class
+                                let bgColor = '';
+                                let textColor = 'text-white';
+                                
+                                if (busySlot.type === 'class' && busySlot.subjectId) {
+                                  const subject = subjects.find(s => s.id === busySlot.subjectId);
+                                  if (subject?.color) {
+                                    bgColor = subject.color;
+                                    // Check if color is light to adjust text color
+                                    const isLightColor = isColorLight(subject.color);
+                                    textColor = isLightColor ? 'text-gray-900' : 'text-white';
+                                  } else {
+                                    bgColor = '#3B82F6'; // Default blue
+                                  }
+                                } else if (busySlot.type === 'makeup') {
+                                  bgColor = '#F97316'; // Orange
+                                } else if (busySlot.type === 'trial') {
+                                  bgColor = '#8B5CF6'; // Purple
+                                } else {
+                                  bgColor = '#3B82F6'; // Default blue
+                                }
+                                
+                                // Get teacher name for display
+                                const teacher = teachers.find(t => t.id === busySlot.teacherId);
+                                const teacherName = teacher?.nickname || teacher?.name || 'ไม่ระบุครู';
+                                
+                                // Get student info for makeup and trial
+                                let studentInfo = '';
+                                if (busySlot.type === 'makeup' || busySlot.type === 'trial') {
+                                  const studentName = busySlot.studentName || busySlot.name.split(': ')[1] || 'นักเรียน';
+                                  studentInfo = `นักเรียน: ${studentName}`;
+                                }
+                                
+                                // Build tooltip content
+                                const tooltipContent = [
+                                  busySlot.name,
+                                  `เวลา: ${busySlot.startTime} - ${busySlot.endTime}`,
+                                  `ครู: ${teacherName}`,
+                                  studentInfo
+                                ].filter(Boolean).join('\n');
+                                
+                                return (
+                                  <div
+                                    key={idx}
+                                    className={cn(
+                                      "absolute top-2 bottom-2 rounded-md flex items-center px-2 overflow-hidden shadow-sm hover:shadow-md transition-all cursor-pointer group",
+                                      textColor
+                                    )}
+                                    style={{
+                                      left: `${startPercent}%`,
+                                      width: `${width}%`,
+                                      backgroundColor: bgColor,
+                                      border: `2px solid ${bgColor}`,
+                                      filter: 'brightness(1.1)'
+                                    }}
+                                    title={tooltipContent}
                                   >
-                                    ว่าง
-                                  </Badge>
-                                ) : (
-                                  <div className="text-xs">
-                                    {roomSlot?.conflicts?.map((c, i) => (
-                                      <div key={i} className="text-red-600">
-                                        {c.name}
+                                    <div className="text-xs font-medium truncate">
+                                      {busySlot.name}
+                                    </div>
+                                    
+                                    {/* Floating Popover */}
+                                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-150 pointer-events-none z-20">
+                                      <div className="bg-white border border-gray-200 rounded-lg shadow-xl p-4 min-w-[250px] max-w-[300px]">
+                                        <div className="space-y-2">
+                                          <div>
+                                            <h4 className="font-semibold text-gray-900">{busySlot.name}</h4>
+                                            <p className="text-xs text-gray-500 mt-0.5">
+                                              {busySlot.type === 'class' ? 'คลาสปกติ' : 
+                                               busySlot.type === 'makeup' ? 'เรียนชดเชย' : 'ทดลองเรียน'}
+                                            </p>
+                                          </div>
+                                          
+                                          <div className="space-y-1 text-sm">
+                                            <div className="flex items-start gap-2">
+                                              <Clock className="h-4 w-4 text-gray-400 mt-0.5" />
+                                              <span className="text-gray-700">{busySlot.startTime} - {busySlot.endTime}</span>
+                                            </div>
+                                            
+                                            <div className="flex items-start gap-2">
+                                              <Users className="h-4 w-4 text-gray-400 mt-0.5" />
+                                              <span className="text-gray-700">ครู: {teacherName}</span>
+                                            </div>
+                                            
+                                            {studentInfo && (
+                                              <div className="flex items-start gap-2">
+                                                <UserCheck className="h-4 w-4 text-gray-400 mt-0.5" />
+                                                <span className="text-gray-700">{studentInfo}</span>
+                                              </div>
+                                            )}
+                                            
+                                            {busySlot.type === 'class' && busySlot.subjectId && (
+                                              <div className="flex items-start gap-2">
+                                                <BookOpen className="h-4 w-4 text-gray-400 mt-0.5" />
+                                                <span className="text-gray-700">
+                                                  วิชา: {subjects.find(s => s.id === busySlot.subjectId)?.name || 'ไม่ระบุ'}
+                                                </span>
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+                                        
+                                        {/* Arrow */}
+                                        <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 w-4 h-4 bg-white border-b border-r border-gray-200 rotate-45"></div>
                                       </div>
-                                    ))}
+                                    </div>
                                   </div>
-                                )}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    
+                    {/* Legend */}
+                    <div className="mt-6 pt-4 border-t">
+                      <p className="text-sm font-medium mb-3">สีแสดงประเภท:</p>
+                      <div className="flex flex-wrap items-center gap-4 text-sm">
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-4 rounded" style={{ backgroundColor: '#F97316' }}></div>
+                          <span>เรียนชดเชย</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-4 rounded" style={{ backgroundColor: '#8B5CF6' }}></div>
+                          <span>ทดลองเรียน</span>
+                        </div>
+                        <div className="text-gray-500 text-xs ml-4">
+                          * คลาสปกติจะแสดงสีตามวิชา
+                        </div>
+                      </div>
+                      
+                      {/* Subject Colors */}
+                      {subjects.length > 0 && (
+                        <div className="mt-4">
+                          <p className="text-sm font-medium mb-2">สีตามวิชา:</p>
+                          <div className="flex flex-wrap gap-3">
+                            {subjects.filter(s => s.isActive).map(subject => (
+                              <div key={subject.id} className="flex items-center gap-2">
+                                <div 
+                                  className="w-4 h-4 rounded border border-gray-300" 
+                                  style={{ backgroundColor: subject.color }}
+                                ></div>
+                                <span className="text-xs">{subject.name}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -700,4 +923,31 @@ function mergeConsecutiveSlots(slots: TimeSlot[]): TimeSlot[] {
   
   merged.push(current);
   return merged;
+}
+
+// Helper function to calculate percentage position on timeline
+function getTimePercentage(time: string, startTime: string, endTime: string): number {
+  const [timeHour, timeMin] = time.split(':').map(Number);
+  const [startHour, startMin] = startTime.split(':').map(Number);
+  const [endHour, endMin] = endTime.split(':').map(Number);
+  
+  const timeInMinutes = timeHour * 60 + timeMin;
+  const startInMinutes = startHour * 60 + startMin;
+  const endInMinutes = endHour * 60 + endMin;
+  
+  const percentage = ((timeInMinutes - startInMinutes) / (endInMinutes - startInMinutes)) * 100;
+  return Math.max(0, Math.min(100, percentage));
+}
+
+// Helper function to check if color is light
+function isColorLight(color: string): boolean {
+  // Convert hex to RGB
+  const hex = color.replace('#', '');
+  const r = parseInt(hex.substr(0, 2), 16);
+  const g = parseInt(hex.substr(2, 2), 16);
+  const b = parseInt(hex.substr(4, 2), 16);
+  
+  // Calculate brightness
+  const brightness = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+  return brightness > 155;
 }

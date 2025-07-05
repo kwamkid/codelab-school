@@ -389,6 +389,9 @@ export async function getDayConflicts(
     name: string;
     roomId: string;
     teacherId: string;
+    subjectId?: string;  // เพิ่มบรรทัดนี้
+    studentName?: string;  // เพิ่มบรรทัดนี้
+
   }>;
 }> {
   // Check holiday
@@ -401,6 +404,9 @@ export async function getDayConflicts(
     name: string;
     roomId: string;
     teacherId: string;
+    subjectId?: string;  // เพิ่มบรรทัดนี้
+    studentName?: string;  // เพิ่มบรรทัดนี้
+
   }> = [];
   
   // Get all classes on that day
@@ -440,7 +446,9 @@ export async function getDayConflicts(
         type: 'class',
         name: cls.name,
         roomId: cls.roomId,
-        teacherId: cls.teacherId
+        teacherId: cls.teacherId,
+        subjectId: cls.subjectId,  // เพิ่มบรรทัดนี้
+        
       });
     }
   }
@@ -465,7 +473,9 @@ export async function getDayConflicts(
         type: 'makeup',
         name: `Makeup: ${student?.nickname || 'นักเรียน'}`,
         roomId: makeup.makeupSchedule.roomId,
-        teacherId: makeup.makeupSchedule.teacherId
+        teacherId: makeup.makeupSchedule.teacherId,
+        studentName: student?.nickname || student?.name || 'นักเรียน'  // เพิ่มบรรทัดนี้
+
       });
     }
   }
@@ -485,7 +495,9 @@ export async function getDayConflicts(
       type: 'trial',
       name: `ทดลอง: ${trial.studentName}`,
       roomId: trial.roomId,
-      teacherId: trial.teacherId
+      teacherId: trial.teacherId,
+      studentName: trial.studentName  // เพิ่มบรรทัดนี้
+
     });
   }
   
