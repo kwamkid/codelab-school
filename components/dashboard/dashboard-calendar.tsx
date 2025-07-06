@@ -18,6 +18,7 @@ interface DashboardCalendarProps {
   onEventClick: (clickInfo: EventClickArg) => void;
   showHalfHour: boolean;
   setShowHalfHour: (value: boolean) => void;
+  initialView?: string; // Add this prop
 }
 
 // Create a WeakMap to store tooltip references
@@ -28,7 +29,8 @@ export default function DashboardCalendar({
   onDatesSet,
   onEventClick,
   showHalfHour,
-  setShowHalfHour
+  setShowHalfHour,
+  initialView = 'timeGridDay' // Default to day view
 }: DashboardCalendarProps) {
   const calendarRef = useRef<FullCalendar>(null);
 
@@ -37,8 +39,87 @@ export default function DashboardCalendar({
     if (calendarRef.current) {
       const calendarApi = calendarRef.current.getApi();
       calendarApi.today();
+      
+      // Add custom date picker to toolbar
+      setTimeout(() => {
+        addDatePickerToToolbar();
+      }, 100);
     }
   }, []);
+
+  // Add date picker to toolbar
+  const addDatePickerToToolbar = () => {
+    const toolbar = document.querySelector('.dashboard-calendar .fc-toolbar-chunk:nth-child(2)');
+    if (!toolbar) return;
+
+    // Check if date picker already exists
+    if (toolbar.querySelector('.fc-datepicker')) return;
+
+    // Create date picker wrapper
+    const datePickerWrapper = document.createElement('div');
+    datePickerWrapper.className = 'fc-datepicker';
+    datePickerWrapper.style.display = 'flex';
+    datePickerWrapper.style.alignItems = 'center';
+    datePickerWrapper.style.gap = '8px';
+
+    // Create date input
+    const dateInput = document.createElement('input');
+    dateInput.type = 'date';
+    dateInput.className = 'fc-datepicker-input';
+    dateInput.value = formatDateForInput(new Date());
+    
+    // Style the input
+    dateInput.style.padding = '4px 8px';
+    dateInput.style.border = '1px solid #E5E7EB';
+    dateInput.style.borderRadius = '6px';
+    dateInput.style.fontSize = '14px';
+    dateInput.style.cursor = 'pointer';
+    dateInput.style.marginLeft = '8px';
+
+    // Handle date change
+    dateInput.addEventListener('change', (e) => {
+      const target = e.target as HTMLInputElement;
+      if (target.value && calendarRef.current) {
+        const calendarApi = calendarRef.current.getApi();
+        calendarApi.gotoDate(target.value);
+      }
+    });
+
+    // Update date picker when calendar date changes
+    const updateDatePicker = () => {
+      if (calendarRef.current) {
+        const calendarApi = calendarRef.current.getApi();
+        const currentDate = calendarApi.getDate();
+        dateInput.value = formatDateForInput(currentDate);
+      }
+    };
+
+    // Listen to date navigation
+    if (calendarRef.current) {
+      const calendarApi = calendarRef.current.getApi();
+      calendarApi.on('datesSet', updateDatePicker);
+    }
+
+    datePickerWrapper.appendChild(dateInput);
+    
+    // Replace the title with our custom wrapper
+    const titleEl = toolbar.querySelector('.fc-toolbar-title');
+    if (titleEl && titleEl.parentNode) {
+      titleEl.style.cursor = 'pointer';
+      titleEl.addEventListener('click', () => dateInput.showPicker?.());
+      
+      // Insert date picker after title
+      titleEl.parentNode.insertBefore(datePickerWrapper, titleEl.nextSibling);
+    }
+  };
+
+  // Format date for input
+  const formatDateForInput = (date: Date): string => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
 
   // Custom event content renderer
   const renderEventContent = (eventInfo: EventContentArg) => {
@@ -235,7 +316,7 @@ export default function DashboardCalendar({
       <FullCalendar
         ref={calendarRef}
         plugins={[dayGridPlugin, timeGridPlugin, listPlugin, interactionPlugin]}
-        initialView="dayGridMonth"
+        initialView={initialView} // Use the prop here
         headerToolbar={{
           left: 'prev,next today',
           center: 'title',
@@ -386,7 +467,7 @@ export default function DashboardCalendar({
         height="auto"
         contentHeight="auto"
         aspectRatio={1.8}
-        dayMaxEvents={false}
+        dayMaxEvents={3} // Show max 3 events in month view, others as +N more
         slotMinTime="08:00:00"
         slotMaxTime="19:00:00"
         slotDuration="01:00:00"
@@ -422,8 +503,9 @@ export default function DashboardCalendar({
           return type ? `${type}-event` : '';
         }}
         moreLinkContent={(args) => {
-          return `อีก ${args.num} รายการ`;
+          return `+${args.num} เพิ่มเติม`;
         }}
+        moreLinkClick="popover" // Show events in popover instead of switching view
         buttonText={{
           today: 'วันนี้',
           month: 'เดือน',
@@ -474,6 +556,41 @@ export default function DashboardCalendar({
         
         .dashboard-calendar .fc-daygrid-event-harness {
           margin-bottom: 2px;
+        }
+        
+        /* More link styles */
+        .dashboard-calendar .fc-more-link {
+          color: #EF4444;
+          font-weight: 600;
+          font-size: 0.75rem;
+          padding: 2px 4px;
+          border-radius: 4px;
+          background-color: #FEE2E2;
+          margin-top: 2px;
+        }
+        
+        .dashboard-calendar .fc-more-link:hover {
+          background-color: #FECACA;
+          text-decoration: none;
+        }
+        
+        /* Popover styles */
+        .dashboard-calendar .fc-more-popover {
+          border: 1px solid #E5E7EB;
+          box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+          border-radius: 8px;
+          overflow: hidden;
+        }
+        
+        .dashboard-calendar .fc-more-popover .fc-more-popover-header {
+          background-color: #F9FAFB;
+          padding: 0.75rem;
+          font-weight: 600;
+          border-bottom: 1px solid #E5E7EB;
+        }
+        
+        .dashboard-calendar .fc-more-popover .fc-more-popover-body {
+          padding: 0.5rem;
         }
         
         /* Week/Day view styles */

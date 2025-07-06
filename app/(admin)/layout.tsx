@@ -263,7 +263,7 @@ export default function AdminLayout({
       icon: Calendar 
     },
     { 
-      name: 'เรียนชดเชย', 
+      name: 'ลาและชดเชย', 
       href: '/makeup', 
       icon: Repeat,
       badge: pendingMakeupCount > 0 ? pendingMakeupCount : undefined

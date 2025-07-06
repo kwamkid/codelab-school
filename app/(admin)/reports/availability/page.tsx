@@ -27,6 +27,7 @@ import { getTeachersByBranch } from '@/lib/services/teachers';
 import { getSubjects } from '@/lib/services/subjects';
 import { Room, Teacher, Subject } from '@/types/models';
 import { toast } from 'sonner';
+// import { useBranch } from '@/contexts/BranchContext'; // Remove this for now
 
 // Import separated components
 import { Timeline } from '@/components/reports/availability/Timeline';
@@ -67,14 +68,32 @@ const generateTimeOptions = () => {
 const timeOptions = generateTimeOptions();
 
 export default function AvailabilityReportPage() {
-  // Get current date in Thailand timezone (ปรับปรุงให้แน่ใจว่าได้วันที่ถูกต้อง)
+  // Get current date in Thailand timezone with proper handling
   const getCurrentThaiDate = () => {
+    // Create date in Thailand timezone
     const now = new Date();
-    // Set เวลาเป็นเที่ยงคืนเพื่อหลีกเลี่ยงปัญหา timezone
-    now.setHours(0, 0, 0, 0);
-    return now;
+    // Get Bangkok timezone offset
+    const bangkokOffset = 7 * 60; // UTC+7 in minutes
+    const localOffset = now.getTimezoneOffset(); // Local timezone offset in minutes
+    const offsetDiff = bangkokOffset + localOffset;
+    
+    // Adjust the date
+    const thailandDate = new Date(now.getTime() + offsetDiff * 60 * 1000);
+    
+    // Set to start of day
+    thailandDate.setHours(0, 0, 0, 0);
+    
+    console.log('Current Thailand Date:', {
+      original: now.toISOString(),
+      adjusted: thailandDate.toISOString(),
+      dateString: thailandDate.toLocaleDateString('th-TH'),
+      isoDate: thailandDate.toISOString().split('T')[0]
+    });
+    
+    return thailandDate;
   };
 
+  // const { selectedBranchId } = useBranch(); // Will use this later when BranchProvider is set up
   const [selectedDate, setSelectedDate] = useState<Date>(getCurrentThaiDate());
   const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
   const [timeRange, setTimeRange] = useState({ start: '08:00', end: '19:00' });
@@ -97,9 +116,14 @@ export default function AvailabilityReportPage() {
     loadSubjects();
   }, []);
 
-  // Load availability when filters change
+  // Load availability when filters change or on mount
   useEffect(() => {
     if (selectedBranch && selectedDate) {
+      console.log('Loading availability with:', {
+        branch: selectedBranch,
+        date: selectedDate.toISOString(),
+        dateLocal: selectedDate.toLocaleDateString('th-TH')
+      });
       loadAvailability();
     }
   }, [selectedBranch, selectedDate, timeRange, timeAlignment]);
@@ -120,8 +144,10 @@ export default function AvailabilityReportPage() {
     try {
       console.log('Loading availability for:', {
         date: selectedDate,
+        dateString: selectedDate.toISOString(),
+        dateLocal: selectedDate.toLocaleDateString('th-TH'),
         branch: selectedBranch,
-        dateString: selectedDate.toISOString()
+        timeRange
       });
       
       // Get day conflicts
@@ -254,6 +280,33 @@ export default function AvailabilityReportPage() {
     return start1 < end2 && end1 > start2;
   };
 
+  // Format date for input[type="date"]
+  const formatDateForInput = (date: Date): string => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  // Handle date change
+  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    if (!value) return;
+    
+    // Parse the date properly
+    const [year, month, day] = value.split('-').map(Number);
+    const newDate = new Date(year, month - 1, day);
+    newDate.setHours(0, 0, 0, 0);
+    
+    console.log('Date changed:', {
+      inputValue: value,
+      newDate: newDate.toISOString(),
+      localDate: newDate.toLocaleDateString('th-TH')
+    });
+    
+    setSelectedDate(newDate);
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -289,11 +342,8 @@ export default function AvailabilityReportPage() {
               <label className="text-sm font-medium mb-2 block">วันที่</label>
               <input
                 type="date"
-                value={selectedDate.toISOString().split('T')[0]}
-                onChange={(e) => {
-                  const newDate = new Date(e.target.value + 'T00:00:00');
-                  setSelectedDate(newDate);
-                }}
+                value={formatDateForInput(selectedDate)}
+                onChange={handleDateChange}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent h-9"
               />
             </div>

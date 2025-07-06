@@ -322,8 +322,8 @@ export default function MakeupPage() {
     <div>
       <div className="flex justify-between items-center mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">จัดการ Makeup Class</h1>
-          <p className="text-gray-600 mt-2">จัดการคลาสเรียนชดเชยสำหรับนักเรียนที่ขาดเรียน</p>
+          <h1 className="text-3xl font-bold text-gray-900">จัดการการลา และชดเชย</h1>
+          <p className="text-gray-600 mt-2">จัดการการลา และการเรียนชดเชย Makeup Class</p>
         </div>
         <Button
           onClick={() => setShowCreateDialog(true)}

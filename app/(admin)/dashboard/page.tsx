@@ -5,9 +5,9 @@ import DashboardCalendar from '@/components/dashboard/dashboard-calendar';
 import ClassDetailDialog from '@/components/dashboard/class-detail-dialog';
 import { getCalendarEvents, CalendarEvent } from '@/lib/services/dashboard';
 import { getActiveBranches } from '@/lib/services/branches';
-import { Branch } from '@/types/models';
+import { Branch, MakeupClass } from '@/types/models';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Calendar as CalendarIcon, UserX, AlertCircle, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { DatesSetArg, EventClickArg } from '@fullcalendar/core';
 import {
@@ -19,6 +19,19 @@ import {
 } from "@/components/ui/select";
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { formatDate } from '@/lib/utils';
+import { getMakeupClasses } from '@/lib/services/makeup';
+import { Separator } from '@/components/ui/separator';
+
+interface AbsentStudent {
+  studentId: string;
+  studentName: string;
+  className: string;
+  classTime: string;
+  reason?: string;
+  makeupStatus?: 'pending' | 'scheduled' | 'completed';
+}
 
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
@@ -28,6 +41,9 @@ export default function DashboardPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedScheduleId, setSelectedScheduleId] = useState<string>('');
   const [showHalfHour, setShowHalfHour] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [absentStudents, setAbsentStudents] = useState<AbsentStudent[]>([]);
+  const [makeupRequests, setMakeupRequests] = useState<MakeupClass[]>([]);
   
   // Filter states
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -57,6 +73,9 @@ export default function DashboardPage() {
       const fetchedEvents = await getCalendarEvents(dateInfo.start, dateInfo.end, branchIdToQuery);
       setAllEvents(fetchedEvents);
       setEvents(fetchedEvents);
+      
+      // Load absent students and makeup requests for today
+      await loadAbsentStudentsData(dateInfo.start, dateInfo.end, branchIdToQuery);
     } catch (error) {
       toast.error('ไม่สามารถโหลดข้อมูลตารางเรียนได้');
       console.error(error);
@@ -64,6 +83,65 @@ export default function DashboardPage() {
       setLoading(false);
     }
   }, [selectedBranch]);
+  
+  // Load absent students and makeup requests
+  const loadAbsentStudentsData = async (startDate: Date, endDate: Date, branchId?: string) => {
+    try {
+      // Get today's events
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayEnd = new Date(today);
+      todayEnd.setHours(23, 59, 59, 999);
+      
+      // Filter today's class events
+      const todayEvents = allEvents.filter(event => {
+        const eventDate = new Date(event.start);
+        return eventDate >= today && eventDate <= todayEnd && event.extendedProps.type === 'class';
+      });
+      
+      // Get makeup requests
+      const makeupData = await getMakeupClasses();
+      const todayMakeupRequests = makeupData.filter(makeup => {
+        const requestDate = new Date(makeup.requestDate);
+        return requestDate >= today && requestDate <= todayEnd && 
+               (makeup.status === 'pending' || makeup.status === 'scheduled');
+      });
+      setMakeupRequests(todayMakeupRequests);
+      
+      // Process absent students from events
+      const absentList: AbsentStudent[] = [];
+      
+      for (const event of todayEvents) {
+        if (event.extendedProps.attendance) {
+          const absentAttendance = event.extendedProps.attendance.filter(
+            (att: any) => att.status === 'absent'
+          );
+          
+          for (const absent of absentAttendance) {
+            // Find makeup request for this student
+            const makeupRequest = todayMakeupRequests.find(
+              m => m.studentId === absent.studentId && 
+                   m.originalClassId === event.classId &&
+                   m.originalScheduleId === event.id.split('-')[1]
+            );
+            
+            absentList.push({
+              studentId: absent.studentId,
+              studentName: absent.studentName || 'ไม่ระบุชื่อ',
+              className: event.title,
+              classTime: `${event.extendedProps.startTime} - ${event.extendedProps.endTime}`,
+              reason: absent.note,
+              makeupStatus: makeupRequest?.status as any
+            });
+          }
+        }
+      }
+      
+      setAbsentStudents(absentList);
+    } catch (error) {
+      console.error('Error loading absent students:', error);
+    }
+  };
   
   // Re-apply filters when branch changes
   const handleBranchChange = async (value: string) => {
@@ -77,6 +155,9 @@ export default function DashboardPage() {
         const fetchedEvents = await getCalendarEvents(dateRange.start, dateRange.end, branchIdToQuery);
         setAllEvents(fetchedEvents);
         setEvents(fetchedEvents);
+        
+        // Reload absent students data
+        await loadAbsentStudentsData(dateRange.start, dateRange.end, branchIdToQuery);
       } catch (error) {
         toast.error('ไม่สามารถโหลดข้อมูลตารางเรียนได้');
         console.error(error);
@@ -145,6 +226,10 @@ export default function DashboardPage() {
         const fetchedEvents = await getCalendarEvents(dateRange.start, dateRange.end, branchIdToQuery);
         setAllEvents(fetchedEvents);
         setEvents(fetchedEvents);
+        
+        // Reload absent students data
+        await loadAbsentStudentsData(dateRange.start, dateRange.end, branchIdToQuery);
+        
         toast.success('บันทึกการเช็คชื่อเรียบร้อยแล้ว');
       } catch (error) {
         console.error('Error reloading events:', error);
@@ -178,6 +263,92 @@ export default function DashboardPage() {
         </Select>
       </div>
 
+      {/* Absent Students Card */}
+      {absentStudents.length > 0 && (
+        <Card className="border-orange-200 bg-orange-50">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <UserX className="h-5 w-5 text-orange-600" />
+                <CardTitle className="text-lg">นักเรียนขาดเรียนวันนี้</CardTitle>
+              </div>
+              <Badge variant="secondary" className="bg-orange-100 text-orange-700">
+                {absentStudents.length} คน
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {absentStudents.map((student, index) => (
+                <div key={`${student.studentId}-${index}`} className="flex items-start justify-between p-3 bg-white rounded-lg border border-orange-200">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-gray-900">{student.studentName}</span>
+                      {student.makeupStatus && (
+                        <Badge 
+                          variant="outline" 
+                          className={
+                            student.makeupStatus === 'scheduled' ? 'border-green-500 text-green-700' :
+                            student.makeupStatus === 'completed' ? 'border-gray-500 text-gray-700' :
+                            'border-yellow-500 text-yellow-700'
+                          }
+                        >
+                          {student.makeupStatus === 'pending' ? 'รอจัด Makeup' :
+                           student.makeupStatus === 'scheduled' ? 'นัด Makeup แล้ว' :
+                           'เรียน Makeup แล้ว'}
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="text-sm text-gray-600 mt-1">
+                      <span>{student.className}</span>
+                      <span className="mx-2">•</span>
+                      <span>{student.classTime}</span>
+                    </div>
+                    {student.reason && (
+                      <p className="text-sm text-gray-500 mt-1">เหตุผล: {student.reason}</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Makeup Requests Summary */}
+      {makeupRequests.length > 0 && (
+        <Card className="border-purple-200 bg-purple-50">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="h-5 w-5 text-purple-600" />
+                <CardTitle className="text-lg">คำขอ Makeup Class</CardTitle>
+              </div>
+              <Badge variant="secondary" className="bg-purple-100 text-purple-700">
+                {makeupRequests.filter(m => m.status === 'pending').length} รอดำเนินการ
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between">
+              <div className="flex gap-4 text-sm">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
+                  <span>รอจัดตาราง: {makeupRequests.filter(m => m.status === 'pending').length}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                  <span>นัดแล้ว: {makeupRequests.filter(m => m.status === 'scheduled').length}</span>
+                </div>
+              </div>
+              <a href="/makeup" className="text-sm text-purple-600 hover:text-purple-700 font-medium">
+                ดูทั้งหมด →
+              </a>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Calendar */}
       <Card>
         <CardHeader>
@@ -209,6 +380,7 @@ export default function DashboardPage() {
             onEventClick={handleEventClick}
             showHalfHour={showHalfHour}
             setShowHalfHour={setShowHalfHour}
+            initialView="timeGridDay" // Change to day view as default
           />
         </CardContent>
       </Card>
