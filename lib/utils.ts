@@ -6,49 +6,137 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 // Format date function
-export function formatDate(date: Date | string, format: 'short' | 'long' | 'full' | 'time' = 'short'): string {
-  const d = typeof date === 'string' ? new Date(date) : date;
+// Format date function
+export function formatDate(date: any, format: 'short' | 'long' | 'full' | 'time' = 'short'): string {
+  // Handle null/undefined
+  if (!date) {
+    return '-';
+  }
+
+  let d: Date;
   
-  if (isNaN(d.getTime())) {
-    return 'Invalid Date';
-  }
+  try {
+    // Check if already a Date object
+    if (date instanceof Date) {
+      d = date;
+    } 
+    // Check if string or number
+    else if (typeof date === 'string' || typeof date === 'number') {
+      d = new Date(date);
+    } 
+    // Check if Firestore Timestamp
+    else if (date && typeof date === 'object') {
+      // Firestore Timestamp has toDate() method
+      if (date.toDate && typeof date.toDate === 'function') {
+        d = date.toDate();
+      } 
+      // Firestore timestamp raw object has seconds property
+      else if (date.seconds) {
+        d = new Date(date.seconds * 1000);
+      } 
+      // Unknown object type
+      else {
+        console.warn('Unknown date object type:', date);
+        return '-';
+      }
+    } 
+    // Unknown type
+    else {
+      console.warn('Unknown date type:', typeof date, date);
+      return '-';
+    }
+    
+    // Check if valid date
+    if (!d || isNaN(d.getTime())) {
+      console.warn('Invalid date:', date);
+      return '-';
+    }
 
-  if (format === 'time') {
-    return new Intl.DateTimeFormat('th-TH', {
+    // Format based on type
+    if (format === 'time') {
+      return new Intl.DateTimeFormat('th-TH', {
+        timeZone: 'Asia/Bangkok',
+        hour: '2-digit',
+        minute: '2-digit'
+      }).format(d);
+    }
+
+    const options: Intl.DateTimeFormatOptions = {
       timeZone: 'Asia/Bangkok',
-      hour: '2-digit',
-      minute: '2-digit'
-    }).format(d);
+      day: 'numeric',
+      month: format === 'long' || format === 'full' ? 'long' : 'short',
+      year: 'numeric',
+    };
+
+    // Add time for 'full' format
+    if (format === 'full') {
+      options.hour = '2-digit';
+      options.minute = '2-digit';
+    }
+
+    return new Intl.DateTimeFormat('th-TH', options).format(d);
+    
+  } catch (error) {
+    console.error('Error formatting date:', error, 'Input:', date);
+    return '-';
   }
-
-  const options: Intl.DateTimeFormatOptions = {
-    timeZone: 'Asia/Bangkok',
-    day: 'numeric',
-    month: format === 'long' || format === 'full' ? 'long' : 'short',
-    year: 'numeric',
-  };
-
-  // Add time for 'full' format
-  if (format === 'full') {
-    options.hour = '2-digit';
-    options.minute = '2-digit';
-  }
-
-  return new Intl.DateTimeFormat('th-TH', options).format(d);
 }
 
 // Format date with day name (แยก function สำหรับกรณีที่ต้องการแสดงวัน)
-export function formatDateWithDay(date: Date | string): string {
-  const d = typeof date === 'string' ? new Date(date) : date;
-  
-  if (isNaN(d.getTime())) {
-    return 'Invalid Date';
+export function formatDateWithDay(date: any): string {
+  // Handle null/undefined
+  if (!date) {
+    return '-';
   }
 
-  const dayName = getDayName(d.getDay());
-  const dateStr = formatDate(d, 'long');
+  let d: Date;
   
-  return `${dayName}, ${dateStr}`;
+  try {
+    // Check if already a Date object
+    if (date instanceof Date) {
+      d = date;
+    } 
+    // Check if string or number
+    else if (typeof date === 'string' || typeof date === 'number') {
+      d = new Date(date);
+    } 
+    // Check if Firestore Timestamp
+    else if (date && typeof date === 'object') {
+      // Firestore Timestamp has toDate() method
+      if (date.toDate && typeof date.toDate === 'function') {
+        d = date.toDate();
+      } 
+      // Firestore timestamp raw object has seconds property
+      else if (date.seconds) {
+        d = new Date(date.seconds * 1000);
+      } 
+      // Unknown object type
+      else {
+        console.warn('Unknown date object type in formatDateWithDay:', date);
+        return '-';
+      }
+    } 
+    // Unknown type
+    else {
+      console.warn('Unknown date type in formatDateWithDay:', typeof date, date);
+      return '-';
+    }
+    
+    // Check if valid date
+    if (!d || isNaN(d.getTime())) {
+      console.warn('Invalid date in formatDateWithDay:', date);
+      return '-';
+    }
+
+    const dayName = getDayName(d.getDay());
+    const dateStr = formatDate(d, 'long');
+    
+    return `${dayName}, ${dateStr}`;
+    
+  } catch (error) {
+    console.error('Error formatting date with day:', error, 'Input:', date);
+    return '-';
+  }
 }
 
 // Format time (HH:mm)
