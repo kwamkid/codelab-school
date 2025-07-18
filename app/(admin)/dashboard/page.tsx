@@ -1,15 +1,16 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import DashboardCalendar from '@/components/dashboard/dashboard-calendar';
 import ClassDetailDialog from '@/components/dashboard/class-detail-dialog';
-import { getCalendarEvents, CalendarEvent } from '@/lib/services/dashboard';
+import { getOptimizedCalendarEvents, CalendarEvent, getOptimizedDashboardStats, clearDashboardCache } from '@/lib/services/dashboard-optimized';
 import { getActiveBranches } from '@/lib/services/branches';
 import { Branch, MakeupClass } from '@/types/models';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Loader2, Calendar as CalendarIcon, UserX, AlertCircle, Users } from 'lucide-react';
+import { Loader2, Calendar as CalendarIcon, UserX, AlertCircle, Users, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { DatesSetArg, EventClickArg } from '@fullcalendar/core';
+import FullCalendar from '@fullcalendar/react';
 import {
   Select,
   SelectContent,
@@ -23,6 +24,7 @@ import { Badge } from '@/components/ui/badge';
 import { formatDate } from '@/lib/utils';
 import { getMakeupClasses } from '@/lib/services/makeup';
 import { Separator } from '@/components/ui/separator';
+import { Button } from '@/components/ui/button';
 
 interface AbsentStudent {
   studentId: string;
@@ -33,10 +35,20 @@ interface AbsentStudent {
   makeupStatus?: 'pending' | 'scheduled' | 'completed';
 }
 
+interface DashboardStats {
+  totalStudents: number;
+  totalClasses: number;
+  activeClasses: number;
+  todayClasses: number;
+  upcomingMakeups: number;
+  pendingMakeups: number;
+  upcomingTrials: number;
+}
+
 export default function DashboardPage() {
+  const calendarRef = useRef<FullCalendar>(null);
   const [loading, setLoading] = useState(true);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [allEvents, setAllEvents] = useState<CalendarEvent[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedScheduleId, setSelectedScheduleId] = useState<string>('');
@@ -44,6 +56,8 @@ export default function DashboardPage() {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [absentStudents, setAbsentStudents] = useState<AbsentStudent[]>([]);
   const [makeupRequests, setMakeupRequests] = useState<MakeupClass[]>([]);
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
   
   // Filter states
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -64,18 +78,35 @@ export default function DashboardPage() {
     loadBranches();
   }, []);
   
+  // Load stats separately
+  useEffect(() => {
+    const loadStats = async () => {
+      setStatsLoading(true);
+      try {
+        const branchIdToQuery = selectedBranch === 'all' ? undefined : selectedBranch;
+        const fetchedStats = await getOptimizedDashboardStats(branchIdToQuery);
+        setStats(fetchedStats);
+      } catch (error) {
+        console.error('Error loading stats:', error);
+      } finally {
+        setStatsLoading(false);
+      }
+    };
+    
+    loadStats();
+  }, [selectedBranch]);
+  
   const handleDatesSet = useCallback(async (dateInfo: DatesSetArg) => {
     setLoading(true);
     setDateRange({ start: dateInfo.start, end: dateInfo.end });
     
     try {
       const branchIdToQuery = selectedBranch === 'all' ? undefined : selectedBranch;
-      const fetchedEvents = await getCalendarEvents(dateInfo.start, dateInfo.end, branchIdToQuery);
-      setAllEvents(fetchedEvents);
+      const fetchedEvents = await getOptimizedCalendarEvents(dateInfo.start, dateInfo.end, branchIdToQuery);
       setEvents(fetchedEvents);
       
       // Load absent students and makeup requests for today
-      await loadAbsentStudentsData(dateInfo.start, dateInfo.end, branchIdToQuery);
+      await loadAbsentStudentsData(fetchedEvents, dateInfo.start, dateInfo.end, branchIdToQuery);
     } catch (error) {
       toast.error('ไม่สามารถโหลดข้อมูลตารางเรียนได้');
       console.error(error);
@@ -85,7 +116,7 @@ export default function DashboardPage() {
   }, [selectedBranch]);
   
   // Load absent students and makeup requests
-  const loadAbsentStudentsData = async (startDate: Date, endDate: Date, branchId?: string) => {
+  const loadAbsentStudentsData = async (allEvents: CalendarEvent[], startDate: Date, endDate: Date, branchId?: string) => {
     try {
       // Get today's events
       const today = new Date();
@@ -152,12 +183,11 @@ export default function DashboardPage() {
       setLoading(true);
       try {
         const branchIdToQuery = value === 'all' ? undefined : value;
-        const fetchedEvents = await getCalendarEvents(dateRange.start, dateRange.end, branchIdToQuery);
-        setAllEvents(fetchedEvents);
+        const fetchedEvents = await getOptimizedCalendarEvents(dateRange.start, dateRange.end, branchIdToQuery);
         setEvents(fetchedEvents);
         
         // Reload absent students data
-        await loadAbsentStudentsData(dateRange.start, dateRange.end, branchIdToQuery);
+        await loadAbsentStudentsData(fetchedEvents, dateRange.start, dateRange.end, branchIdToQuery);
       } catch (error) {
         toast.error('ไม่สามารถโหลดข้อมูลตารางเรียนได้');
         console.error(error);
@@ -198,7 +228,10 @@ export default function DashboardPage() {
         studentName: clickInfo.event.extendedProps.studentName,
         studentNickname: clickInfo.event.extendedProps.studentNickname,
         originalClassName: clickInfo.event.extendedProps.originalClassName,
-        makeupStatus: clickInfo.event.extendedProps.makeupStatus
+        makeupStatus: clickInfo.event.extendedProps.makeupStatus,
+        subjectColor: clickInfo.event.extendedProps.subjectColor,
+        trialStudentName: clickInfo.event.extendedProps.trialStudentName,
+        trialSubjectName: clickInfo.event.extendedProps.trialSubjectName
       }
     };
     
@@ -218,17 +251,23 @@ export default function DashboardPage() {
   const handleAttendanceSaved = async () => {
     setDialogOpen(false);
     
+    // Clear cache to force refresh
+    clearDashboardCache();
+    
     // Reload events to reflect the updated status
     if (dateRange) {
       setLoading(true);
       try {
         const branchIdToQuery = selectedBranch === 'all' ? undefined : selectedBranch;
-        const fetchedEvents = await getCalendarEvents(dateRange.start, dateRange.end, branchIdToQuery);
-        setAllEvents(fetchedEvents);
+        const fetchedEvents = await getOptimizedCalendarEvents(dateRange.start, dateRange.end, branchIdToQuery);
         setEvents(fetchedEvents);
         
         // Reload absent students data
-        await loadAbsentStudentsData(dateRange.start, dateRange.end, branchIdToQuery);
+        await loadAbsentStudentsData(fetchedEvents, dateRange.start, dateRange.end, branchIdToQuery);
+        
+        // Reload stats
+        const fetchedStats = await getOptimizedDashboardStats(branchIdToQuery);
+        setStats(fetchedStats);
         
         toast.success('บันทึกการเช็คชื่อเรียบร้อยแล้ว');
       } catch (error) {
@@ -239,6 +278,27 @@ export default function DashboardPage() {
     }
   };
 
+  const handleRefresh = async () => {
+    clearDashboardCache();
+    // Reload data
+    if (dateRange) {
+      await handleDatesSet({ 
+        start: dateRange.start, 
+        end: dateRange.end, 
+        startStr: dateRange.start.toISOString(),
+        endStr: dateRange.end.toISOString(),
+        view: {} as any,
+        timeZone: 'local'
+      } as DatesSetArg);
+    }
+    // Reload stats
+    const branchIdToQuery = selectedBranch === 'all' ? undefined : selectedBranch;
+    const fetchedStats = await getOptimizedDashboardStats(branchIdToQuery);
+    setStats(fetchedStats);
+    
+    toast.success('รีเฟรชข้อมูลเรียบร้อยแล้ว');
+  };
+
   return (
     <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
@@ -247,21 +307,82 @@ export default function DashboardPage() {
           <p className="text-sm sm:text-base text-gray-600 mt-1 sm:mt-2">ภาพรวมตารางเรียนและข้อมูลสำคัญ</p>
         </div>
         
-        {/* Branch Filter */}
-        <Select value={selectedBranch} onValueChange={handleBranchChange}>
-          <SelectTrigger className="w-full sm:w-[200px]">
-            <SelectValue placeholder="เลือกสาขา" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">ทุกสาขา</SelectItem>
-            {branches.map(branch => (
-              <SelectItem key={branch.id} value={branch.id}>
-                {branch.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2">
+          {/* Refresh Button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={loading}
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+          </Button>
+          
+          {/* Branch Filter */}
+          <Select value={selectedBranch} onValueChange={handleBranchChange}>
+            <SelectTrigger className="w-full sm:w-[200px]">
+              <SelectValue placeholder="เลือกสาขา" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">ทุกสาขา</SelectItem>
+              {branches.map(branch => (
+                <SelectItem key={branch.id} value={branch.id}>
+                  {branch.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
+
+      {/* Stats Cards */}
+      {stats && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-gray-600">นักเรียนทั้งหมด</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {statsLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : stats.totalStudents}
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-gray-600">คลาสที่เปิดสอน</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {statsLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : stats.activeClasses}
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-gray-600">คลาสวันนี้</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {statsLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : stats.todayClasses}
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-gray-600">Makeup รอจัด</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-purple-600">
+                {statsLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : stats.pendingMakeups}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Absent Students Card */}
       {absentStudents.length > 0 && (
@@ -375,6 +496,7 @@ export default function DashboardPage() {
           )}
           
           <DashboardCalendar 
+            ref={calendarRef}
             events={events} 
             onDatesSet={handleDatesSet}
             onEventClick={handleEventClick}

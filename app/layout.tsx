@@ -3,6 +3,8 @@ import { IBM_Plex_Sans_Thai } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/hooks/useAuth";
 import { Toaster } from "@/components/ui/sonner";
+import { QueryProvider } from '@/providers/query-provider';
+
 
 const ibmPlexSansThai = IBM_Plex_Sans_Thai({ 
   weight: ['100', '200', '300', '400', '500', '600', '700'],
@@ -15,19 +17,22 @@ export const metadata: Metadata = {
   description: "ระบบจัดการโรงเรียนสอนพิเศษ Coding & Robotics",
 };
 
+// ในส่วน body ให้ wrap children ด้วย QueryProvider
 export default function RootLayout({
   children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+}: {
+  children: React.ReactNode
+}) {
   return (
     <html lang="th" suppressHydrationWarning>
-      <body className={ibmPlexSansThai.className} suppressHydrationWarning>
-        <AuthProvider>
-          {children}
-          <Toaster />
-        </AuthProvider>
+      <body className={ibmPlexSansThai.className}>
+        <QueryProvider>
+          <AuthProvider>
+            <Toaster />
+            {children}
+          </AuthProvider>
+        </QueryProvider>
       </body>
     </html>
-  );
+  )
 }

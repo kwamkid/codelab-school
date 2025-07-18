@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
@@ -18,21 +18,24 @@ interface DashboardCalendarProps {
   onEventClick: (clickInfo: EventClickArg) => void;
   showHalfHour: boolean;
   setShowHalfHour: (value: boolean) => void;
-  initialView?: string; // Add this prop
+  initialView?: string;
 }
 
 // Create a WeakMap to store tooltip references
 const tooltipMap = new WeakMap<HTMLElement, HTMLDivElement>();
 
-export default function DashboardCalendar({ 
+const DashboardCalendar = forwardRef<FullCalendar, DashboardCalendarProps>(({ 
   events, 
   onDatesSet,
   onEventClick,
   showHalfHour,
   setShowHalfHour,
-  initialView = 'timeGridDay' // Default to day view
-}: DashboardCalendarProps) {
+  initialView = 'timeGridDay'
+}, ref) => {
   const calendarRef = useRef<FullCalendar>(null);
+  
+  // Expose calendar ref to parent
+  useImperativeHandle(ref, () => calendarRef.current as FullCalendar);
 
   useEffect(() => {
     // Set calendar to today when component mounts
@@ -316,7 +319,7 @@ export default function DashboardCalendar({
       <FullCalendar
         ref={calendarRef}
         plugins={[dayGridPlugin, timeGridPlugin, listPlugin, interactionPlugin]}
-        initialView={initialView} // Use the prop here
+        initialView={initialView}
         headerToolbar={{
           left: 'prev,next today',
           center: 'title',
@@ -467,7 +470,7 @@ export default function DashboardCalendar({
         height="auto"
         contentHeight="auto"
         aspectRatio={1.8}
-        dayMaxEvents={3} // Show max 3 events in month view, others as +N more
+        dayMaxEvents={3}
         slotMinTime="08:00:00"
         slotMaxTime="19:00:00"
         slotDuration="01:00:00"
@@ -505,7 +508,7 @@ export default function DashboardCalendar({
         moreLinkContent={(args) => {
           return `+${args.num} เพิ่มเติม`;
         }}
-        moreLinkClick="popover" // Show events in popover instead of switching view
+        moreLinkClick="popover"
         buttonText={{
           today: 'วันนี้',
           month: 'เดือน',
@@ -917,4 +920,8 @@ export default function DashboardCalendar({
       </div>
     </div>
   );
-}
+});
+
+DashboardCalendar.displayName = 'DashboardCalendar';
+
+export default DashboardCalendar;
