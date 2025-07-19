@@ -22,7 +22,8 @@ import {
   Loader2,
   AlertCircle,
   CheckCircle,
-  XCircle
+  XCircle,
+  Info
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { TrialSession, Teacher, Branch, Room, Subject } from '@/types/models';
@@ -55,6 +56,9 @@ export default function RescheduleTrialDialog({
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
+  
+  // State สำหรับเก็บข้อมูล trial sessions ที่นัดในเวลาเดียวกัน
+  const [existingTrials, setExistingTrials] = useState<any[]>([]);
   
   // Form state - initialize with current values
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date(session.scheduledDate));
@@ -93,10 +97,34 @@ export default function RescheduleTrialDialog({
   useEffect(() => {
     if (selectedDate && startTime && endTime && selectedBranch && selectedRoom) {
       checkAvailability();
+      checkExistingTrials();
     } else {
       setAvailabilityError('');
+      setExistingTrials([]);
     }
   }, [selectedDate, startTime, endTime, selectedBranch, selectedRoom]);
+
+  // ฟังก์ชันตรวจสอบ trial sessions ที่มีอยู่แล้ว
+  const checkExistingTrials = async () => {
+    try {
+      const { getTrialSessions } = await import('@/lib/services/trial-bookings');
+      const allTrials = await getTrialSessions();
+      
+      const matchingTrials = allTrials.filter(trial =>
+        trial.status === 'scheduled' &&
+        trial.branchId === selectedBranch &&
+        trial.roomId === selectedRoom &&
+        new Date(trial.scheduledDate).toDateString() === selectedDate.toDateString() &&
+        trial.startTime === startTime &&
+        trial.endTime === endTime &&
+        trial.id !== session.id // ไม่นับตัวเอง
+      );
+      
+      setExistingTrials(matchingTrials);
+    } catch (error) {
+      console.error('Error checking existing trials:', error);
+    }
+  };
 
   const loadMasterData = async () => {
     try {
@@ -137,38 +165,45 @@ export default function RescheduleTrialDialog({
   };
 
   const checkAvailability = async () => {
-  if (!selectedDate || !startTime || !endTime || !selectedBranch || !selectedRoom) {
-    return;
-  }
-
-  setCheckingAvailability(true);
-  setAvailabilityError('');
-
-  try {
-    // ใช้ centralized availability checker
-    const { checkAvailability } = await import('@/lib/utils/availability');
-    
-    const result = await checkAvailability({
-      date: selectedDate,
-      startTime,
-      endTime,
-      branchId: selectedBranch,
-      roomId: selectedRoom,
-      teacherId: selectedTeacher,
-      excludeId: session.id,
-      excludeType: 'trial'
-    });
-
-    if (!result.available && result.reasons.length > 0) {
-      const conflictMessages = result.reasons.map(reason => reason.message);
-      setAvailabilityError(conflictMessages.join(', '));
+    if (!selectedDate || !startTime || !endTime || !selectedBranch || !selectedRoom) {
+      return;
     }
-  } catch (error) {
-    console.error('Error checking availability:', error);
-  } finally {
-    setCheckingAvailability(false);
-  }
-};
+
+    setCheckingAvailability(true);
+    setAvailabilityError('');
+
+    try {
+      // ใช้ centralized availability checker
+      const { checkAvailability } = await import('@/lib/utils/availability');
+      
+      const result = await checkAvailability({
+        date: selectedDate,
+        startTime,
+        endTime,
+        branchId: selectedBranch,
+        roomId: selectedRoom,
+        teacherId: selectedTeacher,
+        excludeId: session.id,
+        excludeType: 'trial'
+      });
+
+      if (!result.available && result.reasons.length > 0) {
+        // กรองเฉพาะ conflicts ที่ไม่ใช่ trial (เพราะอนุญาตให้ trial หลายคนในเวลาเดียวกันได้)
+        const nonTrialConflicts = result.reasons.filter(reason => 
+          reason.details?.conflictType !== 'trial'
+        );
+        
+        if (nonTrialConflicts.length > 0) {
+          const conflictMessages = nonTrialConflicts.map(reason => reason.message);
+          setAvailabilityError(conflictMessages.join(', '));
+        }
+      }
+    } catch (error) {
+      console.error('Error checking availability:', error);
+    } finally {
+      setCheckingAvailability(false);
+    }
+  };
 
   // Filter teachers based on selected subject and branch
   const getAvailableTeachers = () => {
@@ -179,73 +214,73 @@ export default function RescheduleTrialDialog({
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
-  
-  // Validate
-  if (!selectedDate) {
-    toast.error('กรุณาเลือกวันที่');
-    return;
-  }
-  if (!startTime || !endTime) {
-    toast.error('กรุณาระบุเวลา');
-    return;
-  }
-  if (!selectedTeacher) {
-    toast.error('กรุณาเลือกครู');
-    return;
-  }
-  if (!selectedBranch || !selectedRoom) {
-    toast.error('กรุณาเลือกสาขาและห้อง');
-    return;
-  }
-  if (availabilityError) {
-    toast.error('ห้องไม่ว่างในช่วงเวลาที่เลือก');
-    return;
-  }
+    e.preventDefault();
+    
+    // Validate
+    if (!selectedDate) {
+      toast.error('กรุณาเลือกวันที่');
+      return;
+    }
+    if (!startTime || !endTime) {
+      toast.error('กรุณาระบุเวลา');
+      return;
+    }
+    if (!selectedTeacher) {
+      toast.error('กรุณาเลือกครู');
+      return;
+    }
+    if (!selectedBranch || !selectedRoom) {
+      toast.error('กรุณาเลือกสาขาและห้อง');
+      return;
+    }
+    if (availabilityError) {
+      toast.error('ห้องไม่ว่างในช่วงเวลาที่เลือก');
+      return;
+    }
 
-  setLoading(true);
+    setLoading(true);
 
-  try {
-    // Get room name for storing
-    const selectedRoomData = rooms.find(r => r.id === selectedRoom);
-    
-    // ใช้ rescheduleTrialSession แทน updateTrialSession
-    const { rescheduleTrialSession } = await import('@/lib/services/trial-bookings');
-    const { auth } = await import('@/lib/firebase/client');
-    const currentUser = auth.currentUser;
-    
-    await rescheduleTrialSession(
-      session.id,
-      {
-        scheduledDate: selectedDate,
-        startTime,
-        endTime,
-        teacherId: selectedTeacher,
-        branchId: selectedBranch,
-        roomId: selectedRoom,
-        roomName: selectedRoomData?.name || selectedRoom
-      },
-      'ไม่มาเรียนตามนัดเดิม', // reason
-      currentUser?.uid || 'admin' // rescheduledBy
-    );
+    try {
+      // Get room name for storing
+      const selectedRoomData = rooms.find(r => r.id === selectedRoom);
+      
+      // ใช้ rescheduleTrialSession แทน updateTrialSession
+      const { rescheduleTrialSession } = await import('@/lib/services/trial-bookings');
+      const { auth } = await import('@/lib/firebase/client');
+      const currentUser = auth.currentUser;
+      
+      await rescheduleTrialSession(
+        session.id,
+        {
+          scheduledDate: selectedDate,
+          startTime,
+          endTime,
+          teacherId: selectedTeacher,
+          branchId: selectedBranch,
+          roomId: selectedRoom,
+          roomName: selectedRoomData?.name || selectedRoom
+        },
+        'ไม่มาเรียนตามนัดเดิม', // reason
+        currentUser?.uid || 'admin' // rescheduledBy
+      );
 
-    toast.success('เปลี่ยนนัดหมายสำเร็จ');
-    
-    // Clear URL parameters before calling onSuccess
-    const url = new URL(window.location.href);
-    url.searchParams.delete('action');
-    url.searchParams.delete('sessionId');
-    window.history.replaceState({}, '', url.toString());
-    
-    onSuccess();
-    onClose();
-  } catch (error) {
-    console.error('Error rescheduling:', error);
-    toast.error('เกิดข้อผิดพลาดในการเปลี่ยนนัดหมาย');
-  } finally {
-    setLoading(false);
-  }
-};
+      toast.success('เปลี่ยนนัดหมายสำเร็จ');
+      
+      // Clear URL parameters before calling onSuccess
+      const url = new URL(window.location.href);
+      url.searchParams.delete('action');
+      url.searchParams.delete('sessionId');
+      window.history.replaceState({}, '', url.toString());
+      
+      onSuccess();
+      onClose();
+    } catch (error) {
+      console.error('Error rescheduling:', error);
+      toast.error('เกิดข้อผิดพลาดในการเปลี่ยนนัดหมาย');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Get current subject info
   const currentSubject = subjects.find(s => s.id === session.subjectId);
@@ -453,6 +488,40 @@ export default function RescheduleTrialDialog({
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>{availabilityError}</AlertDescription>
+            </Alert>
+          )}
+
+          {/* แสดงรายชื่อนักเรียนที่นัดในช่วงเวลาเดียวกัน */}
+          {existingTrials.length > 0 && !availabilityError && (
+            <Alert className="border-blue-200 bg-blue-50">
+              <Info className="h-4 w-4 text-blue-600" />
+              <AlertDescription>
+                <div className="text-blue-800">
+                  <p className="font-medium mb-2">มีนักเรียน {existingTrials.length} คนนัดทดลองเรียนในช่วงเวลานี้แล้ว</p>
+                  <div className="space-y-1">
+                    {existingTrials.map((trial, index) => {
+                      const trialSubject = subjects.find(s => s.id === trial.subjectId);
+                      return (
+                        <div key={trial.id} className="flex items-center gap-2 text-sm">
+                          <span className="text-blue-600">{index + 1}.</span>
+                          <span className="font-medium">{trial.studentName}</span>
+                          <span className="text-blue-600">ทดลองวิชา</span>
+                          <Badge 
+                            className="text-xs"
+                            style={{ 
+                              backgroundColor: trialSubject?.color || '#3B82F6',
+                              color: 'white',
+                              border: 'none'
+                            }}
+                          >
+                            {trialSubject?.name || 'ไม่ระบุวิชา'}
+                          </Badge>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </AlertDescription>
             </Alert>
           )}
 

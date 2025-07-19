@@ -114,6 +114,9 @@ async function checkHolidayConflict(
 /**
  * Check room availability
  */
+/**
+ * Check room availability
+ */
 async function checkRoomAvailability(
   params: AvailabilityCheckParams
 ): Promise<AvailabilityIssue[]> {
@@ -208,37 +211,15 @@ async function checkRoomAvailability(
     }
   }
   
-  // 3. Check trial sessions
-  const trialSessions = await getTrialSessions();
-  
-  // Filter trial sessions
-  const relevantTrials = trialSessions.filter(trial =>
-    trial.status === 'scheduled' &&
-    trial.branchId === branchId &&
-    trial.roomId === roomId &&
-    new Date(trial.scheduledDate).toDateString() === date.toDateString() &&
-    !(excludeType === 'trial' && trial.id === excludeId)
-  );
-  
-  // Check time conflicts for trials
-  for (const trial of relevantTrials) {
-    // Check time overlap
-    if (startTime < trial.endTime && endTime > trial.startTime) {
-      issues.push({
-        type: 'room_conflict',
-        message: `ห้องไม่ว่าง - ทดลองเรียนของ ${trial.studentName} เวลา ${trial.startTime}-${trial.endTime}`,
-        details: {
-          conflictType: 'trial',
-          conflictName: trial.studentName,
-          conflictTime: `${trial.startTime}-${trial.endTime}`
-        }
-      });
-    }
-  }
+  // 3. SKIP trial sessions checking - อนุญาตให้นัดทดลองเรียนหลายคนในเวลาเดียวกันได้
+  // ไม่นับ trial sessions เป็น conflict เพื่อให้สามารถนัดหลายคนในช่วงเวลาเดียวกันได้
   
   return issues;
 }
 
+/**
+ * Check teacher availability
+ */
 /**
  * Check teacher availability
  */
@@ -333,32 +314,8 @@ async function checkTeacherAvailability(
     }
   }
   
-  // 3. Check trial sessions
-  const trialSessions = await getTrialSessions();
-  
-  // Filter trial sessions
-  const teacherTrials = trialSessions.filter(trial =>
-    trial.status === 'scheduled' &&
-    trial.teacherId === teacherId &&
-    new Date(trial.scheduledDate).toDateString() === date.toDateString() &&
-    !(excludeType === 'trial' && trial.id === excludeId)
-  );
-  
-  // Check time conflicts
-  for (const trial of teacherTrials) {
-    // Check time overlap
-    if (startTime < trial.endTime && endTime > trial.startTime) {
-      issues.push({
-        type: 'teacher_conflict',
-        message: `ครูไม่ว่าง - ทดลองเรียนของ ${trial.studentName} เวลา ${trial.startTime}-${trial.endTime}`,
-        details: {
-          conflictType: 'trial',
-          conflictName: trial.studentName,
-          conflictTime: `${trial.startTime}-${trial.endTime}`
-        }
-      });
-    }
-  }
+  // 3. SKIP trial sessions checking - อนุญาตให้ครูสอนทดลองเรียนหลายคนพร้อมกันได้
+  // ไม่นับ trial sessions เป็น conflict สำหรับครู เพื่อให้ครูสามารถสอนทดลองเรียนได้หลายคนในเวลาเดียวกัน
   
   return issues;
 }

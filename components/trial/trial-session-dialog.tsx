@@ -24,7 +24,8 @@ import {
   User,
   School,
   GraduationCap,
-  ArrowLeft
+  ArrowLeft,
+  Info
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Subject, Teacher, Branch, Room } from '@/types/models';
@@ -73,6 +74,10 @@ export default function TrialSessionDialog({
   const [rooms, setRooms] = useState<Room[]>([]);
   const [checkingAvailability, setCheckingAvailability] = useState(false);
   const [availabilityIssues, setAvailabilityIssues] = useState<AvailabilityIssue[]>([]);
+  
+  // เพิ่ม state สำหรับนับจำนวนนักเรียนที่นัดในช่วงเวลาเดียวกัน
+  const [existingTrialsCount, setExistingTrialsCount] = useState<number>(0);
+  const [existingTrials, setExistingTrials] = useState<any[]>([]);
   
   // Form data
   const [formData, setFormData] = useState({
@@ -164,6 +169,40 @@ export default function TrialSessionDialog({
     const debounceTimer = setTimeout(checkAvailability, 500);
     return () => clearTimeout(debounceTimer);
   }, [formData]);
+
+  // เพิ่ม useEffect สำหรับนับจำนวนนักเรียนที่นัดในช่วงเวลาเดียวกัน
+  useEffect(() => {
+    const checkExistingTrials = async () => {
+      if (!formData.scheduledDate || !formData.startTime || !formData.endTime || 
+          !formData.branchId || !formData.roomId) {
+        setExistingTrialsCount(0);
+        setExistingTrials([]);
+        return;
+      }
+      
+      try {
+        // นับจำนวน trial sessions ในช่วงเวลาเดียวกัน
+        const { getTrialSessions } = await import('@/lib/services/trial-bookings');
+        const allTrials = await getTrialSessions();
+        
+        const matchingTrials = allTrials.filter(trial =>
+          trial.status === 'scheduled' &&
+          trial.branchId === formData.branchId &&
+          trial.roomId === formData.roomId &&
+          new Date(trial.scheduledDate).toDateString() === new Date(formData.scheduledDate).toDateString() &&
+          trial.startTime === formData.startTime &&
+          trial.endTime === formData.endTime
+        );
+        
+        setExistingTrialsCount(matchingTrials.length);
+        setExistingTrials(matchingTrials);
+      } catch (error) {
+        console.error('Error checking existing trials:', error);
+      }
+    };
+    
+    checkExistingTrials();
+  }, [formData.scheduledDate, formData.startTime, formData.endTime, formData.branchId, formData.roomId]);
 
   const handleStudentSelect = (studentName: string) => {
     setSelectedStudent(studentName);
@@ -311,6 +350,36 @@ export default function TrialSessionDialog({
             <div className="bg-gray-50 p-4 rounded-lg">
               <p className="text-sm text-gray-600">นักเรียน:</p>
               <p className="font-medium text-lg">{selectedStudent}</p>
+              {/* แสดงวิชาที่สนใจ */}
+              {(() => {
+                const currentStudent = students.find(s => s.name === selectedStudent);
+                if (currentStudent && currentStudent.subjectInterests.length > 0) {
+                  return (
+                    <div className="mt-2">
+                      <p className="text-xs text-gray-600 mb-1">วิชาที่สนใจ:</p>
+                      <div className="flex flex-wrap gap-1">
+                        {currentStudent.subjectInterests.map(subjectId => {
+                          const subject = subjects.find(s => s.id === subjectId);
+                          return subject ? (
+                            <Badge 
+                              key={subjectId} 
+                              className="text-xs"
+                              style={{ 
+                                backgroundColor: `${subject.color}20`,
+                                color: subject.color,
+                                borderColor: subject.color
+                              }}
+                            >
+                              {subject.name}
+                            </Badge>
+                          ) : null;
+                        })}
+                      </div>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
             </div>
 
             <div className="space-y-4">
@@ -348,11 +417,63 @@ export default function TrialSessionDialog({
                       <SelectValue placeholder={formData.branchId ? "เลือกวิชา" : "เลือกสาขาก่อน"} />
                     </SelectTrigger>
                     <SelectContent>
-                      {subjects.map((subject) => (
-                        <SelectItem key={subject.id} value={subject.id}>
-                          {subject.name}
-                        </SelectItem>
-                      ))}
+                      {/* แสดงวิชาที่นักเรียนสนใจก่อน */}
+                      {(() => {
+                        const currentStudent = students.find(s => s.name === selectedStudent);
+                        const interestedSubjects = currentStudent?.subjectInterests || [];
+                        const interestedSubjectsList = subjects.filter(s => interestedSubjects.includes(s.id));
+                        const otherSubjects = subjects.filter(s => !interestedSubjects.includes(s.id));
+                        
+                        return (
+                          <>
+                            {interestedSubjectsList.length > 0 && (
+                              <>
+                                <div className="px-2 py-1.5 text-sm font-semibold text-gray-700 bg-gray-50">
+                                  วิชาที่สนใจ
+                                </div>
+                                {interestedSubjectsList.map((subject) => (
+                                  <SelectItem key={subject.id} value={subject.id}>
+                                    <div className="flex items-center gap-2">
+                                      <div 
+                                        className="w-3 h-3 rounded-full" 
+                                        style={{ backgroundColor: subject.color }}
+                                      />
+                                      <span>{subject.name}</span>
+                                      <Badge 
+                                        variant="outline" 
+                                        className="ml-auto text-xs bg-green-50 text-green-700 border-green-300"
+                                      >
+                                        สนใจ
+                                      </Badge>
+                                    </div>
+                                  </SelectItem>
+                                ))}
+                              </>
+                            )}
+                            
+                            {otherSubjects.length > 0 && (
+                              <>
+                                {interestedSubjectsList.length > 0 && (
+                                  <div className="px-2 py-1.5 text-sm font-semibold text-gray-700 bg-gray-50">
+                                    วิชาอื่นๆ
+                                  </div>
+                                )}
+                                {otherSubjects.map((subject) => (
+                                  <SelectItem key={subject.id} value={subject.id}>
+                                    <div className="flex items-center gap-2">
+                                      <div 
+                                        className="w-3 h-3 rounded-full" 
+                                        style={{ backgroundColor: subject.color }}
+                                      />
+                                      <span>{subject.name}</span>
+                                    </div>
+                                  </SelectItem>
+                                ))}
+                              </>
+                            )}
+                          </>
+                        );
+                      })()}
                     </SelectContent>
                   </Select>
                 </div>
@@ -448,6 +569,40 @@ export default function TrialSessionDialog({
                 </div>
               </div>
             </div>
+
+            {/* แสดงจำนวนนักเรียนที่นัดในช่วงเวลาเดียวกัน */}
+            {existingTrialsCount > 0 && (
+              <Alert className="border-blue-200 bg-blue-50">
+                <Info className="h-4 w-4 text-blue-600" />
+                <AlertDescription>
+                  <div className="text-blue-800">
+                    <p className="font-medium mb-2">มีนักเรียน {existingTrialsCount} คนนัดทดลองเรียนในช่วงเวลานี้แล้ว</p>
+                    <div className="space-y-1">
+                      {existingTrials.map((trial, index) => {
+                        const trialSubject = subjects.find(s => s.id === trial.subjectId);
+                        return (
+                          <div key={trial.id} className="flex items-center gap-2 text-sm">
+                            <span className="text-blue-600">{index + 1}.</span>
+                            <span className="font-medium">{trial.studentName}</span>
+                            <span className="text-blue-600">ทดลองวิชา</span>
+                            <Badge 
+                              className="text-xs"
+                              style={{ 
+                                backgroundColor: trialSubject?.color || '#3B82F6',
+                                color: 'white',
+                                border: 'none'
+                              }}
+                            >
+                              {trialSubject?.name || 'ไม่ระบุวิชา'}
+                            </Badge>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </AlertDescription>
+              </Alert>
+            )}
 
             {/* Availability Check Result */}
             {checkingAvailability ? (
