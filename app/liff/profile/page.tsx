@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Image from 'next/image'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -206,97 +207,140 @@ function ProfileContent() {
   // Check if not registered - show registration prompt
   if (hasParent === false) {
     return (
-      <div className="min-h-screen bg-gray-50 p-4">
-        <div className="max-w-md mx-auto space-y-4">
-          <Card className="border-2 border-orange-200">
-            <CardContent className="pt-6 space-y-6">
-              <div className="text-center space-y-3">
-                <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mx-auto">
-                  <UserPlus className="h-10 w-10 text-orange-600" />
+      <div className="min-h-screen bg-gray-50">
+        {/* Header with Logo - เหมือนหน้า trial */}
+        <div className="bg-white shadow-sm">
+          <div className="py-4">
+            <div className="flex justify-center mb-2 pt-4">
+              <Image
+                src="/logo.svg"
+                alt="CodeLab Thailand"
+                width={200}
+                height={60}
+                className="object-contain"
+                priority
+                onError={(e) => {
+                  // Fallback to text if logo not found
+                  e.currentTarget.style.display = 'none'
+                  const textLogo = document.getElementById('text-logo-fallback-register')
+                  if (textLogo) textLogo.style.display = 'flex'
+                }}
+              />
+              <div 
+                id="text-logo-fallback-register" 
+                className="hidden items-center justify-center"
+              >
+                <div className="flex items-center gap-2">
+                  <School className="h-10 w-10 text-primary" />
+                  <h1 className="text-2xl font-bold text-primary">
+                    CodeLab School
+                  </h1>
+                </div>
+              </div>
+            </div>
+            
+            <h2 className="text-xl font-semibold text-center text-gray-800">
+              ระบบจัดการโรงเรียน
+            </h2>
+            <p className="text-center text-gray-600 text-sm px-4 mt-1">
+              สำหรับผู้ปกครองและนักเรียน
+            </p>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="p-4">
+          <div className="max-w-md mx-auto space-y-4">
+            <Card className="border-2 border-orange-200">
+              <CardContent className="pt-6 space-y-6">
+                <div className="text-center space-y-3">
+                  <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mx-auto">
+                    <UserPlus className="h-10 w-10 text-orange-600" />
+                  </div>
+                  
+                  <h2 className="text-2xl font-bold">ยังไม่ได้ลงทะเบียน</h2>
+                  <p className="text-gray-600">
+                    กรุณาลงทะเบียนเพื่อเริ่มใช้งานระบบ
+                  </p>
                 </div>
                 
-                <h2 className="text-2xl font-bold">ยังไม่ได้ลงทะเบียน</h2>
-                <p className="text-gray-600">
-                  กรุณาลงทะเบียนเพื่อเริ่มใช้งานระบบ
-                </p>
-              </div>
-              
-              {/* Register button */}
-              <Button 
-                className="w-full text-base bg-primary hover:bg-primary/90" 
-                size="lg"
-                onClick={() => navigateTo('/liff/register')}
-              >
-                <UserPlus className="h-5 w-5 mr-2" />
-                ลงทะเบียนใหม่
-              </Button>
-              
-              <div className="relative">
-                <div className="absolute inset-0 flex items-center">
-                  <span className="w-full border-t" />
-                </div>
-                <div className="relative flex justify-center text-xs uppercase">
-                  <span className="bg-white px-2 text-gray-500">หรือ</span>
-                </div>
-              </div>
-              
-              {/* Connect existing account */}
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <div className="flex items-start gap-3">
-                  <LinkIcon className="h-5 w-5 text-blue-600 mt-0.5" />
-                  <div className="flex-1">
-                    <p className="font-medium text-blue-900">
-                      เคยลงทะเบียนที่เคาน์เตอร์แล้ว?
-                    </p>
-                    <p className="text-sm text-blue-700 mt-1">
-                      คลิกปุ่มด้านล่างเพื่อขอลิงก์เชื่อมต่อบัญชี
-                    </p>
-                    
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="mt-3 w-full border-blue-600 text-blue-600 hover:bg-blue-50"
-                      onClick={() => {
-                        if (liff && liff.isInClient()) {
-                          try {
-                            // LINE Official Account ID (without @)
-                            const lineOAId = '@265lryrv'
-                            const message = 'ติดต่อขอเชื่อมบัญชี LINE'
-                            
-                            // Create LINE URL with message
-                            const lineUrl = `https://line.me/R/oaMessage/${encodeURIComponent(lineOAId)}/?${encodeURIComponent(message)}`
-                            
-                            // Open URL and close LIFF
-                            window.location.href = lineUrl
-                          } catch (error) {
-                            console.error('Error:', error)
-                            // Fallback: just close and let user type
-                            liff.closeWindow()
-                          }
-                        } else {
-                          // Not in LINE app
-                          toast.info('กรุณาเปิดผ่าน LINE app เพื่อติดต่อ Admin')
-                        }
-                      }}
-                    >
-                      <MessageCircle className="h-4 w-4 mr-2" />
-                      ติดต่อ Admin เพื่อเชื่อมต่อบัญชี
-                    </Button>
+                {/* Register button */}
+                <Button 
+                  className="w-full text-base bg-primary hover:bg-primary/90" 
+                  size="lg"
+                  onClick={() => navigateTo('/liff/register')}
+                >
+                  <UserPlus className="h-5 w-5 mr-2" />
+                  ลงทะเบียนใหม่
+                </Button>
+                
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-white px-2 text-gray-500">หรือ</span>
                   </div>
                 </div>
-              </div>
-              
-              {/* Back button */}
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={() => navigateTo('/liff')}
-              >
-                <ChevronLeft className="h-4 w-4 mr-2" />
-                กลับหน้าหลัก
-              </Button>
-            </CardContent>
-          </Card>
+                
+                {/* Connect existing account */}
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="flex items-start gap-3">
+                    <LinkIcon className="h-5 w-5 text-blue-600 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="font-medium text-blue-900">
+                        เคยลงทะเบียนที่เคาน์เตอร์แล้ว?
+                      </p>
+                      <p className="text-sm text-blue-700 mt-1">
+                        คลิกปุ่มด้านล่างเพื่อขอลิงก์เชื่อมต่อบัญชี
+                      </p>
+                      
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-3 w-full border-blue-600 text-blue-600 hover:bg-blue-50"
+                        onClick={() => {
+                          if (liff && liff.isInClient()) {
+                            try {
+                              // LINE Official Account ID (without @)
+                              const lineOAId = '@265lryrv'
+                              const message = 'ติดต่อขอเชื่อมบัญชี LINE'
+                              
+                              // Create LINE URL with message
+                              const lineUrl = `https://line.me/R/oaMessage/${encodeURIComponent(lineOAId)}/?${encodeURIComponent(message)}`
+                              
+                              // Open URL and close LIFF
+                              window.location.href = lineUrl
+                            } catch (error) {
+                              console.error('Error:', error)
+                              // Fallback: just close and let user type
+                              liff.closeWindow()
+                            }
+                          } else {
+                            // Not in LINE app
+                            toast.info('กรุณาเปิดผ่าน LINE app เพื่อติดต่อ Admin')
+                          }
+                        }}
+                      >
+                        <MessageCircle className="h-4 w-4 mr-2" />
+                        ติดต่อ Admin เพื่อเชื่อมต่อบัญชี
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Back button */}
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => navigateTo('/liff')}
+                >
+                  <ChevronLeft className="h-4 w-4 mr-2" />
+                  กลับหน้าหลัก
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </div>
     )
