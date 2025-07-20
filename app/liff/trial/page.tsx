@@ -310,7 +310,7 @@ export default function TrialBookingPage() {
         <div className="max-w-2xl mx-auto">
           <div className="flex justify-center mb-4">
             <Image
-              src="/logo-white.png"
+              src="/logo.svg"
               alt="CodeLab School"
               width={150}
               height={50}
