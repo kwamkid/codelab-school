@@ -1,4 +1,4 @@
-// app/liff/trial-booking/page.tsx
+// app/liff/trial/page.tsx
 
 'use client'
 
@@ -34,8 +34,6 @@ import {
   MessageCircle
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { getActiveBranches } from '@/lib/services/branches'
-import { getSubjects } from '@/lib/services/subjects'
 import { Branch, Subject } from '@/types/models'
 import Image from 'next/image'
 
@@ -52,6 +50,7 @@ export default function TrialBookingPage() {
   const [branches, setBranches] = useState<Branch[]>([])
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [showSuccess, setShowSuccess] = useState(false)
+  const [isClient, setIsClient] = useState(false)
   
   // Form data
   const [parentName, setParentName] = useState('')
@@ -68,14 +67,26 @@ export default function TrialBookingPage() {
     subjectInterests: []
   }])
 
+  // Check if client-side
+  useEffect(() => {
+    setIsClient(true)
+  }, [])
+
   // Load initial data
   useEffect(() => {
-    loadInitialData()
-  }, [])
+    if (isClient) {
+      loadInitialData()
+    }
+  }, [isClient])
 
   const loadInitialData = async () => {
     try {
       setLoading(true)
+      
+      // Import services dynamically
+      const { getActiveBranches } = await import('@/lib/services/branches')
+      const { getSubjects } = await import('@/lib/services/subjects')
+      
       const [branchesData, subjectsData] = await Promise.all([
         getActiveBranches(),
         getSubjects()
@@ -85,7 +96,7 @@ export default function TrialBookingPage() {
       setSubjects(subjectsData.filter(s => s.isActive))
     } catch (error) {
       console.error('Error loading data:', error)
-      toast.error('ไม่สามารถโหลดข้อมูลได้')
+      toast.error('ไม่สามารถโหลดข้อมูลได้ กรุณาลองใหม่')
     } finally {
       setLoading(false)
     }
@@ -233,7 +244,8 @@ export default function TrialBookingPage() {
     }
   }
 
-  if (loading) {
+  // Show loading while checking client
+  if (!isClient || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
