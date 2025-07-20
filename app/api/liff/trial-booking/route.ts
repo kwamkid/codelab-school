@@ -1,8 +1,8 @@
 // app/api/liff/trial-booking/route.ts
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createTrialBooking } from '@/lib/services/trial-bookings';
-import { getBranch } from '@/lib/services/branches';
+import { adminDb } from '@/lib/firebase/admin';
+import { FieldValue } from 'firebase-admin/firestore';
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic';
@@ -26,6 +26,9 @@ interface BookingRequest {
 export async function POST(request: NextRequest) {
   try {
     const body: BookingRequest = await request.json();
+    
+    // Log for debugging
+    console.log('Received booking request:', body);
     
     // Validate required fields
     if (!body.parentName || !body.parentPhone || !body.branchId) {
@@ -77,33 +80,48 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    // Verify branch exists
-    const branch = await getBranch(body.branchId);
-    if (!branch || !branch.isActive) {
+    // Verify branch exists using Admin SDK
+    const branchDoc = await adminDb.collection('branches').doc(body.branchId).get();
+    if (!branchDoc.exists) {
       return NextResponse.json(
         { error: 'ไม่พบข้อมูลสาขาที่เลือก' },
         { status: 400 }
       );
     }
     
+    const branch = branchDoc.data();
+    if (!branch?.isActive) {
+      return NextResponse.json(
+        { error: 'สาขาที่เลือกไม่เปิดให้บริการ' },
+        { status: 400 }
+      );
+    }
+    
     // Create booking data
     const bookingData = {
-      source: body.source || 'online' as const,
+      source: body.source || 'online',
       parentName: body.parentName.trim(),
       parentPhone: cleanPhone,
-      parentEmail: body.parentEmail?.trim(),
+      parentEmail: body.parentEmail?.trim() || null,
       students: body.students.map(s => ({
         name: s.name.trim(),
-        ...(s.schoolName && { schoolName: s.schoolName.trim() }),
-        ...(s.gradeLevel && { gradeLevel: s.gradeLevel }),
+        schoolName: s.schoolName?.trim() || null,
+        gradeLevel: s.gradeLevel || null,
         subjectInterests: s.subjectInterests || []
       })),
-      status: 'new' as const,
-      ...(body.contactNote && { contactNote: body.contactNote.trim() })
+      status: 'new',
+      contactNote: body.contactNote?.trim() || null,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp()
     };
     
-    // Create booking
-    const bookingId = await createTrialBooking(bookingData);
+    console.log('Creating booking with data:', bookingData);
+    
+    // Create booking using Admin SDK
+    const docRef = await adminDb.collection('trialBookings').add(bookingData);
+    const bookingId = docRef.id;
+    
+    console.log('Booking created successfully:', bookingId);
     
     // Return success response
     return NextResponse.json({
@@ -114,6 +132,7 @@ export async function POST(request: NextRequest) {
     
   } catch (error: any) {
     console.error('Error creating trial booking:', error);
+    console.error('Error stack:', error.stack);
     
     // Handle specific errors
     if (error.message?.includes('already exists')) {
@@ -126,7 +145,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       { 
         error: 'เกิดข้อผิดพลาดในการบันทึกข้อมูล กรุณาลองใหม่',
-        details: error.message 
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined
       },
       { status: 500 }
     );
