@@ -2,7 +2,7 @@
 
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -32,7 +32,9 @@ import {
   AlertCircle,
   Users,
   MessageCircle,
-  AlertTriangle
+  AlertTriangle,
+  Search,
+  Check
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Branch, Subject } from '@/types/models'
@@ -43,6 +45,114 @@ interface StudentForm {
   schoolName: string
   gradeLevel: string
   subjectInterests: string[]
+}
+
+// Subject Selector Component
+function SubjectSelector({ 
+  subjects, 
+  selectedSubjects, 
+  onToggle 
+}: {
+  subjects: Subject[]
+  selectedSubjects: string[]
+  onToggle: (subjectId: string) => void
+}) {
+  const [searchTerm, setSearchTerm] = useState('')
+  
+  // Sort subjects alphabetically and filter by search
+  const filteredSubjects = useMemo(() => {
+    let filtered = [...subjects]
+    
+    // Filter by search term
+    if (searchTerm) {
+      filtered = filtered.filter(subject => 
+        subject.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        subject.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        subject.level.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    }
+    
+    // Sort alphabetically by name
+    filtered.sort((a, b) => a.name.localeCompare(b.name, 'th'))
+    
+    return filtered
+  }, [subjects, searchTerm])
+  
+  return (
+    <div className="space-y-3">
+      {/* Search Box */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+        <Input
+          type="text"
+          placeholder="ค้นหาวิชา..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="pl-10"
+        />
+      </div>
+      
+      {/* Subject Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-96 overflow-y-auto p-1">
+        {filteredSubjects.length === 0 ? (
+          <div className="col-span-2 text-center py-8 text-gray-500">
+            <Search className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+            <p>ไม่พบวิชาที่ค้นหา</p>
+          </div>
+        ) : (
+          filteredSubjects.map((subject) => {
+            const isSelected = selectedSubjects.includes(subject.id)
+            return (
+              <div
+                key={subject.id}
+                onClick={() => onToggle(subject.id)}
+                className={`
+                  p-3 rounded-lg border cursor-pointer transition-all
+                  ${isSelected 
+                    ? 'border-green-500 bg-green-50' 
+                    : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                  }
+                `}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="font-medium text-sm">{subject.name}</div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      {subject.category} • {subject.level}
+                    </div>
+                    {subject.ageRange && (
+                      <div className="text-xs text-gray-400 mt-1">
+                        อายุ {subject.ageRange.min}-{subject.ageRange.max} ปี
+                      </div>
+                    )}
+                  </div>
+                  {isSelected && (
+                    <div className="ml-2 flex-shrink-0">
+                      <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
+                        <Check className="h-3 w-3 text-white" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {isSelected && (
+                  <Badge className="mt-2 bg-green-100 text-green-700 border-green-300">
+                    เลือกแล้ว
+                  </Badge>
+                )}
+              </div>
+            )
+          })
+        )}
+      </div>
+      
+      {/* Selected count */}
+      {selectedSubjects.length > 0 && (
+        <div className="text-sm text-gray-600 text-center">
+          เลือกแล้ว {selectedSubjects.length} วิชา
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function TrialBookingPage() {
@@ -656,39 +766,11 @@ export default function TrialBookingPage() {
                         </AlertDescription>
                       </Alert>
                     ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {subjects.map((subject) => {
-                          const isSelected = student.subjectInterests.includes(subject.id)
-                          return (
-                            <div
-                              key={subject.id}
-                              onClick={() => toggleSubjectInterest(idx, subject.id)}
-                              className={`
-                                p-3 rounded-lg border cursor-pointer transition-all
-                                ${isSelected 
-                                  ? 'border-primary bg-primary/5' 
-                                  : 'border-gray-200 hover:border-gray-300'
-                                }
-                              `}
-                            >
-                              <div className="font-medium text-sm">{subject.name}</div>
-                              <div className="text-xs text-gray-500 mt-1">
-                                {subject.category} • {subject.level}
-                              </div>
-                              {subject.ageRange && (
-                                <div className="text-xs text-gray-400 mt-1">
-                                  อายุ {subject.ageRange.min}-{subject.ageRange.max} ปี
-                                </div>
-                              )}
-                              {isSelected && (
-                                <Badge className="mt-2 bg-primary/10 text-primary">
-                                  เลือกแล้ว
-                                </Badge>
-                              )}
-                            </div>
-                          )
-                        })}
-                      </div>
+                      <SubjectSelector
+                        subjects={subjects}
+                        selectedSubjects={student.subjectInterests}
+                        onToggle={(subjectId) => toggleSubjectInterest(idx, subjectId)}
+                      />
                     )}
                   </div>
                 </div>
