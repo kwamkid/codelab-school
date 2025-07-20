@@ -20,7 +20,10 @@ import {
   AlertCircle,
   Calendar,
   Users,
-  Loader2
+  Loader2,
+  UserPlus,
+  Link as LinkIcon,
+  MessageCircle
 } from 'lucide-react'
 import { useLiff } from '@/components/liff/liff-provider'
 import { getParentByLineId, getStudentsByParent, deleteStudent as deleteStudentService } from '@/lib/services/parents'
@@ -49,6 +52,7 @@ function ProfileContent() {
   const [isLoadingData, setIsLoadingData] = useState(true)
   const [parentId, setParentId] = useState<string | null>(null)
   const [authChecked, setAuthChecked] = useState(false)
+  const [hasParent, setHasParent] = useState<boolean | null>(null)
   
   // Delete confirmation state
   const [deleteStudentData, setDeleteStudentData] = useState<Student | null>(null)
@@ -84,6 +88,7 @@ function ProfileContent() {
       if (parent) {
         setParentData(parent)
         setParentId(parent.id)
+        setHasParent(true)
 
         // Load preferred branch
         if (parent.preferredBranchId) {
@@ -100,10 +105,12 @@ function ProfileContent() {
         setStudents(studentsList.filter(student => student.isActive))
       } else {
         console.log('No parent data found for LINE ID:', lineUserId)
+        setHasParent(false)
       }
     } catch (error) {
       console.error('Error loading parent data:', error)
       toast.error("ไม่สามารถโหลดข้อมูลได้")
+      setHasParent(false)
     } finally {
       setIsLoadingData(false)
     }
@@ -194,6 +201,103 @@ function ProfileContent() {
   // Show navigating overlay
   if (navigating) {
     return <Loading fullScreen text="กำลังโหลด..." />
+  }
+
+  // Check if not registered - show registration prompt
+  if (hasParent === false) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-4">
+        <div className="max-w-md mx-auto space-y-4">
+          <Card className="border-2 border-orange-200">
+            <CardContent className="pt-6 space-y-6">
+              <div className="text-center space-y-3">
+                <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mx-auto">
+                  <UserPlus className="h-10 w-10 text-orange-600" />
+                </div>
+                
+                <h2 className="text-2xl font-bold">ยังไม่ได้ลงทะเบียน</h2>
+                <p className="text-gray-600">
+                  กรุณาลงทะเบียนเพื่อเริ่มใช้งานระบบ
+                </p>
+              </div>
+              
+              {/* Register button */}
+              <Button 
+                className="w-full text-base bg-primary hover:bg-primary/90" 
+                size="lg"
+                onClick={() => navigateTo('/liff/register')}
+              >
+                <UserPlus className="h-5 w-5 mr-2" />
+                ลงทะเบียนใหม่
+              </Button>
+              
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-white px-2 text-gray-500">หรือ</span>
+                </div>
+              </div>
+              
+              {/* Connect existing account */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-start gap-3">
+                  <LinkIcon className="h-5 w-5 text-blue-600 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="font-medium text-blue-900">
+                      เคยลงทะเบียนที่เคาน์เตอร์แล้ว?
+                    </p>
+                    <p className="text-sm text-blue-700 mt-1">
+                      คลิกปุ่มด้านล่างเพื่อขอลิงก์เชื่อมต่อบัญชี
+                    </p>
+                    
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-3 w-full border-blue-600 text-blue-600 hover:bg-blue-50"
+                      onClick={async () => {
+                        if (liff) {
+                          try {
+                            if (liff.isInClient()) {
+                              await liff.sendMessages([{
+                                type: 'text',
+                                text: 'ขอเชื่อมต่อบัญชีที่ลงทะเบียนไว้แล้ว'
+                              }])
+                              setTimeout(() => {
+                                liff.closeWindow()
+                              }, 500)
+                            } else {
+                              toast.success('กรุณาติดต่อ Admin ผ่าน LINE เพื่อขอลิงก์เชื่อมต่อบัญชี')
+                            }
+                          } catch (error) {
+                            console.error('Error sending message:', error)
+                            toast.error('ไม่สามารถส่งข้อความได้')
+                          }
+                        }
+                      }}
+                    >
+                      <MessageCircle className="h-4 w-4 mr-2" />
+                      ติดต่อ Admin เพื่อเชื่อมต่อบัญชี
+                    </Button>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Back button */}
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => navigateTo('/liff')}
+              >
+                <ChevronLeft className="h-4 w-4 mr-2" />
+                กลับหน้าหลัก
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    )
   }
 
   return (
