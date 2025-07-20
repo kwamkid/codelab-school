@@ -31,7 +31,8 @@ import {
   CheckCircle,
   AlertCircle,
   Users,
-  MessageCircle
+  MessageCircle,
+  AlertTriangle
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Branch, Subject } from '@/types/models'
@@ -45,12 +46,13 @@ interface StudentForm {
 }
 
 export default function TrialBookingPage() {
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [branches, setBranches] = useState<Branch[]>([])
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [showSuccess, setShowSuccess] = useState(false)
-  const [isClient, setIsClient] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [debugInfo, setDebugInfo] = useState<string[]>([])
   
   // Form data
   const [parentName, setParentName] = useState('')
@@ -67,40 +69,89 @@ export default function TrialBookingPage() {
     subjectInterests: []
   }])
 
-  // Check if client-side
-  useEffect(() => {
-    setIsClient(true)
-  }, [])
+  // Debug function
+  const addDebugLog = (message: string) => {
+    console.log(`[Trial Booking] ${message}`)
+    setDebugInfo(prev => [...prev, `${new Date().toISOString()}: ${message}`])
+  }
 
   // Load initial data
   useEffect(() => {
-    if (isClient) {
+    let mounted = true
+    
+    const loadInitialData = async () => {
+      try {
+        addDebugLog('Starting to load initial data...')
+        setLoading(true)
+        setError(null)
+        
+        // Check if we're in browser
+        if (typeof window === 'undefined') {
+          addDebugLog('Not in browser environment, skipping load')
+          return
+        }
+        
+        addDebugLog('In browser environment, proceeding...')
+        
+        // Try to load branches
+        try {
+          addDebugLog('Loading branches...')
+          const { getActiveBranches } = await import('@/lib/services/branches')
+          const branchesData = await getActiveBranches()
+          addDebugLog(`Loaded ${branchesData.length} branches`)
+          
+          if (mounted) {
+            setBranches(branchesData.filter(b => b.isActive))
+            addDebugLog(`Set ${branchesData.filter(b => b.isActive).length} active branches`)
+          }
+        } catch (branchError) {
+          addDebugLog(`Error loading branches: ${branchError}`)
+          console.error('Branch loading error:', branchError)
+        }
+        
+        // Try to load subjects
+        try {
+          addDebugLog('Loading subjects...')
+          const { getSubjects } = await import('@/lib/services/subjects')
+          const subjectsData = await getSubjects()
+          addDebugLog(`Loaded ${subjectsData.length} subjects`)
+          
+          if (mounted) {
+            setSubjects(subjectsData.filter(s => s.isActive))
+            addDebugLog(`Set ${subjectsData.filter(s => s.isActive).length} active subjects`)
+          }
+        } catch (subjectError) {
+          addDebugLog(`Error loading subjects: ${subjectError}`)
+          console.error('Subject loading error:', subjectError)
+        }
+        
+        addDebugLog('Initial data load completed')
+        
+      } catch (error) {
+        addDebugLog(`Critical error during load: ${error}`)
+        console.error('Error loading data:', error)
+        if (mounted) {
+          setError('ไม่สามารถโหลดข้อมูลได้ กรุณาลองใหม่')
+          toast.error('ไม่สามารถโหลดข้อมูลได้ กรุณาลองใหม่')
+        }
+      } finally {
+        if (mounted) {
+          setLoading(false)
+          addDebugLog('Loading state set to false')
+        }
+      }
+    }
+    
+    // Delay slightly to ensure client-side
+    const timer = setTimeout(() => {
       loadInitialData()
+    }, 100)
+    
+    return () => {
+      mounted = false
+      clearTimeout(timer)
     }
-  }, [isClient])
-
-  const loadInitialData = async () => {
-    try {
-      setLoading(true)
-      
-      // Import services dynamically
-      const { getActiveBranches } = await import('@/lib/services/branches')
-      const { getSubjects } = await import('@/lib/services/subjects')
-      
-      const [branchesData, subjectsData] = await Promise.all([
-        getActiveBranches(),
-        getSubjects()
-      ])
-      
-      setBranches(branchesData.filter(b => b.isActive))
-      setSubjects(subjectsData.filter(s => s.isActive))
-    } catch (error) {
-      console.error('Error loading data:', error)
-      toast.error('ไม่สามารถโหลดข้อมูลได้ กรุณาลองใหม่')
-    } finally {
-      setLoading(false)
-    }
-  }
+  }, [])
 
   const addStudent = () => {
     setStudents([...students, {
@@ -244,14 +295,76 @@ export default function TrialBookingPage() {
     }
   }
 
-  // Show loading while checking client
-  if (!isClient || loading) {
+  // Retry loading function
+  const retryLoading = () => {
+    window.location.reload()
+  }
+
+  // Show loading
+  if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
           <p className="text-gray-600">กำลังโหลด...</p>
+          {/* Debug info in development */}
+          {process.env.NODE_ENV === 'development' && debugInfo.length > 0 && (
+            <div className="mt-4 text-xs text-gray-500 text-left max-w-md mx-auto">
+              <p className="font-semibold mb-2">Debug Log:</p>
+              {debugInfo.map((log, idx) => (
+                <p key={idx} className="mb-1">{log}</p>
+              ))}
+            </div>
+          )}
         </div>
+      </div>
+    )
+  }
+
+  // Show error state
+  if (error || (branches.length === 0 && subjects.length === 0)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <Card className="w-full max-w-md">
+          <CardContent className="pt-6">
+            <div className="text-center space-y-4">
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto">
+                <AlertTriangle className="h-8 w-8 text-red-600" />
+              </div>
+              
+              <h2 className="text-xl font-semibold">ไม่สามารถโหลดข้อมูลได้</h2>
+              
+              <p className="text-gray-600">
+                {error || 'ไม่สามารถโหลดข้อมูลสาขาและวิชาได้'}
+              </p>
+              
+              {/* Debug info */}
+              <Alert className="text-left">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription className="text-xs">
+                  <p className="font-semibold mb-1">ข้อมูลสำหรับแก้ไขปัญหา:</p>
+                  <p>- Branches loaded: {branches.length}</p>
+                  <p>- Subjects loaded: {subjects.length}</p>
+                  <p>- Environment: {process.env.NODE_ENV}</p>
+                  {debugInfo.length > 0 && (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-blue-600">Debug Log</summary>
+                      <div className="mt-1 space-y-1">
+                        {debugInfo.map((log, idx) => (
+                          <p key={idx} className="text-gray-600">{log}</p>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+                </AlertDescription>
+              </Alert>
+              
+              <Button onClick={retryLoading} className="w-full">
+                ลองใหม่
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     )
   }
@@ -428,14 +541,21 @@ export default function TrialBookingPage() {
                     <SelectValue placeholder="เลือกสาขา" />
                   </SelectTrigger>
                   <SelectContent>
-                    {branches.map((branch) => (
-                      <SelectItem key={branch.id} value={branch.id}>
-                        <div className="flex items-center gap-2">
-                          <MapPin className="h-4 w-4" />
-                          <span>{branch.name}</span>
-                        </div>
-                      </SelectItem>
-                    ))}
+                    {branches.length === 0 ? (
+                      <div className="p-4 text-center text-gray-500">
+                        <AlertCircle className="h-5 w-5 mx-auto mb-2" />
+                        <p className="text-sm">ไม่พบข้อมูลสาขา</p>
+                      </div>
+                    ) : (
+                      branches.map((branch) => (
+                        <SelectItem key={branch.id} value={branch.id}>
+                          <div className="flex items-center gap-2">
+                            <MapPin className="h-4 w-4" />
+                            <span>{branch.name}</span>
+                          </div>
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
               </div>
@@ -528,39 +648,48 @@ export default function TrialBookingPage() {
                     <p className="text-sm text-gray-500 mb-2">
                       เลือกได้มากกว่า 1 วิชา
                     </p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {subjects.map((subject) => {
-                        const isSelected = student.subjectInterests.includes(subject.id)
-                        return (
-                          <div
-                            key={subject.id}
-                            onClick={() => toggleSubjectInterest(idx, subject.id)}
-                            className={`
-                              p-3 rounded-lg border cursor-pointer transition-all
-                              ${isSelected 
-                                ? 'border-primary bg-primary/5' 
-                                : 'border-gray-200 hover:border-gray-300'
-                              }
-                            `}
-                          >
-                            <div className="font-medium text-sm">{subject.name}</div>
-                            <div className="text-xs text-gray-500 mt-1">
-                              {subject.category} • {subject.level}
-                            </div>
-                            {subject.ageRange && (
-                              <div className="text-xs text-gray-400 mt-1">
-                                อายุ {subject.ageRange.min}-{subject.ageRange.max} ปี
+                    {subjects.length === 0 ? (
+                      <Alert>
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertDescription>
+                          ไม่พบข้อมูลวิชา กรุณาติดต่อเจ้าหน้าที่
+                        </AlertDescription>
+                      </Alert>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {subjects.map((subject) => {
+                          const isSelected = student.subjectInterests.includes(subject.id)
+                          return (
+                            <div
+                              key={subject.id}
+                              onClick={() => toggleSubjectInterest(idx, subject.id)}
+                              className={`
+                                p-3 rounded-lg border cursor-pointer transition-all
+                                ${isSelected 
+                                  ? 'border-primary bg-primary/5' 
+                                  : 'border-gray-200 hover:border-gray-300'
+                                }
+                              `}
+                            >
+                              <div className="font-medium text-sm">{subject.name}</div>
+                              <div className="text-xs text-gray-500 mt-1">
+                                {subject.category} • {subject.level}
                               </div>
-                            )}
-                            {isSelected && (
-                              <Badge className="mt-2 bg-primary/10 text-primary">
-                                เลือกแล้ว
-                              </Badge>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
+                              {subject.ageRange && (
+                                <div className="text-xs text-gray-400 mt-1">
+                                  อายุ {subject.ageRange.min}-{subject.ageRange.max} ปี
+                                </div>
+                              )}
+                              {isSelected && (
+                                <Badge className="mt-2 bg-primary/10 text-primary">
+                                  เลือกแล้ว
+                                </Badge>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
@@ -608,7 +737,7 @@ export default function TrialBookingPage() {
             <Button
               type="submit"
               size="lg"
-              disabled={submitting}
+              disabled={submitting || branches.length === 0 || subjects.length === 0}
               className="w-full md:w-auto px-8"
             >
               {submitting ? (
