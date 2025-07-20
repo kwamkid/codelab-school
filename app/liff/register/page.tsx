@@ -32,11 +32,12 @@ import {
   CheckCircle,
   AlertCircle
 } from 'lucide-react';
-import { createParent, createStudent } from '@/lib/services/parents';
 import { toast } from 'sonner';
 import { getActiveBranches } from '@/lib/services/branches';
 import { Branch } from '@/types/models';
 import { LiffProvider } from '@/components/liff/liff-provider';
+import { db } from '@/lib/firebase/client';
+import { collection, addDoc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
 
 interface StudentFormData {
   name: string;
@@ -59,7 +60,7 @@ function RegisterContent() {
   
   // Parent data
   const [parentData, setParentData] = useState({
-    displayName: profile?.displayName || '',
+    displayName: '',
     phone: '',
     emergencyPhone: '',
     email: '',
@@ -85,6 +86,16 @@ function RegisterContent() {
     allergies: '',
     specialNeeds: '',
   }]);
+
+  // Set initial display name from LINE profile
+  useEffect(() => {
+    if (profile?.displayName && !parentData.displayName) {
+      setParentData(prev => ({
+        ...prev,
+        displayName: profile.displayName
+      }));
+    }
+  }, [profile]);
 
   // Load branches
   useEffect(() => {
@@ -167,41 +178,76 @@ function RegisterContent() {
     setLoading(true);
     
     try {
+      console.log('[Register] Starting registration...');
+      console.log('[Register] Profile:', profile);
+      console.log('[Register] Parent data:', parentData);
+      console.log('[Register] Students:', validStudents);
+      
       // Check if LINE ID already used
       if (profile?.userId) {
-        const { checkLineUserIdExists } = await import('@/lib/services/parents');
-        const lineCheck = await checkLineUserIdExists(profile.userId);
+        console.log('[Register] Checking if LINE ID exists...');
+        const parentsRef = collection(db, 'parents');
+        const q = query(parentsRef, where('lineUserId', '==', profile.userId));
+        const querySnapshot = await getDocs(q);
         
-        if (lineCheck.exists) {
+        if (!querySnapshot.empty) {
+          console.log('[Register] LINE ID already exists');
           toast.error('LINE account นี้ถูกใช้งานแล้ว');
           setLoading(false);
           return;
         }
       }
 
-      // Create parent
-      const parentId = await createParent({
+      // Create parent directly with Firestore
+      console.log('[Register] Creating parent document...');
+      const parentDocRef = await addDoc(collection(db, 'parents'), {
         ...parentData,
         lineUserId: profile?.userId || '',
-        pictureUrl: profile?.pictureUrl,
+        pictureUrl: profile?.pictureUrl || '',
+        createdAt: serverTimestamp(),
+        lastLoginAt: serverTimestamp()
       });
+      
+      const parentId = parentDocRef.id;
+      console.log('[Register] Parent created with ID:', parentId);
 
       // Create students
+      console.log('[Register] Creating students...');
       for (const student of validStudents) {
-        await createStudent(parentId, {
+        console.log('[Register] Creating student:', student.name);
+        
+        const studentData = {
           ...student,
           birthdate: new Date(student.birthdate),
           isActive: true,
-        });
+          parentId: parentId
+        };
+        
+        await addDoc(collection(db, 'parents', parentId, 'students'), studentData);
       }
 
+      console.log('[Register] Registration completed successfully!');
       toast.success('ลงทะเบียนสำเร็จ!');
       
-      // Redirect to home
-      router.push('/liff');
-    } catch (error) {
+      // Clear cache and redirect
+      setTimeout(() => {
+        router.push('/liff');
+      }, 1000);
+      
+    } catch (error: any) {
       console.error('Registration error:', error);
-      toast.error('เกิดข้อผิดพลาด กรุณาลองใหม่');
+      console.error('Error details:', {
+        message: error.message,
+        code: error.code,
+        stack: error.stack
+      });
+      
+      // แสดง error ที่ละเอียดขึ้น
+      if (error.message) {
+        toast.error(`เกิดข้อผิดพลาด: ${error.message}`);
+      } else {
+        toast.error('เกิดข้อผิดพลาด กรุณาลองใหม่');
+      }
     } finally {
       setLoading(false);
     }
