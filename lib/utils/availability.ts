@@ -12,6 +12,7 @@ import { isHoliday } from '@/lib/services/holidays';
 import { getClasses } from '@/lib/services/classes';
 import { getMakeupClasses } from '@/lib/services/makeup';
 import { getTrialSessions } from '@/lib/services/trial-bookings';
+import { getSubjects } from '@/lib/services/subjects';
 
 export interface AvailabilityCheckResult {
   available: boolean;
@@ -111,9 +112,6 @@ async function checkHolidayConflict(
   return null;
 }
 
-/**
- * Check room availability
- */
 /**
  * Check room availability
  */
@@ -217,9 +215,6 @@ async function checkRoomAvailability(
   return issues;
 }
 
-/**
- * Check teacher availability
- */
 /**
  * Check teacher availability
  */
@@ -345,10 +340,21 @@ export async function getDayConflicts(
     type: 'class' | 'makeup' | 'trial';
     name: string;
     roomId: string;
+    roomName?: string;
     teacherId: string;
-    subjectId?: string;  // เพิ่มบรรทัดนี้
-    studentName?: string;  // เพิ่มบรรทัดนี้
-
+    teacherName?: string;
+    subjectId?: string;
+    studentName?: string;
+    subjectName?: string;
+    trialCount?: number;
+    trialDetails?: Array<{
+      id: string;
+      studentName: string;
+      subjectId: string;
+      subjectName: string;
+      status: string;
+      attended?: boolean;
+    }>;
   }>;
 }> {
   // Check holiday
@@ -360,18 +366,48 @@ export async function getDayConflicts(
     type: 'class' | 'makeup' | 'trial';
     name: string;
     roomId: string;
+    roomName?: string;
     teacherId: string;
-    subjectId?: string;  // เพิ่มบรรทัดนี้
-    studentName?: string;  // เพิ่มบรรทัดนี้
-
+    teacherName?: string;
+    subjectId?: string;
+    studentName?: string;
+    subjectName?: string;
+    trialCount?: number;
+    trialDetails?: Array<{
+      id: string;
+      studentName: string;
+      subjectId: string;
+      subjectName: string;
+      status: string;
+      attended?: boolean;
+    }>;
   }> = [];
+  
+  // Get all necessary data
+  const [classes, makeupClasses, trialSessions, subjects] = await Promise.all([
+    getClasses(),
+    getMakeupClasses(), 
+    getTrialSessions(),
+    getSubjects()
+  ]);
+  
+  // Get teachers and rooms
+  const { getTeachers } = await import('@/lib/services/teachers');
+  const { getRoomsByBranch } = await import('@/lib/services/rooms');
+  const [teachers, rooms] = await Promise.all([
+    getTeachers(),
+    getRoomsByBranch(branchId)
+  ]);
+  
+  // Create lookup maps
+  const teacherMap = new Map(teachers.map(t => [t.id, t]));
+  const roomMap = new Map(rooms.map(r => [r.id, r]));
   
   // Get all classes on that day
   const dayOfWeek = date.getDay();
   const dateOnly = new Date(date);
   dateOnly.setHours(0, 0, 0, 0);
   
-  const classes = await getClasses();
   const relevantClasses = classes.filter(cls => 
     cls.branchId === branchId &&
     cls.daysOfWeek.includes(dayOfWeek) &&
@@ -397,21 +433,26 @@ export async function getDayConflicts(
     const scheduleSnapshot = await getDocs(scheduleQuery);
     
     if (!scheduleSnapshot.empty) {
+      const teacher = teacherMap.get(cls.teacherId);
+      const room = roomMap.get(cls.roomId);
+      const subject = subjects.find(s => s.id === cls.subjectId);
+      
       busySlots.push({
         startTime: cls.startTime,
         endTime: cls.endTime,
         type: 'class',
         name: cls.name,
         roomId: cls.roomId,
+        roomName: room?.name || cls.roomId,
         teacherId: cls.teacherId,
-        subjectId: cls.subjectId,  // เพิ่มบรรทัดนี้
-        
+        teacherName: teacher?.nickname || teacher?.name || 'ไม่ระบุครู',
+        subjectId: cls.subjectId,
+        subjectName: subject?.name
       });
     }
   }
   
   // Get makeup classes
-  const makeupClasses = await getMakeupClasses();
   const relevantMakeups = makeupClasses.filter(makeup => 
     makeup.status === 'scheduled' &&
     makeup.makeupSchedule &&
@@ -423,6 +464,10 @@ export async function getDayConflicts(
     if (makeup.makeupSchedule) {
       const { getStudent } = await import('@/lib/services/parents');
       const student = await getStudent(makeup.parentId, makeup.studentId);
+      const teacher = teacherMap.get(makeup.makeupSchedule.teacherId);
+      const room = roomMap.get(makeup.makeupSchedule.roomId);
+      const originalClass = classes.find(c => c.id === makeup.originalClassId);
+      const subject = originalClass ? subjects.find(s => s.id === originalClass.subjectId) : null;
       
       busySlots.push({
         startTime: makeup.makeupSchedule.startTime,
@@ -430,31 +475,79 @@ export async function getDayConflicts(
         type: 'makeup',
         name: `Makeup: ${student?.nickname || 'นักเรียน'}`,
         roomId: makeup.makeupSchedule.roomId,
+        roomName: room?.name || makeup.makeupSchedule.roomId,
         teacherId: makeup.makeupSchedule.teacherId,
-        studentName: student?.nickname || student?.name || 'นักเรียน'  // เพิ่มบรรทัดนี้
-
+        teacherName: teacher?.nickname || teacher?.name || 'ไม่ระบุครู',
+        studentName: student?.nickname || student?.name || 'นักเรียน',
+        subjectId: originalClass?.subjectId,
+        subjectName: subject?.name
       });
     }
   }
   
-  // Get trial sessions
-  const trialSessions = await getTrialSessions();
+  // Get trial sessions and GROUP them
   const relevantTrials = trialSessions.filter(trial =>
     trial.status === 'scheduled' &&
     trial.branchId === branchId &&
     new Date(trial.scheduledDate).toDateString() === date.toDateString()
   );
   
+  // Group trials by time slot and room
+  const trialGroups = new Map<string, typeof relevantTrials>();
+  
   for (const trial of relevantTrials) {
+    const key = `${trial.startTime}-${trial.endTime}-${trial.roomId}-${trial.teacherId}`;
+    
+    if (!trialGroups.has(key)) {
+      trialGroups.set(key, []);
+    }
+    
+    trialGroups.get(key)!.push(trial);
+  }
+  
+  // Process each group
+  for (const [key, trials] of trialGroups) {
+    const firstTrial = trials[0];
+    const teacher = teacherMap.get(firstTrial.teacherId);
+    const room = roomMap.get(firstTrial.roomId);
+    
+    // สร้างชื่อที่รวมนักเรียนทั้งหมด
+    const studentNames = trials.map(t => t.studentName).join(', ');
+    
+    // รวบรวมวิชาที่ไม่ซ้ำกัน
+    const uniqueSubjects = [...new Set(trials.map(t => {
+      const subject = subjects.find(s => s.id === t.subjectId);
+      return subject?.name || 'ไม่ระบุวิชา';
+    }))];
+    
+    // สร้างรายละเอียดของแต่ละคน
+    const trialDetails = trials.map(trial => {
+      const subject = subjects.find(s => s.id === trial.subjectId);
+      return {
+        id: trial.id,
+        studentName: trial.studentName,
+        subjectId: trial.subjectId,
+        subjectName: subject?.name || 'ไม่ระบุวิชา',
+        status: trial.status,
+        attended: trial.attended
+      };
+    });
+    
     busySlots.push({
-      startTime: trial.startTime,
-      endTime: trial.endTime,
+      startTime: firstTrial.startTime,
+      endTime: firstTrial.endTime,
       type: 'trial',
-      name: `ทดลอง: ${trial.studentName}`,
-      roomId: trial.roomId,
-      teacherId: trial.teacherId,
-      studentName: trial.studentName  // เพิ่มบรรทัดนี้
-
+      name: trials.length === 1 
+        ? `ทดลอง: ${studentNames}` 
+        : `ทดลอง ${trials.length} คน: ${studentNames}`,
+      roomId: firstTrial.roomId,
+      roomName: room?.name || firstTrial.roomName || firstTrial.roomId,
+      teacherId: firstTrial.teacherId,
+      teacherName: teacher?.nickname || teacher?.name || 'ไม่ระบุครู',
+      studentName: studentNames,
+      subjectName: uniqueSubjects.join(', '),
+      trialCount: trials.length,
+      trialDetails: trialDetails
     });
   }
   

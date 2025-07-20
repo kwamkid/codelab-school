@@ -224,6 +224,7 @@ export function Timeline({
                                 </div>
                               </div>
                             </PopoverTrigger>
+
                             <PopoverContent 
                               className="w-80" 
                               align="center"
@@ -249,11 +250,32 @@ export function Timeline({
                                     <span className="text-gray-700">ครู: {teacherName}</span>
                                   </div>
                                   
-                                  {studentInfo && (
+                                  {busySlot.type === 'trial' && busySlot.trialDetails && busySlot.trialCount > 1 ? (
                                     <div className="flex items-start gap-2">
                                       <UserCheck className="h-4 w-4 text-gray-400 mt-0.5" />
-                                      <span className="text-gray-700">นักเรียน: {studentInfo}</span>
+                                      <div className="text-gray-700">
+                                        <div className="font-medium mb-1">นักเรียน {busySlot.trialCount} คน:</div>
+                                        <div className="space-y-1 text-sm pl-2">
+                                          {busySlot.trialDetails.map((trial: any, idx: number) => (
+                                            <div key={idx} className="flex items-center gap-1">
+                                              <span className="text-gray-500">•</span>
+                                              <span>{trial.studentName}</span>
+                                              <span className="text-gray-500">-</span>
+                                              <span className="text-gray-600">{trial.subjectName}</span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
                                     </div>
+                                  ) : (
+                                    <>
+                                      {studentInfo && (
+                                        <div className="flex items-start gap-2">
+                                          <UserCheck className="h-4 w-4 text-gray-400 mt-0.5" />
+                                          <span className="text-gray-700">นักเรียน: {studentInfo}</span>
+                                        </div>
+                                      )}
+                                    </>
                                   )}
                                   
                                   {busySlot.type === 'class' && busySlot.subjectId && (

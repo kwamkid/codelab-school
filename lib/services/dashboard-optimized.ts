@@ -37,6 +37,17 @@ export interface CalendarEvent extends EventInput {
     // For trial
     trialStudentName?: string;
     trialSubjectName?: string;
+    trialCount?: number; // จำนวนนักเรียนทดลองใน slot เดียวกัน
+    trialDetails?: Array<{ // รายละเอียดของแต่ละคน
+      id: string;
+      studentName: string;
+      subjectId: string;
+      subjectName: string;
+      status: string;
+      attended?: boolean;
+      interestedLevel?: string;
+      feedback?: string;
+    }>;
     // For holiday
     holidayType?: 'national' | 'branch';
   };
@@ -358,7 +369,7 @@ export async function getOptimizedCalendarEvents(
       });
     }
 
-    // 4. Get trial sessions in range
+    // 4. Get trial sessions in range - GROUP BY TIME SLOT
     let trialQuery = query(
       collection(db, 'trialSessions'),
       where('scheduledDate', '>=', Timestamp.fromDate(start)),
@@ -372,19 +383,38 @@ export async function getOptimizedCalendarEvents(
     
     const trialSnapshot = await getDocs(trialQuery);
     
+    // Group trials by time slot, room, and teacher
+    const trialGroups = new Map<string, any[]>();
+    
     trialSnapshot.docs.forEach(doc => {
       const trial = { id: doc.id, ...doc.data() };
       
-      const teacher = teachers.get(trial.teacherId);
-      const branch = branches.get(trial.branchId);
-      const room = rooms.get(`${trial.branchId}-${trial.roomId}`);
-      const subject = subjects.get(trial.subjectId);
-      
-      if (!teacher || !branch || !subject) return;
-      
+      // Create unique key for grouping (same date, time, room, and teacher)
       const trialDate = trial.scheduledDate.toDate();
-      const [startHour, startMinute] = trial.startTime.split(':').map(Number);
-      const [endHour, endMinute] = trial.endTime.split(':').map(Number);
+      const dateKey = trialDate.toISOString().split('T')[0];
+      const key = `${trial.branchId}-${trial.roomId}-${dateKey}-${trial.startTime}-${trial.endTime}-${trial.teacherId}`;
+      
+      if (!trialGroups.has(key)) {
+        trialGroups.set(key, []);
+      }
+      
+      trialGroups.get(key)!.push(trial);
+    });
+    
+    // Process each group of trials
+    for (const [key, groupedTrials] of trialGroups) {
+      if (groupedTrials.length === 0) continue;
+      
+      const firstTrial = groupedTrials[0];
+      const teacher = teachers.get(firstTrial.teacherId);
+      const branch = branches.get(firstTrial.branchId);
+      const room = rooms.get(`${firstTrial.branchId}-${firstTrial.roomId}`);
+      
+      if (!teacher || !branch) continue;
+      
+      const trialDate = firstTrial.scheduledDate.toDate();
+      const [startHour, startMinute] = firstTrial.startTime.split(':').map(Number);
+      const [endHour, endMinute] = firstTrial.endTime.split(':').map(Number);
       
       const eventStart = new Date(trialDate);
       eventStart.setHours(startHour, startMinute, 0, 0);
@@ -392,20 +422,58 @@ export async function getOptimizedCalendarEvents(
       const eventEnd = new Date(trialDate);
       eventEnd.setHours(endHour, endMinute, 0, 0);
       
-      let backgroundColor = '#FED7AA';
-      let borderColor = '#FDBA74';
-      let textColor = '#9A3412';
+      // Determine color based on time and attendance
+      let backgroundColor = '#FED7AA'; // Orange-200 default
+      let borderColor = '#FDBA74'; // Orange-300 default
+      let textColor = '#9A3412'; // Orange-900 default
       
-      if (eventEnd < now || trial.attended || trial.status === 'attended' || trial.status === 'absent') {
-        backgroundColor = '#D1FAE5';
-        borderColor = '#A7F3D0';
-        textColor = '#065F46';
+      // Check if all trials have been completed
+      const allCompleted = groupedTrials.every(trial => 
+        eventEnd < now || trial.attended || trial.status === 'attended' || trial.status === 'absent'
+      );
+      
+      if (allCompleted) {
+        backgroundColor = '#D1FAE5'; // Green-100 for completed
+        borderColor = '#A7F3D0'; // Green-200 border
+        textColor = '#065F46'; // Green-800 text
       }
       
+      // Create student info array with subject names
+      const studentInfo = groupedTrials.map(trial => {
+        const subject = subjects.get(trial.subjectId);
+        return `${trial.studentName} (${subject?.name || 'ไม่ระบุวิชา'})`;
+      });
+      
+      // Create title based on number of students
+      const title = groupedTrials.length === 1 
+        ? `ทดลอง: ${studentInfo[0]}`
+        : `ทดลอง ${groupedTrials.length} คน: ${groupedTrials.map(t => t.studentName).join(', ')}`;
+      
+      // Get unique subjects
+      const uniqueSubjects = [...new Set(groupedTrials.map(t => {
+        const subject = subjects.get(t.subjectId);
+        return subject?.name || 'ไม่ระบุวิชา';
+      }))];
+      
+      // Create trial details for extended props
+      const trialDetails = groupedTrials.map(trial => {
+        const subject = subjects.get(trial.subjectId);
+        return {
+          id: trial.id,
+          studentName: trial.studentName,
+          subjectId: trial.subjectId,
+          subjectName: subject?.name || 'ไม่ระบุวิชา',
+          status: trial.status,
+          attended: trial.attended,
+          interestedLevel: trial.interestedLevel,
+          feedback: trial.feedback
+        };
+      });
+      
       events.push({
-        id: `trial-${trial.id}`,
-        classId: '',
-        title: `${trial.studentName} - ${subject.name}`,
+        id: `trial-group-${key}`,
+        classId: '', // No class ID for trials
+        title,
         start: eventStart,
         end: eventEnd,
         backgroundColor,
@@ -413,16 +481,18 @@ export async function getOptimizedCalendarEvents(
         textColor,
         extendedProps: {
           type: 'trial',
-          branchId: trial.branchId,
+          branchId: firstTrial.branchId,
           branchName: branch.name,
-          roomName: room?.name || trial.roomName || trial.roomId,
+          roomName: room?.name || firstTrial.roomName || firstTrial.roomId,
           teacherName: teacher.nickname || teacher.name,
-          subjectColor: subject.color,
-          trialStudentName: trial.studentName,
-          trialSubjectName: subject.name
+          subjectColor: '#F97316', // Orange color for trials
+          trialStudentName: studentInfo.join(', '),
+          trialSubjectName: uniqueSubjects.join(', '),
+          trialCount: groupedTrials.length,
+          trialDetails: trialDetails
         }
       });
-    });
+    }
 
     // Sort events by start time
     return events.sort((a, b) => {
