@@ -93,7 +93,7 @@ function SubjectSelector({
       </div>
       
       {/* Subject Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-96 overflow-y-auto p-1">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {filteredSubjects.length === 0 ? (
           <div className="col-span-2 text-center py-8 text-gray-500">
             <Search className="h-8 w-8 mx-auto mb-2 text-gray-300" />
@@ -147,7 +147,7 @@ function SubjectSelector({
       
       {/* Selected count */}
       {selectedSubjects.length > 0 && (
-        <div className="text-sm text-gray-600 text-center">
+        <div className="text-sm text-gray-600 text-center pt-2 border-t">
           เลือกแล้ว {selectedSubjects.length} วิชา
         </div>
       )}
@@ -675,28 +675,15 @@ export default function TrialBookingPage() {
           {/* Students Information */}
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <GraduationCap className="h-5 w-5 text-gray-400" />
-                    ข้อมูลนักเรียน
-                  </CardTitle>
-                  <CardDescription>
-                    กรอกข้อมูลนักเรียนที่ต้องการทดลองเรียน
-                  </CardDescription>
-                </div>
-                <Button
-                  type="button"
-                  onClick={addStudent}
-                  variant="outline"
-                  size="sm"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  เพิ่มนักเรียน
-                </Button>
-              </div>
+              <CardTitle className="flex items-center gap-2">
+                <GraduationCap className="h-5 w-5 text-gray-400" />
+                ข้อมูลนักเรียน
+              </CardTitle>
+              <CardDescription>
+                กรอกข้อมูลนักเรียนที่ต้องการทดลองเรียน
+              </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
+            <CardContent className="space-y-4">
               {students.map((student, idx) => (
                 <div key={idx} className="relative p-4 border rounded-lg space-y-4">
                   {students.length > 1 && (
@@ -775,6 +762,19 @@ export default function TrialBookingPage() {
                   </div>
                 </div>
               ))}
+              
+              {/* Add Student Button */}
+              <div className="pt-2">
+                <Button
+                  type="button"
+                  onClick={addStudent}
+                  variant="outline"
+                  className="w-full"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  เพิ่มนักเรียน
+                </Button>
+              </div>
             </CardContent>
           </Card>
 
