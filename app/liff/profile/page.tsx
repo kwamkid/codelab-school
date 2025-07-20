@@ -109,7 +109,7 @@ function ProfileContent() {
       }
     } catch (error) {
       console.error('Error loading parent data:', error)
-      toast.error("ไม่สามารถโหลดข้อมูลได้")
+      // ไม่แสดง error toast เพราะอาจจะยังไม่ได้ลงทะเบียน
       setHasParent(false)
     } finally {
       setIsLoadingData(false)
@@ -256,24 +256,26 @@ function ProfileContent() {
                       variant="outline"
                       size="sm"
                       className="mt-3 w-full border-blue-600 text-blue-600 hover:bg-blue-50"
-                      onClick={async () => {
-                        if (liff) {
+                      onClick={() => {
+                        if (liff && liff.isInClient()) {
                           try {
-                            if (liff.isInClient()) {
-                              await liff.sendMessages([{
-                                type: 'text',
-                                text: 'ขอเชื่อมต่อบัญชีที่ลงทะเบียนไว้แล้ว'
-                              }])
-                              setTimeout(() => {
-                                liff.closeWindow()
-                              }, 500)
-                            } else {
-                              toast.success('กรุณาติดต่อ Admin ผ่าน LINE เพื่อขอลิงก์เชื่อมต่อบัญชี')
-                            }
+                            // LINE Official Account ID (without @)
+                            const lineOAId = '@265lryrv'
+                            const message = 'ติดต่อขอเชื่อมบัญชี LINE'
+                            
+                            // Create LINE URL with message
+                            const lineUrl = `https://line.me/R/oaMessage/${encodeURIComponent(lineOAId)}/?${encodeURIComponent(message)}`
+                            
+                            // Open URL and close LIFF
+                            window.location.href = lineUrl
                           } catch (error) {
-                            console.error('Error sending message:', error)
-                            toast.error('ไม่สามารถส่งข้อความได้')
+                            console.error('Error:', error)
+                            // Fallback: just close and let user type
+                            liff.closeWindow()
                           }
+                        } else {
+                          // Not in LINE app
+                          toast.info('กรุณาเปิดผ่าน LINE app เพื่อติดต่อ Admin')
                         }
                       }}
                     >
