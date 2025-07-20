@@ -30,9 +30,8 @@ import {
   Trash2,
   CheckCircle,
   AlertCircle,
-  Calendar,
-  Clock,
-  Users
+  Users,
+  MessageCircle
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { getActiveBranches } from '@/lib/services/branches'
@@ -59,8 +58,6 @@ export default function TrialBookingPage() {
   const [parentPhone, setParentPhone] = useState('')
   const [parentEmail, setParentEmail] = useState('')
   const [selectedBranch, setSelectedBranch] = useState('')
-  const [preferredDate, setPreferredDate] = useState('')
-  const [preferredTime, setPreferredTime] = useState('')
   const [contactNote, setContactNote] = useState('')
   
   // Students
@@ -197,8 +194,6 @@ export default function TrialBookingPage() {
         parentPhone: parentPhone.replace(/-/g, ''),
         parentEmail: parentEmail.trim() || undefined,
         branchId: selectedBranch,
-        preferredDate: preferredDate || undefined,
-        preferredTime: preferredTime || undefined,
         students: students.map(s => ({
           name: s.name.trim(),
           schoolName: s.schoolName.trim() || undefined,
@@ -237,16 +232,6 @@ export default function TrialBookingPage() {
       setSubmitting(false)
     }
   }
-
-  // Get tomorrow's date for minimum date
-  const tomorrow = new Date()
-  tomorrow.setDate(tomorrow.getDate() + 1)
-  const minDate = tomorrow.toISOString().split('T')[0]
-
-  // Time slots
-  const timeSlots = [
-    '09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00', '17:00'
-  ]
 
   if (loading) {
     return (
@@ -297,8 +282,6 @@ export default function TrialBookingPage() {
                     setParentPhone('')
                     setParentEmail('')
                     setSelectedBranch('')
-                    setPreferredDate('')
-                    setPreferredTime('')
                     setContactNote('')
                     setStudents([{
                       name: '',
@@ -560,63 +543,25 @@ export default function TrialBookingPage() {
             </CardContent>
           </Card>
 
-          {/* Preferred Schedule */}
+          {/* Notes */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Calendar className="h-5 w-5 text-gray-400" />
-                วันเวลาที่สะดวก (ถ้ามี)
+                <MessageCircle className="h-5 w-5 text-gray-400" />
+                หมายเหตุเพิ่มเติม
               </CardTitle>
               <CardDescription>
-                ระบุวันเวลาที่สะดวก เจ้าหน้าที่จะติดต่อกลับเพื่อยืนยัน
+                ระบุข้อมูลเพิ่มเติมหรือความต้องการพิเศษ
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="preferredDate">
-                    <Calendar className="inline h-4 w-4 mr-1" />
-                    วันที่
-                  </Label>
-                  <Input
-                    id="preferredDate"
-                    type="date"
-                    value={preferredDate}
-                    onChange={(e) => setPreferredDate(e.target.value)}
-                    min={minDate}
-                  />
-                </div>
-                
-                <div>
-                  <Label htmlFor="preferredTime">
-                    <Clock className="inline h-4 w-4 mr-1" />
-                    ช่วงเวลา
-                  </Label>
-                  <Select value={preferredTime} onValueChange={setPreferredTime}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="เลือกช่วงเวลา" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {timeSlots.map((time) => (
-                        <SelectItem key={time} value={time}>
-                          {time} น.
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              
-              <div>
-                <Label htmlFor="contactNote">หมายเหตุเพิ่มเติม</Label>
-                <Textarea
-                  id="contactNote"
-                  value={contactNote}
-                  onChange={(e) => setContactNote(e.target.value)}
-                  placeholder="ข้อมูลเพิ่มเติมที่ต้องการแจ้ง เช่น ความต้องการพิเศษ, ช่วงเวลาที่ติดต่อได้"
-                  rows={3}
-                />
-              </div>
+            <CardContent>
+              <Textarea
+                id="contactNote"
+                value={contactNote}
+                onChange={(e) => setContactNote(e.target.value)}
+                placeholder="เช่น ช่วงเวลาที่สะดวกให้ติดต่อ, ความต้องการพิเศษ, วันเวลาที่อยากทดลองเรียน"
+                rows={4}
+              />
             </CardContent>
           </Card>
 
@@ -664,7 +609,7 @@ export default function TrialBookingPage() {
               <p className="text-sm text-gray-600">หากมีข้อสงสัยเพิ่มเติม ติดต่อ</p>
               <p className="font-medium flex items-center justify-center gap-2">
                 <Phone className="h-4 w-4" />
-                02-XXX-XXXX
+                090-155-5192
               </p>
               <p className="text-sm text-gray-500">
                 เปิดทำการ จันทร์-เสาร์ 09:00-18:00 น.
