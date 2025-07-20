@@ -304,30 +304,42 @@ export default function TrialBookingPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white">
       {/* Header */}
-      <div className="bg-primary text-white p-4">
-        <div className="max-w-2xl mx-auto">
-          <div className="flex justify-center mb-4">
+      <div className="bg-white shadow-sm">
+        <div className="py-4">
+          <div className="flex justify-center mb-2 pt-4">
             <Image
               src="/logo.svg"
               alt="CodeLab School"
-              width={150}
-              height={50}
+              width={200}
+              height={60}
               className="object-contain"
+              priority
               onError={(e) => {
                 // Fallback to text if logo not found
                 e.currentTarget.style.display = 'none'
-                const textLogo = document.getElementById('text-logo')
-                if (textLogo) textLogo.style.display = 'block'
+                const textLogo = document.getElementById('text-logo-fallback')
+                if (textLogo) textLogo.style.display = 'flex'
               }}
             />
-            <h1 id="text-logo" className="text-2xl font-bold hidden">
-              CodeLab School
-            </h1>
+            <div 
+              id="text-logo-fallback" 
+              className="hidden items-center justify-center"
+            >
+              <div className="flex items-center gap-2">
+                <School className="h-10 w-10 text-primary" />
+                <h1 className="text-2xl font-bold text-primary">
+                  CodeLab School
+                </h1>
+              </div>
+            </div>
           </div>
-          <h2 className="text-xl font-semibold text-center">จองทดลองเรียน</h2>
-          <p className="text-sm text-center mt-2 text-white/90">
+          
+          <h2 className="text-xl font-semibold text-center text-gray-800">
+            จองทดลองเรียน
+          </h2>
+          <p className="text-center text-gray-600 text-sm px-4 mt-1">
             ให้บุตรหลานได้ลองเรียน Coding & Robotics กับเรา
           </p>
         </div>
@@ -609,7 +621,7 @@ export default function TrialBookingPage() {
               <p className="text-sm text-gray-600">หากมีข้อสงสัยเพิ่มเติม ติดต่อ</p>
               <p className="font-medium flex items-center justify-center gap-2">
                 <Phone className="h-4 w-4" />
-                090-155-5192
+                02-XXX-XXXX
               </p>
               <p className="text-sm text-gray-500">
                 เปิดทำการ จันทร์-เสาร์ 09:00-18:00 น.
