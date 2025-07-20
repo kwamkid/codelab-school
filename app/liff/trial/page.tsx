@@ -613,22 +613,6 @@ export default function TrialBookingPage() {
             </Button>
           </div>
         </form>
-
-        {/* Contact Info */}
-        <Card className="mt-6">
-          <CardContent className="pt-6">
-            <div className="text-center space-y-2">
-              <p className="text-sm text-gray-600">หากมีข้อสงสัยเพิ่มเติม ติดต่อ</p>
-              <p className="font-medium flex items-center justify-center gap-2">
-                <Phone className="h-4 w-4" />
-                02-XXX-XXXX
-              </p>
-              <p className="text-sm text-gray-500">
-                เปิดทำการ จันทร์-เสาร์ 09:00-18:00 น.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
       </div>
     </div>
   )
