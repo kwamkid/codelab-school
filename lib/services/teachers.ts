@@ -15,7 +15,7 @@ import { Teacher } from '@/types/models';
 const COLLECTION_NAME = 'teachers';
 
 // Get all teachers
-export async function getTeachers(): Promise<Teacher[]> {
+export async function getTeachers(branchId?: string): Promise<Teacher[]> {
   try {
     const q = query(
       collection(db, COLLECTION_NAME),
@@ -23,10 +23,19 @@ export async function getTeachers(): Promise<Teacher[]> {
     );
     const querySnapshot = await getDocs(q);
     
-    return querySnapshot.docs.map(doc => ({
+    let teachers = querySnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     } as Teacher));
+    
+    // Filter by branch if specified
+    if (branchId) {
+      teachers = teachers.filter(teacher => 
+        teacher.availableBranches.includes(branchId)
+      );
+    }
+    
+    return teachers;
   } catch (error) {
     console.error('Error getting teachers:', error);
     throw error;
@@ -34,14 +43,21 @@ export async function getTeachers(): Promise<Teacher[]> {
 }
 
 // Get active teachers only
-export async function getActiveTeachers(): Promise<Teacher[]> {
+export async function getActiveTeachers(branchId?: string): Promise<Teacher[]> {
   try {
     const querySnapshot = await getDocs(collection(db, COLLECTION_NAME));
     
-    const teachers = querySnapshot.docs.map(doc => ({
+    let teachers = querySnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     } as Teacher));
+    
+    // Filter by branch if specified
+    if (branchId) {
+      teachers = teachers.filter(teacher => 
+        teacher.availableBranches.includes(branchId)
+      );
+    }
     
     // Filter active teachers in memory
     return teachers

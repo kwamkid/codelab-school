@@ -18,24 +18,99 @@ import {
 } from 'firebase/auth';
 import { auth } from '@/lib/firebase/client';
 
-// Get all admin users
-export async function getAdminUsers(): Promise<AdminUser[]> {
+// Get all admin users with optional branch filter
+export async function getAdminUsers(branchId?: string): Promise<AdminUser[]> {
   try {
-    const q = query(
+    let q = query(
       collection(db, 'adminUsers'),
       orderBy('createdAt', 'desc')
     );
     
     const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({
+    let users = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
       createdAt: doc.data().createdAt?.toDate() || new Date(),
       updatedAt: doc.data().updatedAt?.toDate()
     } as AdminUser));
+    
+    // Filter by branch if specified
+    if (branchId) {
+      users = users.filter(user => {
+        // Super admin can see all
+        if (user.role === 'super_admin') return true;
+        // Check if user has access to this branch
+        return user.branchIds.length === 0 || user.branchIds.includes(branchId);
+      });
+    }
+    
+    return users;
   } catch (error) {
     console.error('Error getting admin users:', error);
     throw error;
+  }
+}
+
+// Get admin users by role
+export async function getAdminUsersByRole(
+  role: 'super_admin' | 'branch_admin' | 'teacher',
+  branchId?: string
+): Promise<AdminUser[]> {
+  try {
+    const q = query(
+      collection(db, 'adminUsers'),
+      where('role', '==', role),
+      where('isActive', '==', true),
+      orderBy('displayName', 'asc')
+    );
+    
+    const snapshot = await getDocs(q);
+    let users = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      createdAt: doc.data().createdAt?.toDate() || new Date(),
+      updatedAt: doc.data().updatedAt?.toDate()
+    } as AdminUser));
+    
+    // Filter by branch if specified
+    if (branchId && role !== 'super_admin') {
+      users = users.filter(user => 
+        user.branchIds.length === 0 || user.branchIds.includes(branchId)
+      );
+    }
+    
+    return users;
+  } catch (error) {
+    console.error('Error getting admin users by role:', error);
+    return [];
+  }
+}
+
+// Get teachers for a specific branch
+export async function getTeachersForBranch(branchId: string): Promise<AdminUser[]> {
+  try {
+    const q = query(
+      collection(db, 'adminUsers'),
+      where('role', '==', 'teacher'),
+      where('isActive', '==', true)
+    );
+    
+    const snapshot = await getDocs(q);
+    const teachers = snapshot.docs
+      .map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate() || new Date(),
+        updatedAt: doc.data().updatedAt?.toDate()
+      } as AdminUser))
+      .filter(teacher => 
+        teacher.branchIds.length === 0 || teacher.branchIds.includes(branchId)
+      );
+    
+    return teachers;
+  } catch (error) {
+    console.error('Error getting teachers for branch:', error);
+    return [];
   }
 }
 
@@ -63,11 +138,10 @@ export async function getAdminUser(userId: string): Promise<AdminUser | null> {
 }
 
 // Create new admin user
-// Create new admin user
 export async function createAdminUser(
   email: string,
   password: string,
-  userData: Omit<AdminUser, 'id' | 'email' | 'createdAt' | 'updatedAt' | 'createdBy' | 'updatedBy'>, // เพิ่ม 'createdBy' และ 'updatedBy'
+  userData: Omit<AdminUser, 'id' | 'email' | 'createdAt' | 'updatedAt' | 'createdBy' | 'updatedBy'>,
   createdBy: string,
   authToken: string
 ): Promise<string> {
@@ -83,7 +157,7 @@ export async function createAdminUser(
         password,
         userData: {
           ...userData,
-          email // เพิ่ม email เข้าไปใน userData ที่จะส่ง
+          email
         },
         createdBy
       })
@@ -146,9 +220,9 @@ export async function checkEmailExists(email: string): Promise<boolean> {
   }
 }
 
-// เพิ่มฟังก์ชันนี้
+// Create admin user simple
 export async function createAdminUserSimple(
-  userId: string, // User ID ที่สร้างจาก Firebase Auth Console
+  userId: string,
   userData: {
     email: string;
     displayName: string;
@@ -184,7 +258,6 @@ export async function deleteAdminUser(
   deletedBy: string
 ): Promise<void> {
   try {
-    // Soft delete - เปลี่ยนสถานะเป็น inactive และเพิ่ม deleted flag
     const docRef = doc(db, 'adminUsers', userId);
     await updateDoc(docRef, {
       isActive: false,

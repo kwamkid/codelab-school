@@ -25,12 +25,21 @@ import { getHolidaysForBranch } from './holidays';
 const COLLECTION_NAME = 'classes';
 
 // Get all classes
-export async function getClasses(): Promise<Class[]> {
+export async function getClasses(branchId?: string, teacherId?: string): Promise<Class[]> {
   try {
-    const q = query(
-      collection(db, COLLECTION_NAME),
-      orderBy('createdAt', 'desc')
-    );
+    let constraints: any[] = [orderBy('createdAt', 'desc')];
+    
+    // Add branch filter if provided
+    if (branchId) {
+      constraints.unshift(where('branchId', '==', branchId));
+    }
+    
+    // Add teacher filter if provided
+    if (teacherId) {
+      constraints.unshift(where('teacherId', '==', teacherId));
+    }
+    
+    const q = query(collection(db, COLLECTION_NAME), ...constraints);
     const querySnapshot = await getDocs(q);
     
     return querySnapshot.docs.map(doc => ({
@@ -445,9 +454,9 @@ export async function updateClassStatus(id: string, status: Class['status']): Pr
 }
 
 // Get active classes (published or started)
-export async function getActiveClasses(): Promise<Class[]> {
+export async function getActiveClasses(branchId?: string): Promise<Class[]> {
   try {
-    const classes = await getClasses();
+    const classes = await getClasses(branchId);
     return classes.filter(c => c.status === 'published' || c.status === 'started');
   } catch (error) {
     console.error('Error getting active classes:', error);

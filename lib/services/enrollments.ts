@@ -21,12 +21,16 @@ import { getClass } from './classes';
 const COLLECTION_NAME = 'enrollments';
 
 // Get all enrollments
-export async function getEnrollments(): Promise<Enrollment[]> {
+export async function getEnrollments(branchId?: string): Promise<Enrollment[]> {
   try {
-    const q = query(
-      collection(db, COLLECTION_NAME),
-      orderBy('enrolledAt', 'desc')
-    );
+    let constraints: any[] = [orderBy('enrolledAt', 'desc')];
+    
+    // Add branch filter if provided
+    if (branchId) {
+      constraints.unshift(where('branchId', '==', branchId));
+    }
+    
+    const q = query(collection(db, COLLECTION_NAME), ...constraints);
     const querySnapshot = await getDocs(q);
     
     return querySnapshot.docs.map(doc => ({
@@ -127,6 +131,31 @@ export async function getEnrollmentsByParent(parentId: string): Promise<Enrollme
   } catch (error) {
     console.error('Error getting enrollments by parent:', error);
     throw error;
+  }
+}
+
+// Get enrollments by branch
+export async function getEnrollmentsByBranch(branchId: string): Promise<Enrollment[]> {
+  try {
+    const q = query(
+      collection(db, COLLECTION_NAME),
+      where('branchId', '==', branchId),
+      orderBy('enrolledAt', 'desc')
+    );
+    const querySnapshot = await getDocs(q);
+    
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      enrolledAt: doc.data().enrolledAt?.toDate() || new Date(),
+      payment: {
+        ...doc.data().payment,
+        paidDate: doc.data().payment?.paidDate?.toDate()
+      }
+    } as Enrollment));
+  } catch (error) {
+    console.error('Error getting enrollments by branch:', error);
+    return [];
   }
 }
 
@@ -378,7 +407,7 @@ export async function cancelEnrollment(
 }
 
 // Get enrollment statistics
-export async function getEnrollmentStats(): Promise<{
+export async function getEnrollmentStats(branchId?: string): Promise<{
   total: number;
   active: number;
   completed: number;
@@ -387,7 +416,7 @@ export async function getEnrollmentStats(): Promise<{
   pendingPayments: number;
 }> {
   try {
-    const enrollments = await getEnrollments();
+    const enrollments = await getEnrollments(branchId);
     
     const stats = enrollments.reduce((acc, enrollment) => {
       acc.total++;

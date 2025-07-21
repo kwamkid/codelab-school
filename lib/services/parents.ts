@@ -20,7 +20,7 @@ import { Parent, Student } from '@/types/models';
 const COLLECTION_NAME = 'parents';
 
 // Get all parents
-export async function getParents(): Promise<Parent[]> {
+export async function getParents(branchId?: string): Promise<Parent[]> {
   try {
     const q = query(
       collection(db, COLLECTION_NAME),
@@ -28,16 +28,44 @@ export async function getParents(): Promise<Parent[]> {
     );
     const querySnapshot = await getDocs(q);
     
-    return querySnapshot.docs.map(doc => ({
+    const allParents = querySnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
       createdAt: doc.data().createdAt?.toDate() || new Date(),
       lastLoginAt: doc.data().lastLoginAt?.toDate() || new Date(),
     } as Parent));
+    
+    // ถ้าไม่ระบุ branch ให้คืนทั้งหมด
+    if (!branchId) {
+      return allParents;
+    }
+    
+    // ถ้าระบุ branch ให้ filter ผ่าน enrollments
+    const { getEnrollmentsByBranch } = await import('./enrollments');
+    const enrollments = await getEnrollmentsByBranch(branchId);
+    const parentIds = new Set(enrollments.map(e => e.parentId));
+    
+    return allParents.filter(parent => parentIds.has(parent.id));
   } catch (error) {
     console.error('Error getting parents:', error);
     throw error;
   }
+}
+
+// เพิ่ม helper function
+async function getAllParents(): Promise<Parent[]> {
+  const q = query(
+    collection(db, COLLECTION_NAME),
+    orderBy('createdAt', 'desc')
+  );
+  const querySnapshot = await getDocs(q);
+  
+  return querySnapshot.docs.map(doc => ({
+    id: doc.id,
+    ...doc.data(),
+    createdAt: doc.data().createdAt?.toDate() || new Date(),
+    lastLoginAt: doc.data().lastLoginAt?.toDate() || new Date(),
+  } as Parent));
 }
 
 // Get single parent
@@ -366,37 +394,33 @@ export async function getParentWithStudents(
 }
 
 // Get all students with parent info (including LINE display name)
-export async function getAllStudentsWithParents(): Promise<(Student & { 
+export async function getAllStudentsWithParents(branchId?: string): Promise<(Student & { 
   parentName: string; 
   parentPhone: string;
   lineDisplayName?: string;
 })[]> {
   try {
-    const parentsSnapshot = await getDocs(collection(db, 'parents'));
+    // ใช้ getParents ที่ filter by branch แล้ว
+    const parents = await getParents(branchId);
     const allStudents: (Student & { 
       parentName: string; 
       parentPhone: string;
       lineDisplayName?: string;
     })[] = [];
     
-    for (const parentDoc of parentsSnapshot.docs) {
-      const parentData = {
-        id: parentDoc.id,
-        ...parentDoc.data()
-      } as Parent;
-      
+    for (const parent of parents) {
       const studentsSnapshot = await getDocs(
-        collection(db, 'parents', parentDoc.id, 'students')
+        collection(db, 'parents', parent.id, 'students')
       );
       
       const students = studentsSnapshot.docs.map(doc => ({
         id: doc.id,
-        parentId: parentDoc.id,
+        parentId: parent.id,
         ...doc.data(),
         birthdate: doc.data().birthdate?.toDate() || new Date(),
-        parentName: parentData.displayName,
-        parentPhone: parentData.phone,
-        lineDisplayName: parentData.displayName // LINE display name
+        parentName: parent.displayName,
+        parentPhone: parent.phone,
+        lineDisplayName: parent.displayName
       } as Student & { 
         parentName: string; 
         parentPhone: string;
