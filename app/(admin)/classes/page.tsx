@@ -58,6 +58,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useBranch } from '@/contexts/BranchContext';
+import { ActionButton } from '@/components/ui/action-button';
+import { PermissionGuard } from '@/components/auth/permission-guard';
 
 const statusColors = {
   'draft': 'bg-gray-100 text-gray-700',
@@ -76,6 +79,7 @@ const statusLabels = {
 };
 
 export default function ClassesPage() {
+  const { selectedBranchId, isAllBranches } = useBranch();
   const [classes, setClasses] = useState<Class[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
@@ -85,21 +89,20 @@ export default function ClassesPage() {
   const [searchTerm, setSearchTerm] = useState('');
   
   // Filters
-  const [selectedBranch, setSelectedBranch] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedSubject, setSelectedSubject] = useState<string>('all');
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [selectedBranchId]); // Reload when branch changes
 
   const loadData = async () => {
     try {
       const [classesData, branchesData, subjectsData, teachersData] = await Promise.all([
-        getClasses(),
+        getClasses(selectedBranchId), // Pass branch filter
         getActiveBranches(),
         getActiveSubjects(),
-        getActiveTeachers()
+        getActiveTeachers(selectedBranchId) // Pass branch filter for teachers too
       ]);
       
       setClasses(classesData);
@@ -168,7 +171,6 @@ export default function ClassesPage() {
     }
 
     // Other filters
-    if (selectedBranch !== 'all' && cls.branchId !== selectedBranch) return false;
     if (selectedStatus !== 'all' && cls.status !== selectedStatus) return false;
     if (selectedSubject !== 'all' && cls.subjectId !== selectedSubject) return false;
     return true;
@@ -198,15 +200,22 @@ export default function ClassesPage() {
     <div>
       <div className="flex justify-between items-center mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">จัดการคลาสเรียน</h1>
+          <h1 className="text-3xl font-bold text-gray-900">
+            จัดการคลาสเรียน
+            {!isAllBranches && (
+              <span className="text-red-600 text-lg ml-2">(เฉพาะสาขาที่เลือก)</span>
+            )}
+          </h1>
           <p className="text-gray-600 mt-2">จัดการตารางเรียนและคลาสทั้งหมด</p>
         </div>
-        <Link href="/classes/new">
-          <Button className="bg-red-500 hover:bg-red-600">
-            <Plus className="h-4 w-4 mr-2" />
-            สร้างคลาสใหม่
-          </Button>
-        </Link>
+        <PermissionGuard action="create">
+          <Link href="/classes/new">
+            <ActionButton action="create" className="bg-red-500 hover:bg-red-600">
+              <Plus className="h-4 w-4 mr-2" />
+              สร้างคลาสใหม่
+            </ActionButton>
+          </Link>
+        </PermissionGuard>
       </div>
 
       {/* Statistics Cards */}
@@ -276,20 +285,6 @@ export default function ClassesPage() {
             </div>
 
             {/* Filters */}
-            <Select value={selectedBranch} onValueChange={setSelectedBranch}>
-              <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="เลือกสาขา" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">ทุกสาขา</SelectItem>
-                {branches.map(branch => (
-                  <SelectItem key={branch.id} value={branch.id}>
-                    {branch.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
             <Select value={selectedSubject} onValueChange={setSelectedSubject}>
               <SelectTrigger className="w-[200px]">
                 <SelectValue placeholder="เลือกวิชา" />
@@ -334,12 +329,14 @@ export default function ClassesPage() {
                 {classes.length === 0 ? 'เริ่มต้นด้วยการสร้างคลาสแรก' : 'ลองปรับเงื่อนไขการค้นหาใหม่'}
               </p>
               {classes.length === 0 && (
-                <Link href="/classes/new">
-                  <Button className="bg-red-500 hover:bg-red-600">
-                    <Plus className="h-4 w-4 mr-2" />
-                    สร้างคลาสใหม่
-                  </Button>
-                </Link>
+                <PermissionGuard action="create">
+                  <Link href="/classes/new">
+                    <ActionButton action="create" className="bg-red-500 hover:bg-red-600">
+                      <Plus className="h-4 w-4 mr-2" />
+                      สร้างคลาสใหม่
+                    </ActionButton>
+                  </Link>
+                </PermissionGuard>
               )}
             </div>
           ) : (
@@ -349,7 +346,7 @@ export default function ClassesPage() {
                   <TableRow>
                     <TableHead>คลาส</TableHead>
                     <TableHead>วิชา</TableHead>
-                    <TableHead>สาขา</TableHead>
+                    {isAllBranches && <TableHead>สาขา</TableHead>}
                     <TableHead>ครู</TableHead>
                     <TableHead>วัน/เวลา</TableHead>
                     <TableHead className="text-center">ระยะเวลา</TableHead>
@@ -378,7 +375,7 @@ export default function ClassesPage() {
                           </div>
                         </TableCell>
                         <TableCell>{getSubjectName(cls.subjectId)}</TableCell>
-                        <TableCell>{getBranchName(cls.branchId)}</TableCell>
+                        {isAllBranches && <TableCell>{getBranchName(cls.branchId)}</TableCell>}
                         <TableCell>{getTeacherName(cls.teacherId)}</TableCell>
                         <TableCell>
                           <div>
@@ -424,42 +421,46 @@ export default function ClassesPage() {
                                   ดูรายละเอียด
                                 </Link>
                               </DropdownMenuItem>
-                              <DropdownMenuItem asChild>
-                                <Link href={`/classes/${cls.id}/edit`}>
-                                  <Edit className="mr-2 h-4 w-4" />
-                                  แก้ไข
-                                </Link>
-                              </DropdownMenuItem>
+                              <PermissionGuard action="update">
+                                <DropdownMenuItem asChild>
+                                  <Link href={`/classes/${cls.id}/edit`}>
+                                    <Edit className="mr-2 h-4 w-4" />
+                                    แก้ไข
+                                  </Link>
+                                </DropdownMenuItem>
+                              </PermissionGuard>
                               {isDeletable && (
-                                <AlertDialog>
-                                  <AlertDialogTrigger asChild>
-                                    <DropdownMenuItem 
-                                      onSelect={(e) => e.preventDefault()}
-                                      className="text-red-600"
-                                    >
-                                      <Trash2 className="mr-2 h-4 w-4" />
-                                      ลบคลาส
-                                    </DropdownMenuItem>
-                                  </AlertDialogTrigger>
-                                  <AlertDialogContent>
-                                    <AlertDialogHeader>
-                                      <AlertDialogTitle>ยืนยันการลบคลาส</AlertDialogTitle>
-                                      <AlertDialogDescription>
-                                        คุณแน่ใจหรือไม่ที่จะลบคลาส &quot;{cls.name}&quot;? 
-                                        การกระทำนี้ไม่สามารถยกเลิกได้
-                                      </AlertDialogDescription>
-                                    </AlertDialogHeader>
-                                    <AlertDialogFooter>
-                                      <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
-                                      <AlertDialogAction 
-                                        onClick={() => handleDeleteClass(cls.id, cls.name)}
-                                        className="bg-red-500 hover:bg-red-600"
+                                <PermissionGuard action="delete">
+                                  <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                      <DropdownMenuItem 
+                                        onSelect={(e) => e.preventDefault()}
+                                        className="text-red-600"
                                       >
+                                        <Trash2 className="mr-2 h-4 w-4" />
                                         ลบคลาส
-                                      </AlertDialogAction>
-                                    </AlertDialogFooter>
-                                  </AlertDialogContent>
-                                </AlertDialog>
+                                      </DropdownMenuItem>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                      <AlertDialogHeader>
+                                        <AlertDialogTitle>ยืนยันการลบคลาส</AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                          คุณแน่ใจหรือไม่ที่จะลบคลาส &quot;{cls.name}&quot;? 
+                                          การกระทำนี้ไม่สามารถยกเลิกได้
+                                        </AlertDialogDescription>
+                                      </AlertDialogHeader>
+                                      <AlertDialogFooter>
+                                        <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+                                        <AlertDialogAction 
+                                          onClick={() => handleDeleteClass(cls.id, cls.name)}
+                                          className="bg-red-500 hover:bg-red-600"
+                                        >
+                                          ลบคลาส
+                                        </AlertDialogAction>
+                                      </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                  </AlertDialog>
+                                </PermissionGuard>
                               )}
                             </DropdownMenuContent>
                           </DropdownMenu>

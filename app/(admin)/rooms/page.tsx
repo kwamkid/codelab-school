@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Room, Branch } from '@/types/models';
 import { getRoomsByBranch } from '@/lib/services/rooms';
-import { getBranches } from '@/lib/services/branches';
+import { getBranches, getActiveBranches } from '@/lib/services/branches';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { 
@@ -27,6 +27,10 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import RoomDialog from '@/components/rooms/room-dialog';
+import { useBranch } from '@/contexts/BranchContext';
+import { useAuth } from '@/hooks/useAuth';
+import { PermissionGuard } from '@/components/auth/permission-guard';
+import { ActionButton } from '@/components/ui/action-button';
 
 interface RoomWithBranch extends Room {
   branchName: string;
@@ -36,27 +40,34 @@ interface RoomWithBranch extends Room {
 export default function RoomsPage() {
   const searchParams = useSearchParams();
   const initialBranchId = searchParams.get('branch');
+  const { selectedBranchId, isAllBranches } = useBranch();
+  const { isSuperAdmin, canAccessBranch, adminUser } = useAuth();
   
   const [branches, setBranches] = useState<Branch[]>([]);
   const [allRooms, setAllRooms] = useState<RoomWithBranch[]>([]);
   const [filteredRooms, setFilteredRooms] = useState<RoomWithBranch[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
-const [selectedRoom, setSelectedRoom] = useState<RoomWithBranch | null>(null);
-  const [selectedBranchId, setSelectedBranchId] = useState<string>('');
+  const [selectedRoom, setSelectedRoom] = useState<RoomWithBranch | null>(null);
+  const [dialogBranchId, setDialogBranchId] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
   const [filterBranch, setFilterBranch] = useState<string>('all');
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [selectedBranchId]); // Reload when selected branch changes
 
   useEffect(() => {
-    // Set initial filter if branch ID is provided
-    if (initialBranchId && branches.length > 0) {
+    // Set initial filter based on context or URL param
+    if (selectedBranchId) {
+      setFilterBranch(selectedBranchId);
+    } else if (initialBranchId && branches.length > 0) {
       setFilterBranch(initialBranchId);
+    } else {
+      // Reset to 'all' when viewing all branches
+      setFilterBranch('all');
     }
-  }, [initialBranchId, branches]);
+  }, [selectedBranchId, initialBranchId, branches]);
 
   useEffect(() => {
     filterData();
@@ -64,10 +75,25 @@ const [selectedRoom, setSelectedRoom] = useState<RoomWithBranch | null>(null);
 
   const loadData = async () => {
     try {
-      const branchesData = await getBranches();
+      // Get branches based on user permissions
+      let branchesData: Branch[] = [];
+      
+      if (isSuperAdmin() && isAllBranches) {
+        // Super admin viewing all branches
+        branchesData = await getActiveBranches();
+      } else if (selectedBranchId) {
+        // Specific branch selected
+        branchesData = await getBranches();
+        branchesData = branchesData.filter(b => b.id === selectedBranchId);
+      } else if (adminUser?.branchIds && adminUser.branchIds.length > 0) {
+        // Branch admin with specific branches
+        branchesData = await getBranches();
+        branchesData = branchesData.filter(b => adminUser.branchIds.includes(b.id));
+      }
+      
       setBranches(branchesData);
 
-      // Load rooms from all branches
+      // Load rooms from accessible branches only
       const roomsPromises = branchesData.map(async (branch) => {
         const rooms = await getRoomsByBranch(branch.id);
         return rooms.map(room => ({
@@ -92,8 +118,8 @@ const [selectedRoom, setSelectedRoom] = useState<RoomWithBranch | null>(null);
   const filterData = () => {
     let filtered = [...allRooms];
 
-    // Filter by branch
-    if (filterBranch !== 'all') {
+    // Filter by branch (only if not viewing a specific branch already)
+    if (!selectedBranchId && filterBranch !== 'all') {
       filtered = filtered.filter(room => room.branchId === filterBranch);
     }
 
@@ -109,28 +135,35 @@ const [selectedRoom, setSelectedRoom] = useState<RoomWithBranch | null>(null);
     setFilteredRooms(filtered);
   };
 
-const handleAddRoom = () => {
-  if (branches.length === 0) {
-    toast.error('กรุณาสร้างสาขาก่อน');
-    return;
-  }
-  setSelectedRoom(null);
-  // ตั้งค่า branch ID ให้ถูกต้อง
-  const defaultBranchId = filterBranch !== 'all' ? filterBranch : branches[0].id;
-  setSelectedBranchId(defaultBranchId);
-  setDialogOpen(true);
-};
+  const handleAddRoom = () => {
+    if (branches.length === 0) {
+      toast.error('กรุณาสร้างสาขาก่อน');
+      return;
+    }
+    setSelectedRoom(null);
+    // Set default branch ID
+    const defaultBranchId = selectedBranchId || 
+                          (filterBranch !== 'all' ? filterBranch : branches[0].id);
+    setDialogBranchId(defaultBranchId);
+    setDialogOpen(true);
+  };
 
   const handleEditRoom = (room: RoomWithBranch) => {
-    setSelectedRoom(room); // ใช้ room ทั้งตัวเลย
-    setSelectedBranchId(room.branchId);
+    // Check if user can edit this room
+    if (!canAccessBranch(room.branchId)) {
+      toast.error('คุณไม่มีสิทธิ์แก้ไขห้องในสาขานี้');
+      return;
+    }
+    
+    setSelectedRoom(room);
+    setDialogBranchId(room.branchId);
     setDialogOpen(true);
   };
 
   const handleDialogClose = () => {
     setDialogOpen(false);
     setSelectedRoom(null);
-    setSelectedBranchId('');
+    setDialogBranchId('');
   };
 
   const handleRoomSaved = () => {
@@ -158,16 +191,26 @@ const handleAddRoom = () => {
     <div>
       <div className="flex justify-between items-center mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">จัดการห้องเรียน</h1>
-          <p className="text-gray-600 mt-2">จัดการห้องเรียนทุกสาขา</p>
+          <h1 className="text-3xl font-bold text-gray-900">
+            จัดการห้องเรียน
+            {!isAllBranches && (
+              <span className="text-red-600 text-lg ml-2">(เฉพาะสาขาที่เลือก)</span>
+            )}
+          </h1>
+          <p className="text-gray-600 mt-2">
+            {isAllBranches ? 'จัดการห้องเรียนทุกสาขา' : 'จัดการห้องเรียนในสาขา'}
+          </p>
         </div>
-        <Button 
-          onClick={handleAddRoom}
-          className="bg-red-500 hover:bg-red-600"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          เพิ่มห้องเรียน
-        </Button>
+        <PermissionGuard requiredRole={['super_admin', 'branch_admin']}>
+          <ActionButton 
+            action="create"
+            onClick={handleAddRoom}
+            className="bg-red-500 hover:bg-red-600"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            เพิ่มห้องเรียน
+          </ActionButton>
+        </PermissionGuard>
       </div>
 
       {/* Warning if branches without rooms */}
@@ -195,21 +238,24 @@ const handleAddRoom = () => {
                 />
               </div>
             </div>
-            <div className="w-full md:w-[200px]">
-              <Select value={filterBranch} onValueChange={setFilterBranch}>
-                <SelectTrigger>
-                  <SelectValue placeholder="เลือกสาขา" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">ทุกสาขา</SelectItem>
-                  {branches.map((branch) => (
-                    <SelectItem key={branch.id} value={branch.id}>
-                      {branch.name} ({branch.code})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {/* Show branch filter only if not viewing a specific branch */}
+            {!selectedBranchId && branches.length > 1 && (
+              <div className="w-full md:w-[200px]">
+                <Select value={filterBranch} onValueChange={setFilterBranch}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="เลือกสาขา" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">ทุกสาขา</SelectItem>
+                    {branches.map((branch) => (
+                      <SelectItem key={branch.id} value={branch.id}>
+                        {branch.name} ({branch.code})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -227,13 +273,16 @@ const handleAddRoom = () => {
                   <DoorOpen className="h-12 w-12 text-gray-300 mx-auto mb-4" />
                   <h3 className="text-lg font-medium text-gray-900 mb-2">ยังไม่มีห้องเรียน</h3>
                   <p className="text-gray-600 mb-4">เริ่มต้นด้วยการเพิ่มห้องเรียนแรก</p>
-                  <Button 
-                    onClick={handleAddRoom}
-                    className="bg-red-500 hover:bg-red-600"
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    เพิ่มห้องเรียน
-                  </Button>
+                  <PermissionGuard requiredRole={['super_admin', 'branch_admin']}>
+                    <ActionButton 
+                      action="create"
+                      onClick={handleAddRoom}
+                      className="bg-red-500 hover:bg-red-600"
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      เพิ่มห้องเรียน
+                    </ActionButton>
+                  </PermissionGuard>
                 </>
               ) : (
                 <>
@@ -247,7 +296,7 @@ const handleAddRoom = () => {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>สาขา</TableHead>
+                  {isAllBranches && <TableHead>สาขา</TableHead>}
                   <TableHead>ชื่อห้อง</TableHead>
                   <TableHead>ชั้น</TableHead>
                   <TableHead className="text-center">ความจุ</TableHead>
@@ -259,15 +308,17 @@ const handleAddRoom = () => {
               <TableBody>
                 {filteredRooms.map((room) => (
                   <TableRow key={`${room.branchId}-${room.id}`} className={!room.isActive ? 'opacity-60' : ''}>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <MapPin className="h-4 w-4 text-gray-400" />
-                        <div>
-                          <div className="font-medium">{room.branchName}</div>
-                          <div className="text-xs text-gray-500">{room.branchCode}</div>
+                    {isAllBranches && (
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <MapPin className="h-4 w-4 text-gray-400" />
+                          <div>
+                            <div className="font-medium">{room.branchName}</div>
+                            <div className="text-xs text-gray-500">{room.branchCode}</div>
+                          </div>
                         </div>
-                      </div>
-                    </TableCell>
+                      </TableCell>
+                    )}
                     <TableCell className="font-medium">{room.name}</TableCell>
                     <TableCell>{room.floor || '-'}</TableCell>
                     <TableCell className="text-center">{room.capacity} คน</TableCell>
@@ -293,13 +344,17 @@ const handleAddRoom = () => {
                       )}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleEditRoom(room)}
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
+                      <PermissionGuard requiredRole={['super_admin', 'branch_admin']}>
+                        {canAccessBranch(room.branchId) && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleEditRoom(room)}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </PermissionGuard>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -313,11 +368,11 @@ const handleAddRoom = () => {
       <RoomDialog
         open={dialogOpen}
         onOpenChange={handleDialogClose}
-        branchId={selectedBranchId}
+        branchId={dialogBranchId}
         room={selectedRoom}
         onSaved={handleRoomSaved}
         branches={branches}
-        onBranchChange={(branchId: string) => setSelectedBranchId(branchId)}
+        onBranchChange={(branchId: string) => setDialogBranchId(branchId)}
       />
     </div>
   );

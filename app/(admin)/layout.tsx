@@ -395,7 +395,7 @@ export default function AdminLayout({
             >
               <div className="flex h-full flex-col">
                 {/* Logo */}
-                <div className="flex h-20 items-center justify-between px-6 border-b">
+                <div className="flex h-16 items-center justify-between px-6 border-b">
                   <div className="w-full">
                     <Image 
                       src="/logo.svg" 
