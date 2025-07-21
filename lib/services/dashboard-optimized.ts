@@ -11,6 +11,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { EventInput } from '@fullcalendar/core';
+import { Holiday, MakeupClass, TrialSession } from '@/types/models';
 
 export interface CalendarEvent extends EventInput {
   classId: string;
@@ -37,8 +38,8 @@ export interface CalendarEvent extends EventInput {
     // For trial
     trialStudentName?: string;
     trialSubjectName?: string;
-    trialCount?: number; // จำนวนนักเรียนทดลองใน slot เดียวกัน
-    trialDetails?: Array<{ // รายละเอียดของแต่ละคน
+    trialCount?: number;
+    trialDetails?: Array<{
       id: string;
       studentName: string;
       subjectId: string;
@@ -136,14 +137,22 @@ export async function getOptimizedCalendarEvents(
     
     // Process holidays
     holidaysSnapshot.docs.forEach(doc => {
-      const holiday = { id: doc.id, ...doc.data() };
+      const holidayData = doc.data();
+      const holiday: Holiday & { id: string } = {
+        id: doc.id,
+        name: holidayData.name,
+        date: holidayData.date.toDate(),
+        type: holidayData.type,
+        branches: holidayData.branches || [],
+        description: holidayData.description
+      };
       
       // Filter by branch if needed
       if (branchId && holiday.type === 'branch' && !holiday.branches?.includes(branchId)) {
         return;
       }
 
-      const holidayDate = holiday.date.toDate();
+      const holidayDate = new Date(holiday.date);
       holidayDate.setHours(0, 0, 0, 0);
       
       const holidayEndDate = new Date(holidayDate);
@@ -311,9 +320,56 @@ export async function getOptimizedCalendarEvents(
       }
     }
     
+    // Get student info helper
+    const getStudentInfo = async (studentId: string, parentId: string) => {
+      try {
+        const studentDoc = await getDocs(
+          query(
+            collection(db, 'parents', parentId, 'students'),
+            where(documentId(), '==', studentId)
+          )
+        );
+        if (!studentDoc.empty) {
+          return { id: studentDoc.docs[0].id, ...studentDoc.docs[0].data() };
+        }
+      } catch (error) {
+        console.error('Error getting student info:', error);
+      }
+      return null;
+    };
+    
     // Process makeup events
     for (const doc of makeupSnapshot.docs) {
-      const makeup = { id: doc.id, ...doc.data() };
+      const makeupData = doc.data();
+      const makeup: MakeupClass & { id: string } = {
+        id: doc.id,
+        type: makeupData.type,
+        originalClassId: makeupData.originalClassId,
+        originalScheduleId: makeupData.originalScheduleId,
+        studentId: makeupData.studentId,
+        parentId: makeupData.parentId,
+        requestDate: makeupData.requestDate.toDate(),
+        requestedBy: makeupData.requestedBy,
+        reason: makeupData.reason,
+        status: makeupData.status,
+        makeupSchedule: makeupData.makeupSchedule ? {
+          date: makeupData.makeupSchedule.date.toDate(),
+          startTime: makeupData.makeupSchedule.startTime,
+          endTime: makeupData.makeupSchedule.endTime,
+          teacherId: makeupData.makeupSchedule.teacherId,
+          branchId: makeupData.makeupSchedule.branchId,
+          roomId: makeupData.makeupSchedule.roomId,
+          confirmedAt: makeupData.makeupSchedule.confirmedAt?.toDate(),
+          confirmedBy: makeupData.makeupSchedule.confirmedBy
+        } : undefined,
+        attendance: makeupData.attendance,
+        createdAt: makeupData.createdAt.toDate(),
+        updatedAt: makeupData.updatedAt?.toDate(),
+        notes: makeupData.notes,
+        originalSessionNumber: makeupData.originalSessionNumber,
+        originalSessionDate: makeupData.originalSessionDate?.toDate()
+      };
+      
       const originalClass = classInfoMap.get(makeup.originalClassId);
       
       if (!originalClass || !makeup.makeupSchedule) continue;
@@ -325,7 +381,12 @@ export async function getOptimizedCalendarEvents(
       
       if (!teacher || !branch) continue;
       
-      const makeupDate = makeup.makeupSchedule.date.toDate();
+      // Get student info
+      const student = await getStudentInfo(makeup.studentId, makeup.parentId);
+      const studentName = student?.name || makeupData.studentName || 'ไม่ระบุชื่อ';
+      const studentNickname = student?.nickname || makeupData.studentNickname || 'นักเรียน';
+      
+      const makeupDate = makeup.makeupSchedule.date;
       const [startHour, startMinute] = makeup.makeupSchedule.startTime.split(':').map(Number);
       const [endHour, endMinute] = makeup.makeupSchedule.endTime.split(':').map(Number);
       
@@ -348,7 +409,7 @@ export async function getOptimizedCalendarEvents(
       events.push({
         id: `makeup-${makeup.id}`,
         classId: makeup.originalClassId,
-        title: `[Makeup] ${makeup.studentNickname || 'นักเรียน'} - ${originalClass.name}`,
+        title: `[Makeup] ${studentNickname} - ${originalClass.name}`,
         start: eventStart,
         end: eventEnd,
         backgroundColor,
@@ -361,8 +422,8 @@ export async function getOptimizedCalendarEvents(
           roomName: room?.name || makeup.makeupSchedule.roomId,
           teacherName: teacher.nickname || teacher.name,
           subjectColor: subject?.color,
-          studentName: makeup.studentName || '',
-          studentNickname: makeup.studentNickname || '',
+          studentName: studentName,
+          studentNickname: studentNickname,
           originalClassName: originalClass.name,
           makeupStatus: makeup.status
         }
@@ -387,10 +448,34 @@ export async function getOptimizedCalendarEvents(
     const trialGroups = new Map<string, any[]>();
     
     trialSnapshot.docs.forEach(doc => {
-      const trial = { id: doc.id, ...doc.data() };
+      const trialData = doc.data();
+      const trial: TrialSession & { id: string } = {
+        id: doc.id,
+        bookingId: trialData.bookingId,
+        studentName: trialData.studentName,
+        subjectId: trialData.subjectId,
+        scheduledDate: trialData.scheduledDate.toDate(),
+        startTime: trialData.startTime,
+        endTime: trialData.endTime,
+        teacherId: trialData.teacherId,
+        branchId: trialData.branchId,
+        roomId: trialData.roomId,
+        roomName: trialData.roomName,
+        status: trialData.status,
+        attended: trialData.attended,
+        feedback: trialData.feedback,
+        teacherNote: trialData.teacherNote,
+        interestedLevel: trialData.interestedLevel,
+        converted: trialData.converted,
+        convertedToClassId: trialData.convertedToClassId,
+        conversionNote: trialData.conversionNote,
+        rescheduleHistory: trialData.rescheduleHistory,
+        createdAt: trialData.createdAt.toDate(),
+        completedAt: trialData.completedAt?.toDate()
+      };
       
       // Create unique key for grouping (same date, time, room, and teacher)
-      const trialDate = trial.scheduledDate.toDate();
+      const trialDate = trial.scheduledDate;
       const dateKey = trialDate.toISOString().split('T')[0];
       const key = `${trial.branchId}-${trial.roomId}-${dateKey}-${trial.startTime}-${trial.endTime}-${trial.teacherId}`;
       
@@ -412,7 +497,7 @@ export async function getOptimizedCalendarEvents(
       
       if (!teacher || !branch) continue;
       
-      const trialDate = firstTrial.scheduledDate.toDate();
+      const trialDate = firstTrial.scheduledDate;
       const [startHour, startMinute] = firstTrial.startTime.split(':').map(Number);
       const [endHour, endMinute] = firstTrial.endTime.split(':').map(Number);
       
@@ -423,9 +508,9 @@ export async function getOptimizedCalendarEvents(
       eventEnd.setHours(endHour, endMinute, 0, 0);
       
       // Determine color based on time and attendance
-      let backgroundColor = '#FED7AA'; // Orange-200 default
-      let borderColor = '#FDBA74'; // Orange-300 default
-      let textColor = '#9A3412'; // Orange-900 default
+      let backgroundColor = '#FED7AA';
+      let borderColor = '#FDBA74';
+      let textColor = '#9A3412';
       
       // Check if all trials have been completed
       const allCompleted = groupedTrials.every(trial => 
@@ -433,9 +518,9 @@ export async function getOptimizedCalendarEvents(
       );
       
       if (allCompleted) {
-        backgroundColor = '#D1FAE5'; // Green-100 for completed
-        borderColor = '#A7F3D0'; // Green-200 border
-        textColor = '#065F46'; // Green-800 text
+        backgroundColor = '#D1FAE5';
+        borderColor = '#A7F3D0';
+        textColor = '#065F46';
       }
       
       // Create student info array with subject names
@@ -472,7 +557,7 @@ export async function getOptimizedCalendarEvents(
       
       events.push({
         id: `trial-group-${key}`,
-        classId: '', // No class ID for trials
+        classId: '',
         title,
         start: eventStart,
         end: eventEnd,
@@ -485,7 +570,7 @@ export async function getOptimizedCalendarEvents(
           branchName: branch.name,
           roomName: room?.name || firstTrial.roomName || firstTrial.roomId,
           teacherName: teacher.nickname || teacher.name,
-          subjectColor: '#F97316', // Orange color for trials
+          subjectColor: '#F97316',
           trialStudentName: studentInfo.join(', '),
           trialSubjectName: uniqueSubjects.join(', '),
           trialCount: groupedTrials.length,

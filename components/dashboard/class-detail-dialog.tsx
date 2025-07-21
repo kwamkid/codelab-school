@@ -98,7 +98,7 @@ export default function ClassDetailDialog({
   const [trialInfo, setTrialInfo] = useState<any>(null);
   const [loadingMakeup, setLoadingMakeup] = useState(false);
   const [actualTeacherId, setActualTeacherId] = useState<string>('');
-  const [originalTeacherId, setOriginalTeacherId] = useState<string>(''); // เพิ่มตัวแปรเก็บครูประจำคลาส
+  const [originalTeacherId, setOriginalTeacherId] = useState<string>('');
   const [teachers, setTeachers] = useState<any[]>([]);
   const [loadingTeachers, setLoadingTeachers] = useState(false);
   
@@ -155,7 +155,7 @@ export default function ClassDetailDialog({
         const classModule = await import('@/lib/services/classes');
         const classData = await classModule.getClass(event.classId);
         setActualTeacherId(classData?.teacherId || '');
-        setOriginalTeacherId(classData?.teacherId || ''); // บันทึกครูประจำคลาส
+        setOriginalTeacherId(classData?.teacherId || '');
       }
     } catch (error) {
       console.error('Error loading teachers:', error);
@@ -190,31 +190,55 @@ export default function ClassDetailDialog({
     
     setLoadingMakeup(true);
     try {
-      const trialId = event.id.replace('trial-', '');
-      const trial = await getTrialSession(trialId);
-      
-      // Get booking info for parent details
-      if (trial) {
-        const { getTrialBooking } = await import('@/lib/services/trial-bookings');
-        const booking = await getTrialBooking(trial.bookingId);
-        
-        // Get subject name
-        const { getSubject } = await import('@/lib/services/subjects');
-        const subject = await getSubject(trial.subjectId);
-        if (subject) {
-          setTrialSubjectName(subject.name);
+      // Handle grouped trials
+      if (event.id.startsWith('trial-group-')) {
+        // For grouped trials, get the first trial details
+        const trialDetails = event.extendedProps.trialDetails;
+        if (trialDetails && trialDetails.length > 0) {
+          const firstTrialId = trialDetails[0].id;
+          const trial = await getTrialSession(firstTrialId);
+          
+          if (trial) {
+            const { getTrialBooking } = await import('@/lib/services/trial-bookings');
+            const booking = await getTrialBooking(trial.bookingId);
+            
+            // Get subject name
+            const { getSubject } = await import('@/lib/services/subjects');
+            const subject = await getSubject(trial.subjectId);
+            if (subject) {
+              setTrialSubjectName(subject.name);
+            }
+            
+            setTrialInfo(trial);
+            setTrialBooking(booking);
+          }
         }
+      } else {
+        // Single trial
+        const trialId = event.id.replace('trial-', '');
+        const trial = await getTrialSession(trialId);
         
-        // Store both trial and booking info
-        setTrialInfo(trial);
-        setTrialBooking(booking);
+        if (trial) {
+          const { getTrialBooking } = await import('@/lib/services/trial-bookings');
+          const booking = await getTrialBooking(trial.bookingId);
+          
+          // Get subject name
+          const { getSubject } = await import('@/lib/services/subjects');
+          const subject = await getSubject(trial.subjectId);
+          if (subject) {
+            setTrialSubjectName(subject.name);
+          }
+          
+          setTrialInfo(trial);
+          setTrialBooking(booking);
+        }
       }
       
       // Set attendance if already recorded
-      if (trial?.status === 'attended' || trial?.status === 'absent') {
-        setTrialAttendance(trial.status);
-        setTrialFeedback(trial.feedback || '');
-        setTrialInterest(trial.interestedLevel || '');
+      if (trialInfo?.status === 'attended' || trialInfo?.status === 'absent') {
+        setTrialAttendance(trialInfo.status);
+        setTrialFeedback(trialInfo.feedback || '');
+        setTrialInterest(trialInfo.interestedLevel || '');
       }
     } catch (error) {
       console.error('Error loading trial info:', error);
@@ -459,7 +483,6 @@ export default function ClassDetailDialog({
     }
   };
 
-  // เพิ่ม function handleViewTrialDetail ที่หายไป
   const handleViewTrialDetail = () => {
     if (trialInfo && trialInfo.bookingId) {
       router.push(`/trial/${trialInfo.bookingId}`);
@@ -467,16 +490,15 @@ export default function ClassDetailDialog({
     }
   };
 
-const handleReschedule = () => {
-  if (event?.extendedProps.type === 'makeup' && makeupInfo) {
-    router.push(`/makeup/${makeupInfo.id}?action=reschedule`);
-    onOpenChange(false);
-  } else if (event?.extendedProps.type === 'trial' && trialInfo) {
-    // ส่ง action=reschedule เพื่อให้ reschedule dialog เปิดอัตโนมัติ
-    router.push(`/trial/${trialInfo.bookingId}?action=reschedule&sessionId=${trialInfo.id}`);
-    onOpenChange(false);
-  }
-};
+  const handleReschedule = () => {
+    if (event?.extendedProps.type === 'makeup' && makeupInfo) {
+      router.push(`/makeup/${makeupInfo.id}?action=reschedule`);
+      onOpenChange(false);
+    } else if (event?.extendedProps.type === 'trial' && trialInfo) {
+      router.push(`/trial/${trialInfo.bookingId}?action=reschedule&sessionId=${trialInfo.id}`);
+      onOpenChange(false);
+    }
+  };
 
   // Check if event is past
   const isPastEvent = () => {
@@ -578,13 +600,12 @@ const handleReschedule = () => {
   const isMakeup = event.extendedProps.type === 'makeup';
   const isTrial = event.extendedProps.type === 'trial';
   const eventDate = event.start as Date;
+  const eventEndDate = event.end as Date | null;
 
   // Status color and icon
   const getStatusBadge = () => {
-    const eventDate = event.start as Date;
-    const eventEndDate = event.end as Date;
     const now = new Date();
-    const isPast = eventEndDate < now;
+    const isPast = eventEndDate ? eventEndDate < now : false;
     
     if (isMakeup) {
       // ถ้าเป็น Makeup ที่ผ่านมาแล้ว
@@ -655,6 +676,19 @@ const handleReschedule = () => {
     }
   };
 
+  // Format time safely
+  const formatEventTime = () => {
+    const startTime = eventDate.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false });
+    
+    if (eventEndDate) {
+      const endTime = eventEndDate.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false });
+      return `${startTime} - ${endTime}`;
+    } else {
+      // Fallback for events without end time
+      return startTime;
+    }
+  };
+
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -682,10 +716,7 @@ const handleReschedule = () => {
                   <Calendar className="h-4 w-4 text-gray-400" />
                   <span className="font-medium">{formatDate(eventDate, 'full')}</span>
                   <Clock className="h-4 w-4 text-gray-400 ml-3" />
-                  <span className="font-medium">
-                    {eventDate.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false })} - 
-                    {(event.end as Date).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false })}
-                  </span>
+                  <span className="font-medium">{formatEventTime()}</span>
                 </div>
               </div>
               {getStatusBadge()}
@@ -696,6 +727,25 @@ const handleReschedule = () => {
             {/* For Trial Classes */}
             {isTrial ? (
               <>
+                {/* Show trial count if grouped */}
+                {event.extendedProps.trialCount && event.extendedProps.trialCount > 1 && (
+                  <div className="p-3 bg-orange-50 rounded-lg text-sm">
+                    <div className="flex items-center gap-2 text-orange-700">
+                      <Users2 className="h-4 w-4" />
+                      <span className="font-medium">มีนักเรียนทดลองเรียน {event.extendedProps.trialCount} คนในช่วงเวลานี้</span>
+                    </div>
+                    {event.extendedProps.trialDetails && (
+                      <div className="mt-2 space-y-1">
+                        {event.extendedProps.trialDetails.map((detail, index) => (
+                          <div key={detail.id} className="text-xs text-orange-600 ml-6">
+                            {index + 1}. {detail.studentName} - {detail.subjectName}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Class Details */}
                 <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
                   <div className="flex items-center gap-2">
@@ -1050,7 +1100,6 @@ const handleReschedule = () => {
                           {teachers.map((teacher) => (
                             <SelectItem key={teacher.id} value={teacher.id}>
                               {teacher.nickname || teacher.name}
-                              {/* แก้ไขการแสดง - เช็คครูประจำคลาสจาก originalTeacherId */}
                               {teacher.id === originalTeacherId && ' (ครูประจำคลาส)'}
                             </SelectItem>
                           ))}

@@ -142,6 +142,14 @@ export async function createClass(
   classData: Omit<Class, 'id' | 'createdAt' | 'enrolledCount'>
 ): Promise<string> {
   try {
+    // Validate status
+    const validStatuses = ['draft', 'published', 'started', 'completed', 'cancelled'];
+    if (!classData.status || !validStatuses.includes(classData.status)) {
+      // Default to 'draft' if status is invalid or empty
+      console.warn('Invalid or empty status provided, defaulting to "draft"');
+      classData.status = 'draft';
+    }
+    
     // Get holidays for the branch
     const maxEndDate = new Date(classData.startDate);
     maxEndDate.setMonth(maxEndDate.getMonth() + 6); // Look ahead 6 months
@@ -155,9 +163,10 @@ export async function createClass(
     // Convert holidays to Date array
     const holidayDates = holidays.map(h => h.date);
     
-    // Add class document
+    // Add class document with validated status
     const docRef = await addDoc(collection(db, COLLECTION_NAME), {
       ...classData,
+      status: classData.status || 'draft', // Ensure status is never empty
       startDate: Timestamp.fromDate(classData.startDate),
       endDate: Timestamp.fromDate(classData.endDate),
       enrolledCount: 0,
@@ -207,6 +216,14 @@ export async function updateClass(
     }
     if (classData.endDate) {
       updateData.endDate = Timestamp.fromDate(classData.endDate);
+    }
+    
+    // Validate status if provided
+    if (classData.status) {
+      const validStatuses = ['draft', 'published', 'started', 'completed', 'cancelled'];
+      if (!validStatuses.includes(classData.status)) {
+        throw new Error(`Invalid status: ${classData.status}`);
+      }
     }
     
     await updateDoc(docRef, updateData);
@@ -413,6 +430,12 @@ export async function checkClassCodeExists(code: string, excludeId?: string): Pr
 // Update class status
 export async function updateClassStatus(id: string, status: Class['status']): Promise<void> {
   try {
+    // Validate status
+    const validStatuses = ['draft', 'published', 'started', 'completed', 'cancelled'];
+    if (!validStatuses.includes(status)) {
+      throw new Error(`Invalid status: ${status}`);
+    }
+    
     const docRef = doc(db, COLLECTION_NAME, id);
     await updateDoc(docRef, { status });
   } catch (error) {
