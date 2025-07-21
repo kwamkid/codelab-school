@@ -26,21 +26,46 @@ const SESSIONS_COLLECTION = 'trialSessions';
 // ==================== Trial Bookings ====================
 
 // Get all trial bookings
-export async function getTrialBookings(): Promise<TrialBooking[]> {
+export async function getTrialBookings(branchId?: string | null): Promise<TrialBooking[]> {
   try {
-    const q = query(
-      collection(db, BOOKINGS_COLLECTION),
-      orderBy('createdAt', 'desc')
-    );
-    const querySnapshot = await getDocs(q);
+    let bookingQuery;
     
-    return querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      createdAt: doc.data().createdAt?.toDate() || new Date(),
-      updatedAt: doc.data().updatedAt?.toDate(),
-      contactedAt: doc.data().contactedAt?.toDate(),
-    } as TrialBooking));
+    if (branchId) {
+      bookingQuery = query(
+        collection(db, BOOKINGS_COLLECTION),
+        where('branchId', '==', branchId),
+        orderBy('createdAt', 'desc')
+      );
+    } else {
+      bookingQuery = query(
+        collection(db, BOOKINGS_COLLECTION),
+        orderBy('createdAt', 'desc')
+      );
+    }
+    
+    const querySnapshot = await getDocs(bookingQuery);
+    
+    return querySnapshot.docs.map(doc => {
+      const data = doc.data() as any; // Type assertion to any
+      return {
+        id: doc.id,
+        source: data.source,
+        hasLineLogin: data.hasLineLogin,
+        parentLineId: data.parentLineId,
+        parentName: data.parentName,
+        parentPhone: data.parentPhone,
+        parentEmail: data.parentEmail,
+        students: data.students,
+        branchId: data.branchId,
+        status: data.status,
+        contactNote: data.contactNote,
+        bookedBy: data.bookedBy,
+        notes: data.notes,
+        createdAt: data.createdAt?.toDate() || new Date(),
+        updatedAt: data.updatedAt?.toDate(),
+        contactedAt: data.contactedAt?.toDate(),
+      } as TrialBooking;
+    });
   } catch (error) {
     console.error('Error getting trial bookings:', error);
     throw error;
@@ -193,21 +218,67 @@ export async function updateBookingStatus(
 // ==================== Trial Sessions ====================
 
 // Get all trial sessions
-export async function getTrialSessions(): Promise<TrialSession[]> {
+export async function getTrialSessions(branchId?: string | null): Promise<TrialSession[]> {
   try {
-    const q = query(
-      collection(db, SESSIONS_COLLECTION),
-      orderBy('scheduledDate', 'desc')
-    );
-    const querySnapshot = await getDocs(q);
+    let sessionQuery;
     
-    return querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      scheduledDate: doc.data().scheduledDate?.toDate() || new Date(),
-      createdAt: doc.data().createdAt?.toDate() || new Date(),
-      completedAt: doc.data().completedAt?.toDate(),
-    } as TrialSession));
+    if (branchId) {
+      sessionQuery = query(
+        collection(db, SESSIONS_COLLECTION),
+        where('branchId', '==', branchId),
+        orderBy('scheduledDate', 'desc')
+      );
+    } else {
+      sessionQuery = query(
+        collection(db, SESSIONS_COLLECTION),
+        orderBy('scheduledDate', 'desc')
+      );
+    }
+    
+    const querySnapshot = await getDocs(sessionQuery);
+    
+    return querySnapshot.docs.map(doc => {
+      const data = doc.data() as any; // Type assertion to any
+      
+      // Convert rescheduleHistory dates if exists
+      let rescheduleHistory = data.rescheduleHistory;
+      if (rescheduleHistory && Array.isArray(rescheduleHistory)) {
+        rescheduleHistory = rescheduleHistory.map((history: any) => ({
+          originalDate: history.originalDate?.toDate ? history.originalDate.toDate() : history.originalDate,
+          originalTime: history.originalTime,
+          newDate: history.newDate?.toDate ? history.newDate.toDate() : history.newDate,
+          newTime: history.newTime,
+          reason: history.reason,
+          rescheduledBy: history.rescheduledBy,
+          rescheduledAt: history.rescheduledAt?.toDate ? history.rescheduledAt.toDate() : history.rescheduledAt
+        }));
+      }
+      
+      return {
+        id: doc.id,
+        bookingId: data.bookingId,
+        studentName: data.studentName,
+        subjectId: data.subjectId,
+        branchId: data.branchId,
+        scheduledDate: data.scheduledDate?.toDate() || new Date(),
+        startTime: data.startTime,
+        endTime: data.endTime,
+        teacherId: data.teacherId,
+        roomId: data.roomId,
+        roomName: data.roomName,
+        status: data.status,
+        attended: data.attended,
+        feedback: data.feedback,
+        interestedLevel: data.interestedLevel,
+        teacherNote: data.teacherNote,
+        converted: data.converted,
+        convertedToClassId: data.convertedToClassId,
+        conversionNote: data.conversionNote,
+        rescheduleHistory: rescheduleHistory,
+        createdAt: data.createdAt?.toDate() || new Date(),
+        completedAt: data.completedAt?.toDate(),
+      } as TrialSession;
+    });
   } catch (error) {
     console.error('Error getting trial sessions:', error);
     throw error;
@@ -738,14 +809,14 @@ export async function deleteTrialBooking(id: string): Promise<void> {
 }
 
 // Get trial booking stats
-export async function getTrialBookingStats(): Promise<{
+export async function getTrialBookingStats(branchId?: string | null): Promise<{
   total: number;
   byStatus: Record<string, number>;
   conversionRate: number;
   bySource: Record<string, number>;
 }> {
   try {
-    const bookings = await getTrialBookings();
+    const bookings = await getTrialBookings(branchId); // ส่ง branchId ไปด้วย
     
     const stats = {
       total: bookings.length,

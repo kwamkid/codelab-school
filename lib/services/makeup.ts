@@ -22,30 +22,67 @@ import { sendMakeupNotification } from './line-notifications';
 const COLLECTION_NAME = 'makeupClasses';
 
 // Get all makeup classes
-export async function getMakeupClasses(): Promise<MakeupClass[]> {
+// Get all makeup classes - FIXED VERSION
+export async function getMakeupClasses(branchId?: string | null): Promise<MakeupClass[]> {
   try {
-    const q = query(
+    const makeupQuery = query(
       collection(db, COLLECTION_NAME),
       orderBy('createdAt', 'desc')
     );
-    const querySnapshot = await getDocs(q);
     
-    return querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      requestDate: doc.data().requestDate?.toDate() || new Date(),
-      createdAt: doc.data().createdAt?.toDate() || new Date(),
-      updatedAt: doc.data().updatedAt?.toDate(),
-      makeupSchedule: doc.data().makeupSchedule ? {
-        ...doc.data().makeupSchedule,
-        date: doc.data().makeupSchedule.date?.toDate() || new Date(),
-        confirmedAt: doc.data().makeupSchedule.confirmedAt?.toDate(),
-      } : undefined,
-      attendance: doc.data().attendance ? {
-        ...doc.data().attendance,
-        checkedAt: doc.data().attendance.checkedAt?.toDate() || new Date(),
-      } : undefined,
-    } as MakeupClass));
+    const querySnapshot = await getDocs(makeupQuery);
+    
+    let makeupClasses = querySnapshot.docs.map(doc => {
+      const data = doc.data() as any;
+      return {
+        id: doc.id,
+        type: data.type,
+        originalClassId: data.originalClassId,
+        originalScheduleId: data.originalScheduleId,
+        studentId: data.studentId,
+        parentId: data.parentId,
+        requestDate: data.requestDate?.toDate() || new Date(),
+        requestedBy: data.requestedBy,
+        reason: data.reason,
+        status: data.status,
+        notes: data.notes,
+        createdAt: data.createdAt?.toDate() || new Date(),
+        updatedAt: data.updatedAt?.toDate(),
+        makeupSchedule: data.makeupSchedule ? {
+          date: data.makeupSchedule.date?.toDate() || new Date(),
+          startTime: data.makeupSchedule.startTime,
+          endTime: data.makeupSchedule.endTime,
+          teacherId: data.makeupSchedule.teacherId,
+          branchId: data.makeupSchedule.branchId,
+          roomId: data.makeupSchedule.roomId,
+          confirmedAt: data.makeupSchedule.confirmedAt?.toDate(),
+          confirmedBy: data.makeupSchedule.confirmedBy,
+        } : undefined,
+        attendance: data.attendance ? {
+          status: data.attendance.status,
+          checkedBy: data.attendance.checkedBy,
+          checkedAt: data.attendance.checkedAt?.toDate() || new Date(),
+          note: data.attendance.note,
+        } : undefined,
+        originalSessionNumber: data.originalSessionNumber,
+        originalSessionDate: data.originalSessionDate?.toDate()
+      } as MakeupClass;
+    });
+    
+    // Filter by branch if specified
+    if (branchId) {
+      // Get all classes for this branch first
+      const { getClassesByBranch } = await import('./classes');
+      const branchClasses = await getClassesByBranch(branchId);
+      const branchClassIds = new Set(branchClasses.map(c => c.id));
+      
+      // Filter makeups that belong to classes in this branch
+      makeupClasses = makeupClasses.filter(makeup => 
+        branchClassIds.has(makeup.originalClassId)
+      );
+    }
+    
+    return makeupClasses;
   } catch (error) {
     console.error('Error getting makeup classes:', error);
     throw error;

@@ -1,23 +1,16 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { useBranch } from '@/contexts/BranchContext';
+import { useAuth } from '@/hooks/useAuth';
 import DashboardCalendar from '@/components/dashboard/dashboard-calendar';
 import ClassDetailDialog from '@/components/dashboard/class-detail-dialog';
 import { getOptimizedCalendarEvents, CalendarEvent, getOptimizedDashboardStats, clearDashboardCache } from '@/lib/services/dashboard-optimized';
-import { getActiveBranches } from '@/lib/services/branches';
-import { Branch, MakeupClass } from '@/types/models';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2, Calendar as CalendarIcon, UserX, AlertCircle, Users, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { DatesSetArg, EventClickArg } from '@fullcalendar/core';
 import FullCalendar from '@fullcalendar/react';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
@@ -25,6 +18,8 @@ import { formatDate } from '@/lib/utils';
 import { getMakeupClasses } from '@/lib/services/makeup';
 import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
+import { getClass } from '@/lib/services/classes';
+import { Branch, MakeupClass } from '@/types/models';
 
 interface AbsentStudent {
   studentId: string;
@@ -47,6 +42,21 @@ interface DashboardStats {
 
 export default function DashboardPage() {
   const calendarRef = useRef<FullCalendar>(null);
+  const { selectedBranchId, isAllBranches } = useBranch();
+  const { isSuperAdmin } = useAuth();
+  
+  // Debug branch context
+  useEffect(() => {
+    console.log('=== Branch Context Debug ===');
+    console.log('selectedBranchId:', selectedBranchId);
+    console.log('isAllBranches:', isAllBranches);
+    console.log('Type of selectedBranchId:', typeof selectedBranchId);
+    console.log('Is null?:', selectedBranchId === null);
+    console.log('Is undefined?:', selectedBranchId === undefined);
+    console.log('Actual value:', selectedBranchId || 'null or undefined');
+    console.log('=========================');
+  }, [selectedBranchId, isAllBranches]);
+  
   const [loading, setLoading] = useState(true);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
@@ -58,65 +68,64 @@ export default function DashboardPage() {
   const [makeupRequests, setMakeupRequests] = useState<MakeupClass[]>([]);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
-  
-  // Filter states
-  const [branches, setBranches] = useState<Branch[]>([]);
-  const [selectedBranch, setSelectedBranch] = useState<string>('all');
   const [dateRange, setDateRange] = useState<{ start: Date; end: Date } | null>(null);
   
-  // Load branches on mount
-  useEffect(() => {
-    const loadBranches = async () => {
-      try {
-        const branchesData = await getActiveBranches();
-        setBranches(branchesData);
-      } catch (error) {
-        console.error('Error loading branches:', error);
-      }
-    };
-    
-    loadBranches();
-  }, []);
-  
-  // Load stats separately
+  // Load stats when branch changes
   useEffect(() => {
     const loadStats = async () => {
       setStatsLoading(true);
       try {
-        const branchIdToQuery = selectedBranch === 'all' ? undefined : selectedBranch;
-        const fetchedStats = await getOptimizedDashboardStats(branchIdToQuery);
+        // Debug log
+        console.log('Loading stats for branch:', selectedBranchId);
+        
+        // ถ้า selectedBranchId เป็น null ให้ส่ง undefined แทน
+        const branchIdParam = selectedBranchId || undefined;
+        const fetchedStats = await getOptimizedDashboardStats(branchIdParam);
         setStats(fetchedStats);
       } catch (error) {
         console.error('Error loading stats:', error);
+        toast.error('ไม่สามารถโหลดข้อมูลสถิติได้');
       } finally {
         setStatsLoading(false);
       }
     };
     
     loadStats();
-  }, [selectedBranch]);
+  }, [selectedBranchId]);
   
   const handleDatesSet = useCallback(async (dateInfo: DatesSetArg) => {
     setLoading(true);
     setDateRange({ start: dateInfo.start, end: dateInfo.end });
     
     try {
-      const branchIdToQuery = selectedBranch === 'all' ? undefined : selectedBranch;
-      const fetchedEvents = await getOptimizedCalendarEvents(dateInfo.start, dateInfo.end, branchIdToQuery);
+      // Debug log
+      console.log('Loading calendar events for branch:', selectedBranchId);
+      
+      // ถ้า selectedBranchId เป็น null ให้ส่ง undefined แทน
+      const branchIdParam = selectedBranchId || undefined;
+      const fetchedEvents = await getOptimizedCalendarEvents(
+        dateInfo.start, 
+        dateInfo.end, 
+        branchIdParam
+      );
       setEvents(fetchedEvents);
       
       // Load absent students and makeup requests for today
-      await loadAbsentStudentsData(fetchedEvents, dateInfo.start, dateInfo.end, branchIdToQuery);
+      await loadAbsentStudentsData(fetchedEvents, dateInfo.start, dateInfo.end);
     } catch (error) {
       toast.error('ไม่สามารถโหลดข้อมูลตารางเรียนได้');
       console.error(error);
     } finally {
       setLoading(false);
     }
-  }, [selectedBranch]);
+  }, [selectedBranchId]); // eslint-disable-line react-hooks/exhaustive-deps
   
   // Load absent students and makeup requests
-  const loadAbsentStudentsData = async (allEvents: CalendarEvent[], startDate: Date, endDate: Date, branchId?: string) => {
+  const loadAbsentStudentsData = async (
+    allEvents: CalendarEvent[], 
+    startDate: Date, 
+    endDate: Date
+  ) => {
     try {
       // Get today's events
       const today = new Date();
@@ -130,9 +139,17 @@ export default function DashboardPage() {
         return eventDate >= today && eventDate <= todayEnd && event.extendedProps.type === 'class';
       });
       
-      // Get makeup requests
-      const makeupData = await getMakeupClasses();
-      const todayMakeupRequests = makeupData.filter(makeup => {
+      // Debug log
+      console.log('Loading makeup classes for branch:', selectedBranchId);
+      
+      // Get makeup requests with branch filter
+      const branchIdParam = selectedBranchId || undefined;
+      const allMakeupData = await getMakeupClasses(branchIdParam);
+      
+      console.log('Makeup classes loaded:', allMakeupData.length);
+      
+      // Filter today's makeup requests
+      const todayMakeupRequests = allMakeupData.filter(makeup => {
         const requestDate = new Date(makeup.requestDate);
         return requestDate >= today && requestDate <= todayEnd && 
                (makeup.status === 'pending' || makeup.status === 'scheduled');
@@ -174,28 +191,33 @@ export default function DashboardPage() {
     }
   };
   
-  // Re-apply filters when branch changes
-  const handleBranchChange = async (value: string) => {
-    setSelectedBranch(value);
-    
-    // Re-fetch events with new branch filter
+  // Re-load when branch changes
+  useEffect(() => {
     if (dateRange) {
-      setLoading(true);
-      try {
-        const branchIdToQuery = value === 'all' ? undefined : value;
-        const fetchedEvents = await getOptimizedCalendarEvents(dateRange.start, dateRange.end, branchIdToQuery);
-        setEvents(fetchedEvents);
-        
-        // Reload absent students data
-        await loadAbsentStudentsData(fetchedEvents, dateRange.start, dateRange.end, branchIdToQuery);
-      } catch (error) {
-        toast.error('ไม่สามารถโหลดข้อมูลตารางเรียนได้');
-        console.error(error);
-      } finally {
-        setLoading(false);
-      }
+      const loadData = async () => {
+        setLoading(true);
+        try {
+          // Debug log
+          console.log('Reloading data for branch change:', selectedBranchId);
+          
+          const branchIdParam = selectedBranchId || undefined;
+          const fetchedEvents = await getOptimizedCalendarEvents(
+            dateRange.start, 
+            dateRange.end, 
+            branchIdParam
+          );
+          setEvents(fetchedEvents);
+          await loadAbsentStudentsData(fetchedEvents, dateRange.start, dateRange.end);
+        } catch (error) {
+          console.error('Error loading calendar events:', error);
+        } finally {
+          setLoading(false);
+        }
+      };
+      
+      loadData();
     }
-  };
+  }, [selectedBranchId]); // eslint-disable-line react-hooks/exhaustive-deps
   
   const handleEventClick = (clickInfo: EventClickArg) => {
     console.log('Event clicked:', clickInfo.event);
@@ -231,7 +253,10 @@ export default function DashboardPage() {
         makeupStatus: clickInfo.event.extendedProps.makeupStatus,
         subjectColor: clickInfo.event.extendedProps.subjectColor,
         trialStudentName: clickInfo.event.extendedProps.trialStudentName,
-        trialSubjectName: clickInfo.event.extendedProps.trialSubjectName
+        trialSubjectName: clickInfo.event.extendedProps.trialSubjectName,
+        startTime: clickInfo.event.extendedProps.startTime,
+        endTime: clickInfo.event.extendedProps.endTime,
+        attendance: clickInfo.event.extendedProps.attendance
       }
     };
     
@@ -258,15 +283,19 @@ export default function DashboardPage() {
     if (dateRange) {
       setLoading(true);
       try {
-        const branchIdToQuery = selectedBranch === 'all' ? undefined : selectedBranch;
-        const fetchedEvents = await getOptimizedCalendarEvents(dateRange.start, dateRange.end, branchIdToQuery);
+        const branchIdParam = selectedBranchId || undefined;
+        const fetchedEvents = await getOptimizedCalendarEvents(
+          dateRange.start, 
+          dateRange.end, 
+          branchIdParam
+        );
         setEvents(fetchedEvents);
         
         // Reload absent students data
-        await loadAbsentStudentsData(fetchedEvents, dateRange.start, dateRange.end, branchIdToQuery);
+        await loadAbsentStudentsData(fetchedEvents, dateRange.start, dateRange.end);
         
         // Reload stats
-        const fetchedStats = await getOptimizedDashboardStats(branchIdToQuery);
+        const fetchedStats = await getOptimizedDashboardStats(branchIdParam);
         setStats(fetchedStats);
         
         toast.success('บันทึกการเช็คชื่อเรียบร้อยแล้ว');
@@ -292,8 +321,8 @@ export default function DashboardPage() {
       } as DatesSetArg);
     }
     // Reload stats
-    const branchIdToQuery = selectedBranch === 'all' ? undefined : selectedBranch;
-    const fetchedStats = await getOptimizedDashboardStats(branchIdToQuery);
+    const branchIdParam = selectedBranchId || undefined;
+    const fetchedStats = await getOptimizedDashboardStats(branchIdParam);
     setStats(fetchedStats);
     
     toast.success('รีเฟรชข้อมูลเรียบร้อยแล้ว');
@@ -304,7 +333,10 @@ export default function DashboardPage() {
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-sm sm:text-base text-gray-600 mt-1 sm:mt-2">ภาพรวมตารางเรียนและข้อมูลสำคัญ</p>
+          <p className="text-sm sm:text-base text-gray-600 mt-1 sm:mt-2">
+            ภาพรวมตารางเรียนและข้อมูลสำคัญ
+            {!isAllBranches && <span className="text-red-600 font-medium"> (เฉพาะสาขาที่เลือก)</span>}
+          </p>
         </div>
         
         <div className="flex items-center gap-2">
@@ -317,21 +349,6 @@ export default function DashboardPage() {
           >
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           </Button>
-          
-          {/* Branch Filter */}
-          <Select value={selectedBranch} onValueChange={handleBranchChange}>
-            <SelectTrigger className="w-full sm:w-[200px]">
-              <SelectValue placeholder="เลือกสาขา" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">ทุกสาขา</SelectItem>
-              {branches.map(branch => (
-                <SelectItem key={branch.id} value={branch.id}>
-                  {branch.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
         </div>
       </div>
 
