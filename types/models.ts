@@ -223,6 +223,9 @@ export interface TrialBooking {
     gradeLevel?: string;
     subjectInterests: string[]; // วิชาที่สนใจ (subject IDs)
   }[];
+
+  branchId?: string; // สาขาที่ติดต่อ/จอง
+
   
   status: 'new' | 'contacted' | 'scheduled' | 'completed' | 'converted' | 'cancelled';
   

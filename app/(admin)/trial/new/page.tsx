@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { 
   TestTube, 
   ArrowLeft, 
@@ -22,13 +23,16 @@ import {
   Mail,
   School,
   GraduationCap,
-  AlertCircle
+  AlertCircle,
+  Building2
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { Subject } from '@/types/models';
+import { Subject, Branch } from '@/types/models';
 import { getSubjects } from '@/lib/services/subjects';
+import { getBranches } from '@/lib/services/branches';
 import { createTrialBooking } from '@/lib/services/trial-bookings';
 import { GradeLevelCombobox } from '@/components/ui/grade-level-combobox';
+import { useBranch } from '@/contexts/BranchContext';
 
 interface StudentForm {
   name: string;
@@ -39,13 +43,16 @@ interface StudentForm {
 
 export default function CreateTrialBookingPage() {
   const router = useRouter();
+  const { selectedBranchId } = useBranch();
   const [loading, setLoading] = useState(false);
   const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
   
   // Form state
   const [parentName, setParentName] = useState('');
   const [parentPhone, setParentPhone] = useState('');
   const [parentEmail, setParentEmail] = useState('');
+  const [selectedBranch, setSelectedBranch] = useState(''); // เพิ่ม state สำหรับสาขา
   const [students, setStudents] = useState<StudentForm[]>([{
     name: '',
     schoolName: '',
@@ -55,16 +62,31 @@ export default function CreateTrialBookingPage() {
   const [contactNote, setContactNote] = useState('');
 
   useEffect(() => {
-    loadSubjects();
+    loadData();
   }, []);
 
-  const loadSubjects = async () => {
+  // Set default branch จาก context
+  useEffect(() => {
+    if (selectedBranchId && !selectedBranch && branches.length > 0) {
+      // ตรวจสอบว่า selectedBranchId มีใน branches หรือไม่
+      const branchExists = branches.find(b => b.id === selectedBranchId);
+      if (branchExists) {
+        setSelectedBranch(selectedBranchId);
+      }
+    }
+  }, [selectedBranchId, branches, selectedBranch]);
+
+  const loadData = async () => {
     try {
-      const data = await getSubjects();
-      setSubjects(data.filter(s => s.isActive));
+      const [subjectsData, branchesData] = await Promise.all([
+        getSubjects(),
+        getBranches()
+      ]);
+      setSubjects(subjectsData.filter(s => s.isActive));
+      setBranches(branchesData.filter(b => b.isActive));
     } catch (error) {
-      console.error('Error loading subjects:', error);
-      toast.error('ไม่สามารถโหลดข้อมูลวิชาได้');
+      console.error('Error loading data:', error);
+      toast.error('ไม่สามารถโหลดข้อมูลได้');
     }
   };
 
@@ -119,6 +141,12 @@ export default function CreateTrialBookingPage() {
       toast.error('เบอร์โทรศัพท์ไม่ถูกต้อง');
       return false;
     }
+
+    // เพิ่มการตรวจสอบสาขา
+    if (!selectedBranch) {
+      toast.error('กรุณาเลือกสาขา');
+      return false;
+    }
     
     // Validate email if provided
     if (parentEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parentEmail)) {
@@ -143,46 +171,46 @@ export default function CreateTrialBookingPage() {
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
-  
-  if (!validateForm()) return;
-  
-  setLoading(true);
-  
-  try {
-    const bookingData: any = {
-      source: 'walkin' as const,
-      parentName: parentName.trim(),
-      parentPhone: parentPhone.replace(/[-\s]/g, ''),
-      students: students.map(s => ({
-        name: s.name.trim(),
-        subjectInterests: s.subjectInterests,
-        // แก้ไขตรงนี้: ตรวจสอบก่อนว่ามีค่าหรือไม่ ถ้าไม่มีไม่ต้องใส่ field
-        ...(s.schoolName.trim() && { schoolName: s.schoolName.trim() }),
-        ...(s.gradeLevel.trim() && { gradeLevel: s.gradeLevel.trim() })
-      })),
-      status: 'new' as const
-    };
+    e.preventDefault();
     
-    // Add optional fields only if they have values
-    if (parentEmail.trim()) {
-      bookingData.parentEmail = parentEmail.trim();
+    if (!validateForm()) return;
+    
+    setLoading(true);
+    
+    try {
+      const bookingData: any = {
+        source: 'walkin' as const,
+        parentName: parentName.trim(),
+        parentPhone: parentPhone.replace(/[-\s]/g, ''),
+        branchId: selectedBranch, // เพิ่ม branchId
+        students: students.map(s => ({
+          name: s.name.trim(),
+          subjectInterests: s.subjectInterests,
+          ...(s.schoolName.trim() && { schoolName: s.schoolName.trim() }),
+          ...(s.gradeLevel.trim() && { gradeLevel: s.gradeLevel.trim() })
+        })),
+        status: 'new' as const
+      };
+      
+      // Add optional fields only if they have values
+      if (parentEmail.trim()) {
+        bookingData.parentEmail = parentEmail.trim();
+      }
+      
+      if (contactNote.trim()) {
+        bookingData.contactNote = contactNote.trim();
+      }
+      
+      const bookingId = await createTrialBooking(bookingData);
+      toast.success('บันทึกการจองทดลองเรียนสำเร็จ');
+      router.push(`/trial/${bookingId}`);
+    } catch (error) {
+      console.error('Error creating booking:', error);
+      toast.error('เกิดข้อผิดพลาดในการบันทึกข้อมูล');
+    } finally {
+      setLoading(false);
     }
-    
-    if (contactNote.trim()) {
-      bookingData.contactNote = contactNote.trim();
-    }
-    
-    const bookingId = await createTrialBooking(bookingData);
-    toast.success('บันทึกการจองทดลองเรียนสำเร็จ');
-    router.push(`/trial/${bookingId}`);
-  } catch (error) {
-    console.error('Error creating booking:', error);
-    toast.error('เกิดข้อผิดพลาดในการบันทึกข้อมูล');
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
@@ -205,6 +233,37 @@ export default function CreateTrialBookingPage() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Branch Selection - เพิ่มส่วนนี้ใหม่ */}
+        <Card>
+          <CardHeader>
+            <CardTitle>สาขา</CardTitle>
+            <CardDescription>เลือกสาขาที่ผู้ปกครองติดต่อ</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <Label htmlFor="branch">
+                <Building2 className="inline h-4 w-4 mr-1" />
+                สาขา <span className="text-red-500">*</span>
+              </Label>
+              <Select
+                value={selectedBranch}
+                onValueChange={setSelectedBranch}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="เลือกสาขา" />
+                </SelectTrigger>
+                <SelectContent>
+                  {branches.map((branch) => (
+                    <SelectItem key={branch.id} value={branch.id}>
+                      {branch.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Parent Information */}
         <Card>
           <CardHeader>

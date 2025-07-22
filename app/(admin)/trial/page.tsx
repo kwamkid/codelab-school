@@ -42,16 +42,19 @@ import {
   PhoneCall,
   CalendarCheck,
   Trash2,
-  Eye
+  Eye,
+  Building2,
+  Clock
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { TrialBooking } from '@/types/models';
+import { TrialBooking, Branch } from '@/types/models';
 import { getTrialBookings, getTrialBookingStats, deleteTrialBooking } from '@/lib/services/trial-bookings';
+import { getBranches } from '@/lib/services/branches';
 import { formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useLoading } from '@/contexts/LoadingContext';
-
+import { useBranch } from '@/contexts/BranchContext';
 
 const statusConfig = {
   new: { label: 'ใหม่', color: 'bg-blue-100 text-blue-700', icon: AlertCircle },
@@ -72,7 +75,9 @@ export default function TrialBookingsPage() {
   const router = useRouter();
   const [bookings, setBookings] = useState<TrialBooking[]>([]);
   const [filteredBookings, setFilteredBookings] = useState<TrialBooking[]>([]);
-const { setLoading } = useLoading();
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const { setLoading } = useLoading();
+  const { selectedBranchId, isAllBranches } = useBranch();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [stats, setStats] = useState<any>(null);
@@ -83,16 +88,26 @@ const { setLoading } = useLoading();
   useEffect(() => {
     loadBookings();
     loadStats();
-  }, []);
+    loadBranches();
+  }, [selectedBranchId]); // เพิ่ม dependency
 
   useEffect(() => {
     filterBookings();
   }, [bookings, searchTerm, selectedStatus]);
 
+  const loadBranches = async () => {
+    try {
+      const data = await getBranches();
+      setBranches(data);
+    } catch (error) {
+      console.error('Error loading branches:', error);
+    }
+  };
+
   const loadBookings = async () => {
     try {
       setLoading(true);
-      const data = await getTrialBookings();
+      const data = await getTrialBookings(selectedBranchId);
       setBookings(data);
     } catch (error) {
       console.error('Error loading bookings:', error);
@@ -104,7 +119,7 @@ const { setLoading } = useLoading();
 
   const loadStats = async () => {
     try {
-      const data = await getTrialBookingStats();
+      const data = await getTrialBookingStats(selectedBranchId);
       setStats(data);
     } catch (error) {
       console.error('Error loading stats:', error);
@@ -152,6 +167,20 @@ const { setLoading } = useLoading();
     );
   };
 
+  const getBranchBadge = (branchId?: string) => {
+    if (!branchId) {
+      return <Badge variant="outline" className="text-gray-500">ไม่ระบุสาขา</Badge>;
+    }
+    
+    const branch = branches.find(b => b.id === branchId);
+    return (
+      <Badge variant="outline" className="bg-gray-50">
+        <Building2 className="h-3 w-3 mr-1" />
+        {branch?.name || branchId}
+      </Badge>
+    );
+  };
+
   const handleDeleteClick = (booking: TrialBooking) => {
     setBookingToDelete(booking);
     setDeleteDialogOpen(true);
@@ -184,6 +213,9 @@ const { setLoading } = useLoading();
           <h1 className="text-3xl font-bold flex items-center gap-2">
             <TestTube className="h-8 w-8 text-red-500" />
             จองทดลองเรียน
+            {!isAllBranches && (
+              <span className="text-lg font-normal text-gray-500">(เฉพาะสาขาที่เลือก)</span>
+            )}
           </h1>
           <p className="text-gray-600 mt-2">จัดการการจองทดลองเรียนทั้งหมด</p>
         </div>
@@ -296,8 +328,9 @@ const { setLoading } = useLoading();
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>วันที่จอง</TableHead>
+                        <TableHead>วันที่/เวลา</TableHead>
                         <TableHead>ช่องทาง</TableHead>
+                        {isAllBranches && <TableHead>สาขา</TableHead>}
                         <TableHead>ผู้ปกครอง</TableHead>
                         <TableHead>นักเรียน</TableHead>
                         <TableHead>สถานะ</TableHead>
@@ -307,15 +340,26 @@ const { setLoading } = useLoading();
                     <TableBody>
                       {filteredBookings.map((booking) => (
                         <TableRow key={booking.id}>
-                          <TableCell className="text-sm">
-                            <div className="flex items-center gap-1">
-                              <Calendar className="h-3 w-3 text-gray-400" />
-                              {formatDate(booking.createdAt)}
+                          <TableCell>
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-1 font-medium">
+                                <Calendar className="h-3 w-3 text-gray-400" />
+                                {formatDate(booking.createdAt)}
+                              </div>
+                              <div className="flex items-center gap-1 text-xs text-gray-500">
+                                <Clock className="h-3 w-3" />
+                                {formatDate(booking.createdAt, 'time')}
+                              </div>
                             </div>
                           </TableCell>
                           <TableCell>
                             {getSourceBadge(booking.source)}
                           </TableCell>
+                          {isAllBranches && (
+                            <TableCell>
+                              {getBranchBadge(booking.branchId)}
+                            </TableCell>
+                          )}
                           <TableCell>
                             <div>
                               <div className="font-medium">{booking.parentName}</div>

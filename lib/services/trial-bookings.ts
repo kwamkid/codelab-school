@@ -26,6 +26,7 @@ const SESSIONS_COLLECTION = 'trialSessions';
 // ==================== Trial Bookings ====================
 
 // Get all trial bookings
+// Get all trial bookings
 export async function getTrialBookings(branchId?: string | null): Promise<TrialBooking[]> {
   try {
     let bookingQuery;
@@ -46,7 +47,7 @@ export async function getTrialBookings(branchId?: string | null): Promise<TrialB
     const querySnapshot = await getDocs(bookingQuery);
     
     return querySnapshot.docs.map(doc => {
-      const data = doc.data() as any; // Type assertion to any
+      const data = doc.data() as any;
       return {
         id: doc.id,
         source: data.source,
@@ -56,7 +57,7 @@ export async function getTrialBookings(branchId?: string | null): Promise<TrialB
         parentPhone: data.parentPhone,
         parentEmail: data.parentEmail,
         students: data.students,
-        branchId: data.branchId,
+        branchId: data.branchId, // เพิ่มบรรทัดนี้
         status: data.status,
         contactNote: data.contactNote,
         bookedBy: data.bookedBy,
@@ -71,7 +72,6 @@ export async function getTrialBookings(branchId?: string | null): Promise<TrialB
     throw error;
   }
 }
-
 // Get trial bookings by status
 export async function getTrialBookingsByStatus(status: TrialBooking['status']): Promise<TrialBooking[]> {
   try {
