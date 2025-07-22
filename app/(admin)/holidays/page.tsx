@@ -36,13 +36,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useBranch } from '@/contexts/BranchContext';
+import { PermissionGuard } from '@/components/auth/permission-guard';
+import { ActionButton } from '@/components/ui/action-button';
 
 export default function HolidaysPage() {
+  const { selectedBranchId, isAllBranches } = useBranch();
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-  const [selectedBranch, setSelectedBranch] = useState<string>('all');
+  const [selectedFilterBranch, setSelectedFilterBranch] = useState<string>('all');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedHoliday, setSelectedHoliday] = useState<Holiday | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -53,31 +57,17 @@ export default function HolidaysPage() {
 
   useEffect(() => {
     loadData();
-    // Debug: Load all holidays
-    debugLoadAllHolidays();
-  }, [selectedYear]);
-
-  const debugLoadAllHolidays = async () => {
-    try {
-      const { getAllHolidays } = await import('@/lib/services/holidays');
-      const allHolidays = await getAllHolidays();
-      console.log('DEBUG - All holidays in database:', allHolidays);
-    } catch (error) {
-      console.error('DEBUG - Error loading all holidays:', error);
-    }
-  };
+  }, [selectedYear, selectedBranchId]);
 
   const loadData = async () => {
     try {
       // Load holidays
       const holidaysData = await getHolidays(selectedYear);
-      console.log('Holidays loaded:', holidaysData);
       setHolidays(holidaysData);
       
       // Try to load branches (don't fail if error)
       try {
         const branchesData = await getActiveBranches();
-        console.log('Branches loaded:', branchesData);
         setBranches(branchesData);
       } catch (branchError) {
         console.error('Error loading branches:', branchError);
@@ -168,16 +158,33 @@ export default function HolidaysPage() {
     setDialogOpen(false);
   };
 
-  // Filter holidays
-  const filteredHolidays = holidays.filter(holiday => {
-    if (selectedBranch === 'all') return true;
-    if (selectedBranch === 'national') return holiday.type === 'national';
-    return holiday.branches?.includes(selectedBranch);
-  });
-  
-  console.log('Current holidays state:', holidays);
-  console.log('Filtered holidays:', filteredHolidays);
-  console.log('Selected branch:', selectedBranch);
+  // Filter holidays - ถ้าเลือกสาขาเฉพาะ จะแสดงเฉพาะวันหยุดที่เกี่ยวข้องกับสาขานั้น
+  const getRelevantHolidays = () => {
+    let relevantHolidays = holidays;
+    
+    // ถ้าเลือกสาขาเฉพาะจาก context แสดงเฉพาะวันหยุดที่เกี่ยวกับสาขานั้น
+    if (!isAllBranches && selectedBranchId) {
+      relevantHolidays = holidays.filter(holiday => {
+        // วันหยุด national แสดงเสมอ
+        if (holiday.type === 'national') return true;
+        // วันหยุด branch ต้องมีสาขาที่เลือกอยู่ใน list
+        return holiday.branches?.includes(selectedBranchId);
+      });
+    }
+    
+    // Apply additional filter จาก dropdown
+    if (selectedFilterBranch === 'national') {
+      return relevantHolidays.filter(h => h.type === 'national');
+    } else if (selectedFilterBranch !== 'all') {
+      return relevantHolidays.filter(h => 
+        h.type === 'national' || h.branches?.includes(selectedFilterBranch)
+      );
+    }
+    
+    return relevantHolidays;
+  };
+
+  const filteredHolidays = getRelevantHolidays();
 
   // Group holidays by month
   const holidaysByMonth = filteredHolidays.reduce((acc, holiday) => {
@@ -211,25 +218,35 @@ export default function HolidaysPage() {
     <div>
       <div className="flex justify-between items-center mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">จัดการวันหยุด</h1>
+          <h1 className="text-3xl font-bold text-gray-900">
+            จัดการวันหยุด
+            {!isAllBranches && (
+              <span className="text-red-600 text-lg ml-2">(เฉพาะสาขาที่เลือก)</span>
+            )}
+          </h1>
           <p className="text-gray-600 mt-2">กำหนดวันหยุดประจำปีและวันหยุดพิเศษของแต่ละสาขา</p>
         </div>
         <div className="flex gap-2">
-          <Button 
-            variant="outline"
-            onClick={() => setRescheduleAllDialogOpen(true)}
-            className="border-blue-200 text-blue-600 hover:bg-blue-50"
-          >
-            <RefreshCw className="h-4 w-4 mr-2" />
-            จัดตารางใหม่ทั้งหมด
-          </Button>
-          <Button 
-            onClick={handleAddHoliday}
-            className="bg-red-500 hover:bg-red-600"
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            เพิ่มวันหยุด
-          </Button>
+          <PermissionGuard requiredRole={['super_admin', 'branch_admin']}>
+            <Button 
+              variant="outline"
+              onClick={() => setRescheduleAllDialogOpen(true)}
+              className="border-blue-200 text-blue-600 hover:bg-blue-50"
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              จัดตารางใหม่ทั้งหมด
+            </Button>
+          </PermissionGuard>
+          <PermissionGuard action="create">
+            <ActionButton 
+              action="create"
+              onClick={handleAddHoliday}
+              className="bg-red-500 hover:bg-red-600"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              เพิ่มวันหยุด
+            </ActionButton>
+          </PermissionGuard>
         </div>
       </div>
 
@@ -251,30 +268,43 @@ export default function HolidaysPage() {
           </SelectContent>
         </Select>
 
-        <Select value={selectedBranch} onValueChange={setSelectedBranch}>
+        <Select value={selectedFilterBranch} onValueChange={setSelectedFilterBranch}>
           <SelectTrigger className="w-[200px]">
             <SelectValue placeholder="เลือกสาขา" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">ทั้งหมด</SelectItem>
             <SelectItem value="national">วันหยุดทุกสาขา</SelectItem>
-            {branches.map(branch => (
-              <SelectItem key={branch.id} value={branch.id}>
-                {branch.name}
-              </SelectItem>
-            ))}
+            {/* แสดงเฉพาะสาขาที่ user มีสิทธิ์ */}
+            {isAllBranches ? (
+              branches.map(branch => (
+                <SelectItem key={branch.id} value={branch.id}>
+                  {branch.name}
+                </SelectItem>
+              ))
+            ) : (
+              selectedBranchId && branches
+                .filter(b => b.id === selectedBranchId)
+                .map(branch => (
+                  <SelectItem key={branch.id} value={branch.id}>
+                    {branch.name}
+                  </SelectItem>
+                ))
+            )}
           </SelectContent>
         </Select>
 
         {filteredHolidays.length > 0 && (
-          <Button 
-            variant="destructive"
-            onClick={() => setDeleteAllDialogOpen(true)}
-            className="ml-auto"
-          >
-            <Trash2 className="h-4 w-4 mr-2" />
-            ลบทั้งหมด
-          </Button>
+          <PermissionGuard action="delete">
+            <Button 
+              variant="destructive"
+              onClick={() => setDeleteAllDialogOpen(true)}
+              className="ml-auto"
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              ลบทั้งหมด
+            </Button>
+          </PermissionGuard>
         )}
       </div>
 
@@ -319,13 +349,16 @@ export default function HolidaysPage() {
             <Calendar className="h-12 w-12 text-gray-300 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">ยังไม่มีวันหยุด</h3>
             <p className="text-gray-600 mb-4">เริ่มต้นด้วยการเพิ่มวันหยุดแรก</p>
-            <Button 
-              onClick={handleAddHoliday}
-              className="bg-red-500 hover:bg-red-600"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              เพิ่มวันหยุด
-            </Button>
+            <PermissionGuard action="create">
+              <ActionButton 
+                action="create"
+                onClick={handleAddHoliday}
+                className="bg-red-500 hover:bg-red-600"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                เพิ่มวันหยุด
+              </ActionButton>
+            </PermissionGuard>
           </CardContent>
         </Card>
       ) : (
@@ -385,20 +418,24 @@ export default function HolidaysPage() {
                             </TableCell>
                             <TableCell className="text-right">
                               <div className="flex justify-end gap-2">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleEditHoliday(holiday)}
-                                >
-                                  <Edit className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleDeleteHoliday(holiday)}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
+                                <PermissionGuard action="update">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleEditHoliday(holiday)}
+                                  >
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+                                </PermissionGuard>
+                                <PermissionGuard action="delete">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleDeleteHoliday(holiday)}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </PermissionGuard>
                               </div>
                             </TableCell>
                           </TableRow>

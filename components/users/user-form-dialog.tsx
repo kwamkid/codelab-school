@@ -96,41 +96,42 @@ export default function UserFormDialog({
   });
 
   // Load user data when editing
-    useEffect(() => {
+  useEffect(() => {
     if (user) {
-        form.reset({
+      form.reset({
         displayName: user.email, // ใช้ email เป็น displayName
         email: user.email,
         role: user.role,
         branchIds: user.branchIds || [],
         permissions: user.permissions || {
-            canManageUsers: false,
-            canManageSettings: false,
-            canViewReports: false,
-            canManageAllBranches: false,
+          canManageUsers: false,
+          canManageSettings: false,
+          canViewReports: false,
+          canManageAllBranches: false,
         },
         isActive: user.isActive,
-        });
+      });
     } else {
-        form.reset({
+      form.reset({
         displayName: '', // จะถูก set จาก email อัตโนมัติ
         email: '',
         password: '',
         role: 'branch_admin',
         branchIds: [],
         permissions: {
-            canManageUsers: false,
-            canManageSettings: false,
-            canViewReports: false,
-            canManageAllBranches: false,
+          canManageUsers: false,
+          canManageSettings: false,
+          canViewReports: false,
+          canManageAllBranches: false,
         },
         isActive: true,
-        });
+      });
     }
-    }, [user, form]);
+  }, [user, form]);
 
   // Watch role changes
   const watchRole = form.watch('role');
+  const watchCanManageAllBranches = form.watch('permissions.canManageAllBranches');
 
   // Auto-set permissions based on role
   useEffect(() => {
@@ -152,86 +153,93 @@ export default function UserFormDialog({
     }
   }, [watchRole, form]);
 
-  const onSubmit = async (data: FormData) => {
-  try {
-    setLoading(true);
+  // Clear branch selection when canManageAllBranches is true
+  useEffect(() => {
+    if (watchCanManageAllBranches && watchRole !== 'super_admin') {
+      form.setValue('branchIds', []);
+    }
+  }, [watchCanManageAllBranches, watchRole, form]);
 
-    if (isEditing) {
-      // Update existing user
-      await updateAdminUser(
-        user.id,
-        {
-          displayName: data.email, // ใช้ email เป็น displayName
+  const onSubmit = async (data: FormData) => {
+    try {
+      setLoading(true);
+
+      if (isEditing) {
+        // Update existing user
+        await updateAdminUser(
+          user.id,
+          {
+            displayName: data.email, // ใช้ email เป็น displayName
+            role: data.role,
+            branchIds: data.branchIds,
+            permissions: data.permissions,
+            isActive: data.isActive,
+          },
+          adminUser?.id || ''
+        );
+        toast.success('แก้ไขข้อมูลผู้ใช้งานเรียบร้อย');
+      } else {
+        // Check if email exists
+        const exists = await checkEmailExists(data.email);
+        if (exists) {
+          form.setError('email', { message: 'อีเมลนี้มีผู้ใช้งานแล้ว' });
+          setLoading(false);
+          return;
+        }
+
+        // Create new user
+        if (!data.password) {
+          form.setError('password', { message: 'กรุณาระบุรหัสผ่าน' });
+          setLoading(false);
+          return;
+        }
+
+        // Get current user token
+        const token = await auth.currentUser?.getIdToken();
+        if (!token) {
+          throw new Error('No auth token');
+        }
+
+        // สร้าง userData object โดยใช้ email เป็น displayName
+        const userData = {
+          displayName: data.email, // ใช้ email แทน displayName
           role: data.role,
           branchIds: data.branchIds,
           permissions: data.permissions,
           isActive: data.isActive,
-        },
-        adminUser?.id || ''
-      );
-      toast.success('แก้ไขข้อมูลผู้ใช้งานเรียบร้อย');
-    } else {
-      // Check if email exists
-      const exists = await checkEmailExists(data.email);
-      if (exists) {
-        form.setError('email', { message: 'อีเมลนี้มีผู้ใช้งานแล้ว' });
-        setLoading(false);
-        return;
+        };
+
+        // ใช้ userData ตรงนี้
+        await createAdminUser(
+          data.email,
+          data.password,
+          userData, // ส่ง userData ที่สร้างไว้
+          adminUser?.id || '',
+          token
+        );
+        
+        toast.success('เพิ่มผู้ใช้งานเรียบร้อย');
       }
 
-      // Create new user
-      if (!data.password) {
-        form.setError('password', { message: 'กรุณาระบุรหัสผ่าน' });
-        setLoading(false);
-        return;
-      }
-
-      // Get current user token
-      const token = await auth.currentUser?.getIdToken();
-      if (!token) {
-        throw new Error('No auth token');
-      }
-
-      // สร้าง userData object โดยใช้ email เป็น displayName
-      const userData = {
-        displayName: data.email, // ใช้ email แทน displayName
-        role: data.role,
-        branchIds: data.branchIds,
-        permissions: data.permissions,
-        isActive: data.isActive,
-      };
-
-      // ใช้ userData ตรงนี้
-      await createAdminUser(
-        data.email,
-        data.password,
-        userData, // ส่ง userData ที่สร้างไว้
-        adminUser?.id || '',
-        token
-      );
+      onSuccess();
+      onOpenChange(false);
+    } catch (error: any) {
+      console.error('Error saving user:', error);
       
-      toast.success('เพิ่มผู้ใช้งานเรียบร้อย');
+      // Error handling
+      if (error.message?.includes('FIREBASE_ADMIN')) {
+        toast.error('ไม่สามารถสร้างผู้ใช้ได้: กรุณาตั้งค่า Firebase Admin');
+      } else if (error.message?.includes('auth/email-already-exists')) {
+        toast.error('อีเมลนี้มีผู้ใช้งานแล้ว');
+      } else if (error.message?.includes('auth/weak-password')) {
+        toast.error('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร');
+      } else {
+        toast.error(error.message || 'เกิดข้อผิดพลาดในการบันทึกข้อมูล');
+      }
+    } finally {
+      setLoading(false);
     }
-
-    onSuccess();
-    onOpenChange(false);
-  } catch (error: any) {
-    console.error('Error saving user:', error);
-    
-    // Error handling
-    if (error.message?.includes('FIREBASE_ADMIN')) {
-      toast.error('ไม่สามารถสร้างผู้ใช้ได้: กรุณาตั้งค่า Firebase Admin');
-    } else if (error.message?.includes('auth/email-already-exists')) {
-      toast.error('อีเมลนี้มีผู้ใช้งานแล้ว');
-    } else if (error.message?.includes('auth/weak-password')) {
-      toast.error('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร');
-    } else {
-      toast.error(error.message || 'เกิดข้อผิดพลาดในการบันทึกข้อมูล');
-    }
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   const isSuperAdmin = watchRole === 'super_admin';
 
@@ -250,88 +258,73 @@ export default function UserFormDialog({
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
             {/* Basic Info */}
-                <div className="space-y-4">
-                <h3 className="text-sm font-medium">ข้อมูลพื้นฐาน</h3>
-                
-                <FormField
-                    control={form.control}
-                    name="email"
-                    render={({ field }) => (
-                    <FormItem>
-                        <FormLabel>อีเมล (ใช้เป็นชื่อผู้ใช้งานด้วย)</FormLabel>
-                        <FormControl>
-                        <Input 
-                            {...field} 
-                            type="email" 
-                            disabled={isEditing}
-                            onChange={(e) => {
-                            field.onChange(e);
-                            // ถ้ายังไม่ได้แก้ไข displayName ให้ใช้ email เป็น displayName
-                            if (!form.getValues('displayName') || form.getValues('displayName') === form.getValues('email')) {
-                                form.setValue('displayName', e.target.value);
-                            }
-                            }}
-                        />
-                        </FormControl>
-                        <FormDescription>
-                        {isEditing ? 'ไม่สามารถเปลี่ยนอีเมลได้' : 'ใช้สำหรับเข้าสู่ระบบและแสดงเป็นชื่อผู้ใช้'}
-                        </FormDescription>
-                        <FormMessage />
-                    </FormItem>
-                    )}
-                />
-
-                {/* ซ่อน displayName field */}
-                {/* <FormField
-                    control={form.control}
-                    name="displayName"
-                    render={({ field }) => (
-                    <FormItem>
-                        <FormLabel>ชื่อผู้ใช้งาน</FormLabel>
-                        <FormControl>
-                        <Input {...field} />
-                        </FormControl>
-                        <FormMessage />
-                    </FormItem>
-                    )}
-                /> */}
-
-                {!isEditing && (
-                    <FormField
-                    control={form.control}
-                    name="password"
-                    render={({ field }) => (
-                        <FormItem>
-                        <FormLabel>รหัสผ่าน</FormLabel>
-                        <FormControl>
-                            <div className="relative">
-                            <Input 
-                                {...field} 
-                                type={showPassword ? 'text' : 'password'}
-                                className="pr-10" // เพิ่ม padding ด้านขวา
-                            />
-                            <button
-                                type="button"
-                                onClick={() => setShowPassword(!showPassword)}
-                                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 rounded"
-                            >
-                                {showPassword ? (
-                                <EyeOff className="h-4 w-4 text-gray-500" />
-                                ) : (
-                                <Eye className="h-4 w-4 text-gray-500" />
-                                )}
-                            </button>
-                            </div>
-                        </FormControl>
-                        <FormDescription>
-                            อย่างน้อย 6 ตัวอักษร
-                        </FormDescription>
-                        <FormMessage />
-                        </FormItem>
-                    )}
-                    />
+            <div className="space-y-4">
+              <h3 className="text-sm font-medium">ข้อมูลพื้นฐาน</h3>
+              
+              <FormField
+                control={form.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>อีเมล (ใช้เป็นชื่อผู้ใช้งานด้วย)</FormLabel>
+                    <FormControl>
+                      <Input 
+                        {...field} 
+                        type="email" 
+                        disabled={isEditing}
+                        onChange={(e) => {
+                          field.onChange(e);
+                          // ถ้ายังไม่ได้แก้ไข displayName ให้ใช้ email เป็น displayName
+                          if (!form.getValues('displayName') || form.getValues('displayName') === form.getValues('email')) {
+                            form.setValue('displayName', e.target.value);
+                          }
+                        }}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {isEditing ? 'ไม่สามารถเปลี่ยนอีเมลได้' : 'ใช้สำหรับเข้าสู่ระบบและแสดงเป็นชื่อผู้ใช้'}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
                 )}
-                </div>
+              />
+
+              {!isEditing && (
+                <FormField
+                  control={form.control}
+                  name="password"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>รหัสผ่าน</FormLabel>
+                      <FormControl>
+                        <div className="relative">
+                          <Input 
+                            {...field} 
+                            type={showPassword ? 'text' : 'password'}
+                            className="pr-10"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 rounded"
+                          >
+                            {showPassword ? (
+                              <EyeOff className="h-4 w-4 text-gray-500" />
+                            ) : (
+                              <Eye className="h-4 w-4 text-gray-500" />
+                            )}
+                          </button>
+                        </div>
+                      </FormControl>
+                      <FormDescription>
+                        อย่างน้อย 6 ตัวอักษร
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+            </div>
 
             {/* Role & Permissions */}
             <div className="space-y-4">
@@ -372,41 +365,90 @@ export default function UserFormDialog({
               {!isSuperAdmin && (
                 <>
                   {/* Branch Selection */}
-                  {/* <FormField
-                    control={form.control}
-                    name="branchIds"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>สาขาที่ดูแล</FormLabel>
-                        <div className="space-y-2">
-                          {branches.map((branch) => (
-                            <div key={branch.id} className="flex items-center space-x-2">
-                              <Checkbox
-                                checked={field.value.includes(branch.id)}
-                                onCheckedChange={(checked) => {
-                                  if (checked) {
-                                    field.onChange([...field.value, branch.id]);
-                                  } else {
-                                    field.onChange(field.value.filter(id => id !== branch.id));
-                                  }
-                                }}
-                              />
-                              <label className="text-sm">{branch.name}</label>
-                            </div>
-                          ))}
-                        </div>
-                        <FormDescription>
-                          {field.value.length === 0 && 'ไม่เลือก = ดูแลทุกสาขา'}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  /> */}
+                  {(!watchCanManageAllBranches || watchRole === 'teacher') && (
+                    <FormField
+                      control={form.control}
+                      name="branchIds"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>สาขาที่ดูแล</FormLabel>
+                          <div className="space-y-2 max-h-[200px] overflow-y-auto border rounded-md p-3">
+                            {watchRole !== 'teacher' && (
+                              <div className="flex items-center space-x-2 pb-2 border-b">
+                                <Checkbox
+                                  checked={field.value.length === 0 && watchRole !== 'teacher'}
+                                  onCheckedChange={(checked) => {
+                                    if (checked) {
+                                      field.onChange([]);
+                                    } else {
+                                      // ถ้าไม่เลือกทุกสาขา ให้เลือกสาขาแรก
+                                      if (branches.length > 0) {
+                                        field.onChange([branches[0].id]);
+                                      }
+                                    }
+                                  }}
+                                  disabled={watchRole === 'teacher'}
+                                />
+                                <label className="text-sm font-medium">
+                                  ทุกสาขา {watchRole === 'teacher' && '(Teacher ต้องเลือกสาขา)'}
+                                </label>
+                              </div>
+                            )}
+                            {branches.map((branch) => (
+                              <div key={branch.id} className="flex items-center space-x-2">
+                                <Checkbox
+                                  checked={field.value.includes(branch.id)}
+                                  onCheckedChange={(checked) => {
+                                    if (checked) {
+                                      field.onChange([...field.value, branch.id]);
+                                    } else {
+                                      field.onChange(field.value.filter(id => id !== branch.id));
+                                    }
+                                  }}
+                                  disabled={watchRole !== 'teacher' && field.value.length === 0}
+                                />
+                                <label className="text-sm">{branch.name}</label>
+                              </div>
+                            ))}
+                          </div>
+                          <FormDescription>
+                            {watchRole === 'teacher' 
+                              ? 'Teacher ต้องเลือกสาขาที่สอน'
+                              : field.value.length === 0 
+                                ? 'เลือก "ทุกสาขา" แล้ว - สามารถดูแลทุกสาขาได้' 
+                                : `เลือกแล้ว ${field.value.length} สาขา`}
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
 
                   {/* Permissions */}
                   {watchRole === 'branch_admin' && (
                     <div className="space-y-4">
                       <FormLabel>สิทธิ์พิเศษ</FormLabel>
+                      
+                      <FormField
+                        control={form.control}
+                        name="permissions.canManageAllBranches"
+                        render={({ field }) => (
+                          <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                            <div className="space-y-0.5">
+                              <FormLabel className="text-base">จัดการทุกสาขา</FormLabel>
+                              <FormDescription>
+                                สามารถดูและจัดการข้อมูลทุกสาขา (ไม่ต้องเลือกสาขาด้านบน)
+                              </FormDescription>
+                            </div>
+                            <FormControl>
+                              <Switch
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
                       
                       <FormField
                         control={form.control}
@@ -438,27 +480,6 @@ export default function UserFormDialog({
                               <FormLabel className="text-base">ดูรายงาน</FormLabel>
                               <FormDescription>
                                 สามารถดูรายงานและสถิติต่างๆ
-                              </FormDescription>
-                            </div>
-                            <FormControl>
-                              <Switch
-                                checked={field.value}
-                                onCheckedChange={field.onChange}
-                              />
-                            </FormControl>
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={form.control}
-                        name="permissions.canManageAllBranches"
-                        render={({ field }) => (
-                          <FormItem className="flex items-center justify-between rounded-lg border p-3">
-                            <div className="space-y-0.5">
-                              <FormLabel className="text-base">จัดการทุกสาขา</FormLabel>
-                              <FormDescription>
-                                สามารถดูและจัดการข้อมูลทุกสาขา
                               </FormDescription>
                             </div>
                             <FormControl>

@@ -20,8 +20,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatCurrency } from '@/lib/utils';
+import { useBranch } from '@/contexts/BranchContext';
+import { PermissionGuard } from '@/components/auth/permission-guard';
+import { ActionButton } from '@/components/ui/action-button';
 
 export default function TeachersPage() {
+  const { selectedBranchId, isAllBranches } = useBranch();
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
@@ -29,12 +33,12 @@ export default function TeachersPage() {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [selectedBranchId]); // Reload when branch changes
 
   const loadData = async () => {
     try {
       const [teachersData, branchesData, subjectsData] = await Promise.all([
-        getTeachers(),
+        getTeachers(selectedBranchId), // Pass branch filter
         getActiveBranches(),
         getActiveSubjects()
       ]);
@@ -79,15 +83,27 @@ export default function TeachersPage() {
     <div>
       <div className="flex justify-between items-center mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">จัดการครูผู้สอน</h1>
-          <p className="text-gray-600 mt-2">จัดการข้อมูลครูผู้สอนทั้งหมด</p>
+          <h1 className="text-3xl font-bold text-gray-900">
+            จัดการครูผู้สอน
+            {!isAllBranches && (
+              <span className="text-red-600 text-lg ml-2">(เฉพาะสาขาที่เลือก)</span>
+            )}
+          </h1>
+          <p className="text-gray-600 mt-2">
+            {isAllBranches 
+              ? 'จัดการข้อมูลครูผู้สอนทั้งหมด'
+              : 'แสดงเฉพาะครูที่สอนในสาขานี้'
+            }
+          </p>
         </div>
-        <Link href="/teachers/new">
-          <Button className="bg-red-500 hover:bg-red-600">
-            <Plus className="h-4 w-4 mr-2" />
-            เพิ่มครูใหม่
-          </Button>
-        </Link>
+        <PermissionGuard action="create">
+          <Link href="/teachers/new">
+            <ActionButton action="create" className="bg-red-500 hover:bg-red-600">
+              <Plus className="h-4 w-4 mr-2" />
+              เพิ่มครูใหม่
+            </ActionButton>
+          </Link>
+        </PermissionGuard>
       </div>
 
       {/* Summary Cards */}
@@ -138,20 +154,35 @@ export default function TeachersPage() {
       {/* Teachers Table */}
       <Card>
         <CardHeader>
-          <CardTitle>รายชื่อครูผู้สอน</CardTitle>
+          <CardTitle>
+            รายชื่อครูผู้สอน
+            {!isAllBranches && teachers.length > 0 && (
+              <span className="text-sm font-normal text-gray-500 ml-2">
+                (ที่สอนในสาขานี้)
+              </span>
+            )}
+          </CardTitle>
         </CardHeader>
         <CardContent>
           {teachers.length === 0 ? (
             <div className="text-center py-12">
               <Users className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">ยังไม่มีครูผู้สอน</h3>
-              <p className="text-gray-600 mb-4">เริ่มต้นด้วยการเพิ่มครูคนแรก</p>
-              <Link href="/teachers/new">
-                <Button className="bg-red-500 hover:bg-red-600">
-                  <Plus className="h-4 w-4 mr-2" />
-                  เพิ่มครูใหม่
-                </Button>
-              </Link>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                {!isAllBranches ? 'ไม่มีครูที่สอนในสาขานี้' : 'ยังไม่มีครูผู้สอน'}
+              </h3>
+              <p className="text-gray-600 mb-4">
+                {!isAllBranches ? 'ครูจะแสดงเมื่อกำหนดให้สอนในสาขานี้' : 'เริ่มต้นด้วยการเพิ่มครูคนแรก'}
+              </p>
+              {isAllBranches && (
+                <PermissionGuard action="create">
+                  <Link href="/teachers/new">
+                    <ActionButton action="create" className="bg-red-500 hover:bg-red-600">
+                      <Plus className="h-4 w-4 mr-2" />
+                      เพิ่มครูใหม่
+                    </ActionButton>
+                  </Link>
+                </PermissionGuard>
+              )}
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -206,15 +237,25 @@ export default function TeachersPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
-                          {teacher.availableBranches.slice(0, 2).map((branchId) => (
-                            <Badge key={branchId} variant="outline" className="text-xs">
-                              {getBranchName(branchId)}
-                            </Badge>
-                          ))}
-                          {teacher.availableBranches.length > 2 && (
+                          {!isAllBranches ? (
+                            // ถ้าเลือกสาขาเฉพาะ แสดงแค่ badge ของสาขานั้น
                             <Badge variant="outline" className="text-xs">
-                              +{teacher.availableBranches.length - 2}
+                              {getBranchName(selectedBranchId!)}
                             </Badge>
+                          ) : (
+                            // ถ้าดูทุกสาขา แสดงทุกสาขาที่ครูสอน
+                            <>
+                              {teacher.availableBranches.slice(0, 2).map((branchId) => (
+                                <Badge key={branchId} variant="outline" className="text-xs">
+                                  {getBranchName(branchId)}
+                                </Badge>
+                              ))}
+                              {teacher.availableBranches.length > 2 && (
+                                <Badge variant="outline" className="text-xs">
+                                  +{teacher.availableBranches.length - 2}
+                                </Badge>
+                              )}
+                            </>
                           )}
                         </div>
                       </TableCell>
@@ -229,11 +270,13 @@ export default function TeachersPage() {
                         )}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Link href={`/teachers/${teacher.id}/edit`}>
-                          <Button variant="ghost" size="sm">
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                        </Link>
+                        <PermissionGuard action="update">
+                          <Link href={`/teachers/${teacher.id}/edit`}>
+                            <Button variant="ghost" size="sm">
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                          </Link>
+                        </PermissionGuard>
                       </TableCell>
                     </TableRow>
                   ))}

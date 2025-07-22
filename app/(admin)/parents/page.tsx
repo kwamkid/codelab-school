@@ -20,12 +20,16 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatDate } from '@/lib/utils';
+import { useBranch } from '@/contexts/BranchContext';
+import { PermissionGuard } from '@/components/auth/permission-guard';
+import { ActionButton } from '@/components/ui/action-button';
 
 interface ParentWithCount extends Parent {
   studentCount?: number;
 }
 
 export default function ParentsPage() {
+  const { selectedBranchId, isAllBranches } = useBranch();
   const [parents, setParents] = useState<ParentWithCount[]>([]);
   const [branchMap, setBranchMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
@@ -33,12 +37,12 @@ export default function ParentsPage() {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [selectedBranchId]); // Reload when branch changes
 
   const loadData = async () => {
     try {
       const [parentsData, branchesData] = await Promise.all([
-        getParents(),
+        getParents(selectedBranchId), // Pass branch filter
         getActiveBranches()
       ]);
       
@@ -100,15 +104,27 @@ export default function ParentsPage() {
     <div>
       <div className="flex justify-between items-center mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">จัดการผู้ปกครอง</h1>
-          <p className="text-gray-600 mt-2">จัดการข้อมูลผู้ปกครองและนักเรียน</p>
+          <h1 className="text-3xl font-bold text-gray-900">
+            จัดการผู้ปกครอง
+            {!isAllBranches && (
+              <span className="text-red-600 text-lg ml-2">(เฉพาะสาขาที่เลือก)</span>
+            )}
+          </h1>
+          <p className="text-gray-600 mt-2">
+            {isAllBranches 
+              ? 'จัดการข้อมูลผู้ปกครองและนักเรียนทั้งหมด'
+              : 'แสดงเฉพาะผู้ปกครองที่มีลูกเรียนในสาขานี้'
+            }
+          </p>
         </div>
-        <Link href="/parents/new">
-          <Button className="bg-red-500 hover:bg-red-600">
-            <Plus className="h-4 w-4 mr-2" />
-            เพิ่มผู้ปกครองใหม่
-          </Button>
-        </Link>
+        <PermissionGuard action="create">
+          <Link href="/parents/new">
+            <ActionButton action="create" className="bg-red-500 hover:bg-red-600">
+              <Plus className="h-4 w-4 mr-2" />
+              เพิ่มผู้ปกครองใหม่
+            </ActionButton>
+          </Link>
+        </PermissionGuard>
       </div>
 
       {/* Summary Cards */}
@@ -168,25 +184,36 @@ export default function ParentsPage() {
       {/* Parents Table */}
       <Card>
         <CardHeader>
-          <CardTitle>รายชื่อผู้ปกครอง</CardTitle>
+          <CardTitle>
+            รายชื่อผู้ปกครอง
+            {!isAllBranches && filteredParents.length > 0 && (
+              <span className="text-sm font-normal text-gray-500 ml-2">
+                (ที่มีลูกเรียนในสาขานี้)
+              </span>
+            )}
+          </CardTitle>
         </CardHeader>
         <CardContent>
           {filteredParents.length === 0 ? (
             <div className="text-center py-12">
               <Users className="h-12 w-12 text-gray-300 mx-auto mb-4" />
               <h3 className="text-lg font-medium text-gray-900 mb-2">
-                {searchTerm ? 'ไม่พบข้อมูลที่ค้นหา' : 'ยังไม่มีผู้ปกครอง'}
+                {searchTerm ? 'ไม่พบข้อมูลที่ค้นหา' : 
+                 !isAllBranches ? 'ไม่มีผู้ปกครองที่มีลูกเรียนในสาขานี้' : 'ยังไม่มีผู้ปกครอง'}
               </h3>
               <p className="text-gray-600 mb-4">
-                {searchTerm ? 'ลองค้นหาด้วยคำค้นอื่น' : 'เริ่มต้นด้วยการเพิ่มผู้ปกครองคนแรก'}
+                {searchTerm ? 'ลองค้นหาด้วยคำค้นอื่น' : 
+                 !isAllBranches ? 'ผู้ปกครองจะแสดงเมื่อมีการลงทะเบียนเรียนในสาขานี้' : 'เริ่มต้นด้วยการเพิ่มผู้ปกครองคนแรก'}
               </p>
-              {!searchTerm && (
-                <Link href="/parents/new">
-                  <Button className="bg-red-500 hover:bg-red-600">
-                    <Plus className="h-4 w-4 mr-2" />
-                    เพิ่มผู้ปกครองใหม่
-                  </Button>
-                </Link>
+              {!searchTerm && isAllBranches && (
+                <PermissionGuard action="create">
+                  <Link href="/parents/new">
+                    <ActionButton action="create" className="bg-red-500 hover:bg-red-600">
+                      <Plus className="h-4 w-4 mr-2" />
+                      เพิ่มผู้ปกครองใหม่
+                    </ActionButton>
+                  </Link>
+                </PermissionGuard>
               )}
             </div>
           ) : (
@@ -271,11 +298,13 @@ export default function ParentsPage() {
                               <Eye className="h-4 w-4" />
                             </Button>
                           </Link>
-                          <Link href={`/parents/${parent.id}/edit`}>
-                            <Button variant="ghost" size="sm">
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                          </Link>
+                          <PermissionGuard action="update">
+                            <Link href={`/parents/${parent.id}/edit`}>
+                              <Button variant="ghost" size="sm">
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                            </Link>
+                          </PermissionGuard>
                         </div>
                       </TableCell>
                     </TableRow>

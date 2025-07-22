@@ -35,10 +35,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useBranch } from '@/contexts/BranchContext';
 
 type StudentWithParent = Student & { parentName: string; parentPhone: string };
 
 export default function StudentsPage() {
+  const { selectedBranchId, isAllBranches } = useBranch();
   const [students, setStudents] = useState<StudentWithParent[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -48,11 +50,12 @@ export default function StudentsPage() {
 
   useEffect(() => {
     loadStudents();
-  }, []);
+  }, [selectedBranchId]); // Reload when branch changes
 
   const loadStudents = async () => {
     try {
-      const data = await getAllStudentsWithParents();
+      // Pass branch filter to service
+      const data = await getAllStudentsWithParents(selectedBranchId);
       setStudents(data);
     } catch (error) {
       console.error('Error loading students:', error);
@@ -122,7 +125,12 @@ export default function StudentsPage() {
   return (
     <div>
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">นักเรียนทั้งหมด</h1>
+        <h1 className="text-3xl font-bold text-gray-900">
+          นักเรียนทั้งหมด
+          {!isAllBranches && (
+            <span className="text-red-600 text-lg ml-2">(เฉพาะสาขาที่เลือก)</span>
+          )}
+        </h1>
         <p className="text-gray-600 mt-2">รายชื่อนักเรียนทั้งหมดในระบบ</p>
       </div>
 

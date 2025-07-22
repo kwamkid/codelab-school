@@ -17,6 +17,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { PermissionGuard } from '@/components/auth/permission-guard';
+import { ActionButton } from '@/components/ui/action-button';
+import { useAuth } from '@/hooks/useAuth';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 const categoryIcons = {
   'Coding': Code,
@@ -39,6 +43,7 @@ const levelColors = {
 };
 
 export default function SubjectsPage() {
+  const { isSuperAdmin } = useAuth();
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -86,13 +91,24 @@ export default function SubjectsPage() {
           <h1 className="text-3xl font-bold text-gray-900">จัดการวิชาเรียน</h1>
           <p className="text-gray-600 mt-2">จัดการหลักสูตรและวิชาที่เปิดสอน</p>
         </div>
-        <Link href="/subjects/new">
-          <Button className="bg-red-500 hover:bg-red-600">
-            <Plus className="h-4 w-4 mr-2" />
-            เพิ่มวิชาใหม่
-          </Button>
-        </Link>
+        <PermissionGuard requiredRole={['super_admin']}>
+          <Link href="/subjects/new">
+            <ActionButton action="create" className="bg-red-500 hover:bg-red-600">
+              <Plus className="h-4 w-4 mr-2" />
+              เพิ่มวิชาใหม่
+            </ActionButton>
+          </Link>
+        </PermissionGuard>
       </div>
+
+      {/* Alert for non-super admin */}
+      {!isSuperAdmin() && (
+        <Alert className="mb-6">
+          <AlertDescription>
+            คุณสามารถดูข้อมูลวิชาได้เท่านั้น การเพิ่มหรือแก้ไขวิชาต้องติดต่อ Super Admin
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* Category Filter Cards */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
@@ -135,6 +151,9 @@ export default function SubjectsPage() {
         <CardHeader>
           <CardTitle>
             {selectedCategory === 'all' ? 'รายการวิชาทั้งหมด' : `วิชา ${selectedCategory}`}
+            <span className="text-sm font-normal text-gray-500 ml-2">
+              (ข้อมูลกลางใช้ร่วมกันทุกสาขา)
+            </span>
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -145,12 +164,14 @@ export default function SubjectsPage() {
                 {selectedCategory === 'all' ? 'ยังไม่มีวิชา' : `ยังไม่มีวิชา ${selectedCategory}`}
               </h3>
               <p className="text-gray-600 mb-4">เริ่มต้นด้วยการเพิ่มวิชาแรก</p>
-              <Link href="/subjects/new">
-                <Button className="bg-red-500 hover:bg-red-600">
-                  <Plus className="h-4 w-4 mr-2" />
-                  เพิ่มวิชาใหม่
-                </Button>
-              </Link>
+              <PermissionGuard requiredRole={['super_admin']}>
+                <Link href="/subjects/new">
+                  <ActionButton action="create" className="bg-red-500 hover:bg-red-600">
+                    <Plus className="h-4 w-4 mr-2" />
+                    เพิ่มวิชาใหม่
+                  </ActionButton>
+                </Link>
+              </PermissionGuard>
             </div>
           ) : (
             <Table>
@@ -206,11 +227,16 @@ export default function SubjectsPage() {
                         )}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Link href={`/subjects/${subject.id}/edit`}>
-                          <Button variant="ghost" size="sm">
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                        </Link>
+                        <PermissionGuard requiredRole={['super_admin']}>
+                          <Link href={`/subjects/${subject.id}/edit`}>
+                            <Button variant="ghost" size="sm">
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                          </Link>
+                        </PermissionGuard>
+                        {!isSuperAdmin() && (
+                          <span className="text-gray-400 text-xs">ดูอย่างเดียว</span>
+                        )}
                       </TableCell>
                     </TableRow>
                   );
