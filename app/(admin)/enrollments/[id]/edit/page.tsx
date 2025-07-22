@@ -1,19 +1,22 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { Enrollment } from '@/types/models';
 import { getEnrollment } from '@/lib/services/enrollments';
 import EnrollmentEditForm from '@/components/enrollments/enrollment-edit-form';
 import { ChevronLeft } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
+import { useBranch } from '@/contexts/BranchContext';
 
 export default function EditEnrollmentPage() {
   const params = useParams();
+  const router = useRouter();
   const enrollmentId = params.id as string;
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
   const [loading, setLoading] = useState(true);
+  const { canViewBranch } = useBranch();
 
   useEffect(() => {
     if (enrollmentId) {
@@ -26,8 +29,17 @@ export default function EditEnrollmentPage() {
       const data = await getEnrollment(enrollmentId);
       if (!data) {
         toast.error('ไม่พบข้อมูลการลงทะเบียน');
+        router.push('/enrollments');
         return;
       }
+      
+      // Check if user can view this enrollment's branch
+      if (!canViewBranch(data.branchId)) {
+        toast.error('คุณไม่มีสิทธิ์แก้ไขการลงทะเบียนนี้');
+        router.push('/enrollments');
+        return;
+      }
+      
       setEnrollment(data);
     } catch (error) {
       console.error('Error loading enrollment:', error);
@@ -61,7 +73,7 @@ export default function EditEnrollmentPage() {
 
   return (
     <div>
-          <div className="mb-6">
+      <div className="mb-6">
         <Link 
           href="/enrollments"
           className="inline-flex items-center text-sm text-gray-600 hover:text-gray-900"

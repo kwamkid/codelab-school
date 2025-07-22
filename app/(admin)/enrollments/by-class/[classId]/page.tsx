@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { Enrollment, Class, Student, Parent } from '@/types/models';
 import { getEnrollmentsByClass } from '@/lib/services/enrollments';
 import { getClass } from '@/lib/services/classes';
@@ -33,6 +33,8 @@ import {
 } from "@/components/ui/table";
 import { formatDate, calculateAge } from '@/lib/utils';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { useBranch } from '@/contexts/BranchContext';
+import { PermissionGuard } from '@/components/auth/permission-guard';
 
 interface StudentWithParent extends Student {
   parent?: Parent;
@@ -41,7 +43,9 @@ interface StudentWithParent extends Student {
 
 export default function EnrollmentsByClassPage() {
   const params = useParams();
+  const router = useRouter();
   const classId = params.classId as string;
+  const { canViewBranch } = useBranch();
   
   const [classData, setClassData] = useState<Class | null>(null);
   const [students, setStudents] = useState<StudentWithParent[]>([]);
@@ -60,8 +64,17 @@ export default function EnrollmentsByClassPage() {
       const cls = await getClass(classId);
       if (!cls) {
         toast.error('ไม่พบข้อมูลคลาส');
+        router.push('/classes');
         return;
       }
+      
+      // Check if user can view this class's branch
+      if (!canViewBranch(cls.branchId)) {
+        toast.error('คุณไม่มีสิทธิ์ดูข้อมูลคลาสนี้');
+        router.push('/classes');
+        return;
+      }
+      
       setClassData(cls);
 
       // Load enrollments
@@ -151,16 +164,18 @@ export default function EnrollmentsByClassPage() {
           กลับไปหน้ารายการคลาส
         </Link>
         
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={handlePrintList}>
-            <Printer className="h-4 w-4 mr-2" />
-            พิมพ์รายชื่อ
-          </Button>
-          <Button variant="outline" onClick={handleExportList}>
-            <Download className="h-4 w-4 mr-2" />
-            ส่งออก Excel
-          </Button>
-        </div>
+        <PermissionGuard requiredRole={['super_admin', 'branch_admin']}>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={handlePrintList}>
+              <Printer className="h-4 w-4 mr-2" />
+              พิมพ์รายชื่อ
+            </Button>
+            <Button variant="outline" onClick={handleExportList}>
+              <Download className="h-4 w-4 mr-2" />
+              ส่งออก Excel
+            </Button>
+          </div>
+        </PermissionGuard>
       </div>
 
       {/* Class Info */}
@@ -267,11 +282,13 @@ export default function EnrollmentsByClassPage() {
                 }
               </p>
               {students.length === 0 && (
-                <Link href="/enrollments/new">
-                  <Button className="bg-red-500 hover:bg-red-600">
-                    ลงทะเบียนนักเรียน
-                  </Button>
-                </Link>
+                <PermissionGuard requiredRole={['super_admin', 'branch_admin']}>
+                  <Link href="/enrollments/new">
+                    <Button className="bg-red-500 hover:bg-red-600">
+                      ลงทะเบียนนักเรียน
+                    </Button>
+                  </Link>
+                </PermissionGuard>
               )}
             </div>
           ) : (

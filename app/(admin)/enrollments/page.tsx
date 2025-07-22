@@ -75,6 +75,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { useBranch } from '@/contexts/BranchContext';
 
 type StudentWithParent = Student & { parentName: string; parentPhone: string; parentId: string };
 
@@ -105,13 +106,13 @@ const paymentStatusLabels = {
 };
 
 export default function EnrollmentsPage() {
+  const { selectedBranchId, isAllBranches } = useBranch();
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [students, setStudents] = useState<StudentWithParent[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedBranch, setSelectedBranch] = useState<string>('all');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedPaymentStatus, setSelectedPaymentStatus] = useState<string>('all');
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -133,14 +134,14 @@ export default function EnrollmentsPage() {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [selectedBranchId]); // Reload when branch changes
 
   const loadData = async () => {
     try {
       const [enrollmentsData, studentsData, classesData, branchesData] = await Promise.all([
-        getEnrollments(),
-        getAllStudentsWithParents(),
-        getClasses(),
+        getEnrollments(selectedBranchId),
+        getAllStudentsWithParents(selectedBranchId),
+        getClasses(selectedBranchId),
         getBranches()
       ]);
       
@@ -252,9 +253,6 @@ export default function EnrollmentsPage() {
 
   // Filter enrollments
   const filteredEnrollments = enrollments.filter(enrollment => {
-    // Branch filter
-    if (selectedBranch !== 'all' && enrollment.branchId !== selectedBranch) return false;
-    
     // Status filter
     if (selectedStatus !== 'all' && enrollment.status !== selectedStatus) return false;
     
@@ -306,7 +304,10 @@ export default function EnrollmentsPage() {
     <div>
       <div className="flex justify-between items-center mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">จัดการการลงทะเบียน</h1>
+          <h1 className="text-3xl font-bold text-gray-900">
+            จัดการการลงทะเบียน
+            {!isAllBranches && <span className="text-red-600 text-lg ml-2">(เฉพาะสาขาที่เลือก)</span>}
+          </h1>
           <p className="text-gray-600 mt-2">จัดการข้อมูลการลงทะเบียนเรียนทั้งหมด</p>
         </div>
         <Link href="/enrollments/new">
@@ -381,20 +382,6 @@ export default function EnrollmentsPage() {
           />
         </div>
         
-        <Select value={selectedBranch} onValueChange={setSelectedBranch}>
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="เลือกสาขา" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">ทุกสาขา</SelectItem>
-            {branches.map(branch => (
-              <SelectItem key={branch.id} value={branch.id}>
-                {branch.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        
         <Select value={selectedStatus} onValueChange={setSelectedStatus}>
           <SelectTrigger className="w-[150px]">
             <SelectValue placeholder="สถานะ" />
@@ -437,7 +424,7 @@ export default function EnrollmentsPage() {
                 ไม่พบข้อมูลการลงทะเบียน
               </h3>
               <p className="text-gray-600 mb-4">
-                {searchTerm || selectedBranch !== 'all' || selectedStatus !== 'all' || selectedPaymentStatus !== 'all'
+                {searchTerm || selectedStatus !== 'all' || selectedPaymentStatus !== 'all'
                   ? 'ลองปรับเงื่อนไขการค้นหา'
                   : 'เริ่มต้นด้วยการลงทะเบียนนักเรียนคนแรก'}
               </p>
@@ -457,7 +444,7 @@ export default function EnrollmentsPage() {
                   <TableRow>
                     <TableHead>นักเรียน</TableHead>
                     <TableHead>คลาส</TableHead>
-                    <TableHead>สาขา</TableHead>
+                    {isAllBranches && <TableHead>สาขา</TableHead>}
                     <TableHead>วันที่ลงทะเบียน</TableHead>
                     <TableHead className="text-right">ค่าเรียน</TableHead>
                     <TableHead className="text-center">การชำระเงิน</TableHead>
@@ -484,7 +471,7 @@ export default function EnrollmentsPage() {
                             <p className="text-sm text-gray-500">{classInfo?.code}</p>
                           </div>
                         </TableCell>
-                        <TableCell>{getBranchName(enrollment.branchId)}</TableCell>
+                        {isAllBranches && <TableCell>{getBranchName(enrollment.branchId)}</TableCell>}
                         <TableCell>{formatDate(enrollment.enrolledAt)}</TableCell>
                         <TableCell className="text-right">
                           <div>

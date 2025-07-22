@@ -75,7 +75,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getMakeupClassesByStudent } from '@/lib/services/makeup';
-
+import { useBranch } from '@/contexts/BranchContext';
+import { useAuth } from '@/hooks/useAuth';
+import { PermissionGuard } from '@/components/auth/permission-guard';
+import { ActionButton } from '@/components/ui/action-button';
 
 const statusColors = {
   'active': 'bg-green-100 text-green-700',
@@ -113,6 +116,8 @@ export default function EnrollmentDetailPage() {
   const params = useParams();
   const router = useRouter();
   const enrollmentId = params.id as string;
+  const { canViewBranch } = useBranch();
+  const { adminUser } = useAuth();
   
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
   const [classData, setClassData] = useState<Class | null>(null);
@@ -159,6 +164,13 @@ export default function EnrollmentDetailPage() {
         return;
       }
       
+      // Check if user can view this enrollment's branch
+      if (!canViewBranch(enrollmentData.branchId)) {
+        toast.error('คุณไม่มีสิทธิ์ดูข้อมูลการลงทะเบียนนี้');
+        router.push('/enrollments');
+        return;
+      }
+      
       setEnrollment(enrollmentData);
       
       // Load all related data
@@ -181,15 +193,17 @@ export default function EnrollmentDetailPage() {
       setStudent(studentInfo);
       
       // Load additional data
-      const [branchInfo, subjectInfo, teacherInfo] = await Promise.all([
+      const [branchInfo, subjectInfo, teacherInfo, makeupData] = await Promise.all([
         getBranch(classInfo.branchId),
         getSubject(classInfo.subjectId),
-        getTeacher(classInfo.teacherId)
+        getTeacher(classInfo.teacherId),
+        getMakeupClassesByStudent(enrollmentData.studentId)
       ]);
       
       setBranch(branchInfo);
       setSubject(subjectInfo);
       setTeacher(teacherInfo);
+      setMakeupClasses(makeupData.filter(m => m.originalClassId === enrollmentData.classId));
       
       setLoading(false);
     } catch (error) {
@@ -310,23 +324,25 @@ export default function EnrollmentDetailPage() {
         
         <div className="flex gap-2">
           {/* Quick Payment Update Button */}
-          {enrollment.payment.status !== 'paid' && (
-            <Button 
-              variant="outline" 
-              className="text-green-600"
-              onClick={() => {
-                setQuickPayment({
-                  status: enrollment.payment.status,
-                  paidAmount: enrollment.payment.paidAmount,
-                  receiptNumber: enrollment.payment.receiptNumber || ''
-                });
-                setShowPaymentDialog(true);
-              }}
-            >
-              <CreditCard className="h-4 w-4 mr-2" />
-              อัพเดทการชำระ
-            </Button>
-          )}
+          <PermissionGuard requiredRole={['super_admin', 'branch_admin']}>
+            {enrollment.payment.status !== 'paid' && (
+              <Button 
+                variant="outline" 
+                className="text-green-600"
+                onClick={() => {
+                  setQuickPayment({
+                    status: enrollment.payment.status,
+                    paidAmount: enrollment.payment.paidAmount,
+                    receiptNumber: enrollment.payment.receiptNumber || ''
+                  });
+                  setShowPaymentDialog(true);
+                }}
+              >
+                <CreditCard className="h-4 w-4 mr-2" />
+                อัพเดทการชำระ
+              </Button>
+            )}
+          </PermissionGuard>
 
           {/* Actions Dropdown */}
           <DropdownMenu>
@@ -347,7 +363,7 @@ export default function EnrollmentDetailPage() {
               )}
               
               {isActive && (
-                <>
+                <PermissionGuard requiredRole={['super_admin', 'branch_admin']}>
                   <Link href={`/enrollments/${enrollmentId}/edit`}>
                     <DropdownMenuItem>
                       <Edit className="h-4 w-4 mr-2" />
@@ -393,48 +409,50 @@ export default function EnrollmentDetailPage() {
                       </AlertDialogFooter>
                     </AlertDialogContent>
                   </AlertDialog>
-                </>
+                </PermissionGuard>
               )}
               
-              {/* Delete Option */}
-              <DropdownMenuSeparator />
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <DropdownMenuItem 
-                    className="text-red-600"
-                    onSelect={(e) => e.preventDefault()}
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    ลบการลงทะเบียน
-                  </DropdownMenuItem>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>ยืนยันการลบ</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      คุณแน่ใจหรือไม่ที่จะลบการลงทะเบียนของ {student.nickname} ({student.name})?
-                      การกระทำนี้ไม่สามารถย้อนกลับได้
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
-                    <AlertDialogAction 
-                      onClick={handleDeleteEnrollment}
-                      className="bg-red-500 hover:bg-red-600"
-                      disabled={deleting}
+              {/* Delete Option - Super Admin Only */}
+              <PermissionGuard requiredRole={['super_admin']}>
+                <DropdownMenuSeparator />
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <DropdownMenuItem 
+                      className="text-red-600"
+                      onSelect={(e) => e.preventDefault()}
                     >
-                      {deleting ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          กำลังลบ...
-                        </>
-                      ) : (
-                        'ลบการลงทะเบียน'
-                      )}
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      ลบการลงทะเบียน
+                    </DropdownMenuItem>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>ยืนยันการลบ</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        คุณแน่ใจหรือไม่ที่จะลบการลงทะเบียนของ {student.nickname} ({student.name})?
+                        การกระทำนี้ไม่สามารถย้อนกลับได้
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+                      <AlertDialogAction 
+                        onClick={handleDeleteEnrollment}
+                        className="bg-red-500 hover:bg-red-600"
+                        disabled={deleting}
+                      >
+                        {deleting ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            กำลังลบ...
+                          </>
+                        ) : (
+                          'ลบการลงทะเบียน'
+                        )}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </PermissionGuard>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -636,6 +654,19 @@ export default function EnrollmentDetailPage() {
                     </div>
                   </div>
                 </div>
+
+                {/* Makeup Classes Summary */}
+                {makeupClasses.length > 0 && (
+                  <div className="pt-4 border-t">
+                    <p className="text-sm text-gray-500 mb-2">ประวัติ Makeup Class</p>
+                    <div className="text-sm">
+                      <p>จำนวน Makeup ทั้งหมด: {makeupClasses.length} ครั้ง</p>
+                      <p>เสร็จสิ้นแล้ว: {makeupClasses.filter(m => m.status === 'completed').length} ครั้ง</p>
+                      <p>รอนัดเรียน: {makeupClasses.filter(m => m.status === 'pending').length} ครั้ง</p>
+                      <p>นัดแล้ว: {makeupClasses.filter(m => m.status === 'scheduled').length} ครั้ง</p>
+                    </div>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -755,13 +786,24 @@ export default function EnrollmentDetailPage() {
             </Card>
           )}
           
-          {enrollment.status === 'transferred' && enrollment.transferredFrom && (
+          {enrollment.status === 'transferred' && enrollment.transferHistory && enrollment.transferHistory.length > 0 && (
             <Card className="border-blue-200">
               <CardHeader>
-                <CardTitle className="text-blue-600">ข้อมูลการย้ายคลาส</CardTitle>
+                <CardTitle className="text-blue-600 flex items-center gap-2">
+                  <History className="h-5 w-5" />
+                  ประวัติการย้ายคลาส
+                </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-sm">ย้ายมาจากคลาส: {enrollment.transferredFrom}</p>
+                <div className="space-y-3">
+                  {enrollment.transferHistory.map((transfer, index) => (
+                    <div key={index} className="text-sm space-y-1">
+                      <p className="font-medium">ครั้งที่ {index + 1}</p>
+                      <p>วันที่: {formatDate(transfer.transferredAt, 'long')}</p>
+                      <p>เหตุผล: {transfer.reason}</p>
+                    </div>
+                  ))}
+                </div>
               </CardContent>
             </Card>
           )}
