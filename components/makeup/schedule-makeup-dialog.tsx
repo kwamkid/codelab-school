@@ -38,6 +38,7 @@ import { getClassSchedule } from '@/lib/services/classes';
 import { checkAvailability, AvailabilityIssue } from '@/lib/utils/availability';
 import { useAuth } from '@/hooks/useAuth';
 import { formatDate } from '@/lib/utils';
+import { useBranch } from '@/contexts/BranchContext';
 
 interface ScheduleMakeupDialogProps {
   open: boolean;
@@ -57,7 +58,8 @@ export default function ScheduleMakeupDialog({
   makeupRequest,
   onSuccess,
 }: ScheduleMakeupDialogProps) {
-  const { user } = useAuth();
+  const { user, adminUser, canAccessBranch } = useAuth();
+  const { selectedBranchId, isAllBranches } = useBranch();
   const [loading, setLoading] = useState(false);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -83,12 +85,34 @@ export default function ScheduleMakeupDialog({
 
     const loadData = async () => {
       try {
+        // Get class info first to determine branch
+        const classesModule = await import('@/lib/services/classes');
+        const classInfo = await classesModule.getClass(makeupRequest.originalClassId);
+        
+        if (!classInfo) {
+          toast.error('ไม่พบข้อมูลคลาส');
+          onOpenChange(false);
+          return;
+        }
+
+        // Check if user has access to this branch
+        if (!canAccessBranch(classInfo.branchId)) {
+          toast.error('คุณไม่มีสิทธิ์จัดตาราง Makeup ในสาขานี้');
+          onOpenChange(false);
+          return;
+        }
+
         const [teachersData, branchesData] = await Promise.all([
-          getTeachers(),
+          getTeachers(classInfo.branchId), // Get teachers for specific branch if not viewing all
           getBranches(),
         ]);
 
-        setTeachers(teachersData.filter(t => t.isActive));
+        // Filter teachers based on branch access
+        const availableTeachers = teachersData.filter(t => 
+          t.isActive && t.availableBranches.includes(classInfo.branchId)
+        );
+        
+        setTeachers(availableTeachers);
         setBranches(branchesData.filter(b => b.isActive));
 
         // Load original schedule data
@@ -100,21 +124,17 @@ export default function ScheduleMakeupDialog({
           setOriginalSchedule(schedule);
         }
 
-        // Get class info to set branch and default values
-        const classesModule = await import('@/lib/services/classes');
-        const classInfo = await classesModule.getClass(makeupRequest.originalClassId);
-        if (classInfo) {
-          const branch = branchesData.find(b => b.id === classInfo.branchId);
-          setBranchName(branch?.name || '');
-          
-          setFormData(prev => ({ 
-            ...prev, 
-            branchId: classInfo.branchId,
-            teacherId: classInfo.teacherId, // Default teacher
-            startTime: classInfo.startTime,
-            endTime: classInfo.endTime
-          }));
-        }
+        // Set branch name and default values
+        const branch = branchesData.find(b => b.id === classInfo.branchId);
+        setBranchName(branch?.name || '');
+        
+        setFormData(prev => ({ 
+          ...prev, 
+          branchId: classInfo.branchId,
+          teacherId: classInfo.teacherId, // Default teacher
+          startTime: classInfo.startTime,
+          endTime: classInfo.endTime
+        }));
       } catch (error) {
         console.error('Error loading data:', error);
         toast.error('เกิดข้อผิดพลาดในการโหลดข้อมูล');
@@ -122,7 +142,7 @@ export default function ScheduleMakeupDialog({
     };
 
     loadData();
-  }, [open, makeupRequest]);
+  }, [open, makeupRequest, canAccessBranch]);
 
   // Load rooms when we have branchId
   useEffect(() => {
@@ -241,11 +261,9 @@ export default function ScheduleMakeupDialog({
     }
   };
 
-  // Filter teachers based on branch
+  // Filter teachers based on branch - already filtered in loadData
   const getAvailableTeachers = () => {
-    return teachers.filter(teacher => 
-      !formData.branchId || teacher.availableBranches.includes(formData.branchId)
-    );
+    return teachers; // Already filtered
   };
 
   return (
@@ -300,7 +318,7 @@ export default function ScheduleMakeupDialog({
             {branchName && (
               <div className="flex justify-between items-center">
                 <span className="text-sm text-gray-600">สาขา:</span>
-                <span className="font-medium">{branchName}</span>
+                <span className="font-medium text-red-600">{branchName}</span>
               </div>
             )}
           </div>
@@ -373,7 +391,7 @@ export default function ScheduleMakeupDialog({
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-gray-500">
-                  สามารถเลือกครูคนอื่นที่ไม่ใช่ครูประจำคลาสได้
+                  แสดงเฉพาะครูที่สอนในสาขา {branchName}
                 </p>
               </div>
 
@@ -388,13 +406,22 @@ export default function ScheduleMakeupDialog({
                     <SelectValue placeholder="เลือกห้อง" />
                   </SelectTrigger>
                   <SelectContent>
-                    {rooms.map((room) => (
-                      <SelectItem key={room.id} value={room.id}>
-                        {room.name} (จุ {room.capacity} คน)
-                      </SelectItem>
-                    ))}
+                    {rooms.length === 0 ? (
+                      <div className="p-2 text-sm text-gray-500 text-center">
+                        ไม่มีห้องเรียนในสาขานี้
+                      </div>
+                    ) : (
+                      rooms.map((room) => (
+                        <SelectItem key={room.id} value={room.id}>
+                          {room.name} (จุ {room.capacity} คน)
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-gray-500">
+                  แสดงเฉพาะห้องในสาขา {branchName}
+                </p>
               </div>
             </div>
           </div>
@@ -432,6 +459,16 @@ export default function ScheduleMakeupDialog({
                 </AlertDescription>
               </Alert>
             )
+          )}
+
+          {/* Show branch indicator if viewing specific branch */}
+          {!isAllBranches && selectedBranchId && (
+            <Alert>
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                กำลังจัดตาราง Makeup สำหรับสาขา {branchName} เท่านั้น
+              </AlertDescription>
+            </Alert>
           )}
 
           {/* Actions */}

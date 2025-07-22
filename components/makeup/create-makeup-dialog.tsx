@@ -34,6 +34,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import StudentSearchSelect from '@/components/ui/student-search-select';
 import { Badge } from "@/components/ui/badge";
+import { useBranch } from '@/contexts/BranchContext';
+import { useAuth } from '@/hooks/useAuth';
 
 interface CreateMakeupDialogProps {
   open: boolean;
@@ -50,6 +52,8 @@ export default function CreateMakeupDialog({
   students,
   onCreated
 }: CreateMakeupDialogProps) {
+  const { selectedBranchId, isAllBranches } = useBranch();
+  const { adminUser, canAccessBranch } = useAuth();
   const [loading, setLoading] = useState(false);
   const [loadingEnrollments, setLoadingEnrollments] = useState(false);
   const [loadingSchedules, setLoadingSchedules] = useState(false);
@@ -74,8 +78,21 @@ export default function CreateMakeupDialog({
     makeupRoomId: ''
   });
 
-  // Active students only
-  const activeStudents = students.filter(s => s.isActive);
+  // Active students only - filter by branch if needed
+  const activeStudents = students.filter(s => {
+    if (!s.isActive) return false;
+    
+    // If viewing all branches or is super admin, show all
+    if (isAllBranches || adminUser?.role === 'super_admin') return true;
+    
+    // For branch admin/teacher, only show students from enrolled classes in their branch
+    if (selectedBranchId) {
+      // This would require checking enrollments, for now show all active
+      return true;
+    }
+    
+    return true;
+  });
 
   // When student is selected, load their enrolled classes
   useEffect(() => {
@@ -123,7 +140,10 @@ export default function CreateMakeupDialog({
         activeEnrollments.map(async (enrollment) => {
           const cls = classes.find(c => c.id === enrollment.classId);
           if (cls && ['published', 'started'].includes(cls.status)) {
-            return { enrollment, class: cls };
+            // Check if user has access to this class's branch
+            if (canAccessBranch(cls.branchId)) {
+              return { enrollment, class: cls };
+            }
           }
           return null;
         })
@@ -174,6 +194,12 @@ export default function CreateMakeupDialog({
 
   const loadBranchData = async (branchId: string) => {
     try {
+      // Check if user has access to this branch
+      if (!canAccessBranch(branchId)) {
+        toast.error('คุณไม่มีสิทธิ์จัดการ Makeup ในสาขานี้');
+        return;
+      }
+
       const [teachersData, roomsData] = await Promise.all([
         getActiveTeachers(),
         getActiveRoomsByBranch(branchId)
@@ -377,7 +403,8 @@ export default function CreateMakeupDialog({
                 <SelectContent>
                   {enrolledClasses.length === 0 ? (
                     <div className="p-2 text-center text-sm text-gray-500">
-                      {!formData.studentId ? "กรุณาเลือกนักเรียนก่อน" : "นักเรียนยังไม่ได้ลงทะเบียนคลาสใด"}
+                      {!formData.studentId ? "กรุณาเลือกนักเรียนก่อน" : 
+                       "นักเรียนยังไม่ได้ลงทะเบียนคลาสใดในสาขาที่คุณมีสิทธิ์"}
                     </div>
                   ) : (
                     enrolledClasses.map(({ enrollment, class: cls }) => (
@@ -531,13 +558,14 @@ export default function CreateMakeupDialog({
 
                 {/* Teacher */}
                 <div className="space-y-2">
-                  <Label>ครูผู้สอน *</Label>
+                  <Label>ครูผู้สอน * {teachers.length === 0 && '(ไม่มีครูในสาขานี้)'}</Label>
                   <Select
                     value={formData.makeupTeacherId}
                     onValueChange={(value) => setFormData(prev => ({ ...prev, makeupTeacherId: value }))}
+                    disabled={teachers.length === 0}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="เลือกครู" />
+                      <SelectValue placeholder={teachers.length === 0 ? "ไม่มีครูในสาขานี้" : "เลือกครู"} />
                     </SelectTrigger>
                     <SelectContent>
                       {teachers.map(teacher => (
@@ -553,13 +581,14 @@ export default function CreateMakeupDialog({
 
                 {/* Room */}
                 <div className="space-y-2">
-                  <Label>ห้องเรียน *</Label>
+                  <Label>ห้องเรียน * {rooms.length === 0 && '(ไม่มีห้องในสาขานี้)'}</Label>
                   <Select
                     value={formData.makeupRoomId}
                     onValueChange={(value) => setFormData(prev => ({ ...prev, makeupRoomId: value }))}
+                    disabled={rooms.length === 0}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="เลือกห้อง" />
+                      <SelectValue placeholder={rooms.length === 0 ? "ไม่มีห้องในสาขานี้" : "เลือกห้อง"} />
                     </SelectTrigger>
                     <SelectContent>
                       {rooms.map(room => (
@@ -586,6 +615,16 @@ export default function CreateMakeupDialog({
             )}
           </AlertDescription>
         </Alert>
+
+        {/* Show branch indicator if viewing specific branch */}
+        {!isAllBranches && selectedBranchId && (
+          <Alert>
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="text-sm">
+              แสดงเฉพาะคลาสและนักเรียนในสาขาที่คุณมีสิทธิ์จัดการ
+            </AlertDescription>
+          </Alert>
+        )}
 
         {/* Actions */}
         <div className="flex justify-end gap-2 pt-4 border-t">

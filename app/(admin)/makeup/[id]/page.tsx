@@ -44,6 +44,8 @@ import {
 import { auth } from '@/lib/firebase/client';
 import Link from 'next/link';
 import EditMakeupScheduleDialog from '@/components/makeup/edit-makeup-schedule-dialog';
+import { useBranch } from '@/contexts/BranchContext';
+import { useAuth } from '@/hooks/useAuth';
 
 const statusColors = {
   'pending': 'bg-yellow-100 text-yellow-700',
@@ -71,6 +73,8 @@ export default function MakeupDetailPage() {
   const router = useRouter();
   const makeupId = params.id as string;
   const searchParams = useSearchParams();
+  const { selectedBranchId, isAllBranches } = useBranch();
+  const { adminUser, canAccessBranch } = useAuth();
 
   
   const [makeup, setMakeup] = useState<MakeupClass | null>(null);
@@ -95,7 +99,7 @@ export default function MakeupDetailPage() {
     }
   }, [makeupId]);
 
-    // เพิ่ม useEffect เพื่อตรวจสอบ action parameter
+  // เพิ่ม useEffect เพื่อตรวจสอบ action parameter
   useEffect(() => {
     const action = searchParams.get('action');
     if (action === 'reschedule' && makeup?.status === 'scheduled') {
@@ -111,15 +115,30 @@ export default function MakeupDetailPage() {
         router.push('/makeup');
         return;
       }
+      
+      // Check if user can access this makeup class's branch
+      const classData = await getClass(makeupData.originalClassId);
+      if (classData && !isAllBranches && selectedBranchId && classData.branchId !== selectedBranchId) {
+        toast.error('คุณไม่มีสิทธิ์ดูข้อมูล Makeup Class ในสาขานี้');
+        router.push('/makeup');
+        return;
+      }
+      
+      // For branch admin, check if they have access to this branch
+      if (adminUser?.role === 'branch_admin' && classData && !canAccessBranch(classData.branchId)) {
+        toast.error('คุณไม่มีสิทธิ์ดูข้อมูล Makeup Class ในสาขานี้');
+        router.push('/makeup');
+        return;
+      }
+      
       setMakeup(makeupData);
+      setClassInfo(classData);
 
-      const [studentData, classData] = await Promise.all([
-        getStudentWithParent(makeupData.studentId),
-        getClass(makeupData.originalClassId)
+      const [studentData] = await Promise.all([
+        getStudentWithParent(makeupData.studentId)
       ]);
       
       setStudent(studentData);
-      setClassInfo(classData);
 
       if (makeupData.originalScheduleId) {
         const scheduleData = await getClassSchedule(makeupData.originalClassId, makeupData.originalScheduleId);
@@ -280,7 +299,10 @@ export default function MakeupDetailPage() {
 
       {/* Title */}
       <div className="mb-6">
-        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Makeup Class - {student.nickname}</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
+          Makeup Class - {student.nickname}
+          {!isAllBranches && <span className="text-red-600 text-lg ml-2">(เฉพาะสาขาที่เลือก)</span>}
+        </h1>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">

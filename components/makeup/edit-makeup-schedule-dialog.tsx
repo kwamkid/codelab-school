@@ -29,6 +29,8 @@ import {
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { auth } from '@/lib/firebase/client';
 import { Textarea } from '@/components/ui/textarea';
+import { useAuth } from '@/hooks/useAuth';
+import { useBranch } from '@/contexts/BranchContext';
 
 interface EditMakeupScheduleDialogProps {
   open: boolean;
@@ -47,6 +49,8 @@ export default function EditMakeupScheduleDialog({
   classInfo,
   onUpdated
 }: EditMakeupScheduleDialogProps) {
+  const { adminUser, canAccessBranch } = useAuth();
+  const { selectedBranchId, isAllBranches } = useBranch();
   const [loading, setLoading] = useState(false);
   const [checkingAvailability, setCheckingAvailability] = useState(false);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
@@ -66,6 +70,13 @@ export default function EditMakeupScheduleDialog({
 
   useEffect(() => {
     if (open && makeup.makeupSchedule) {
+      // Check access
+      if (!canAccessBranch(classInfo.branchId)) {
+        toast.error('คุณไม่มีสิทธิ์แก้ไขตาราง Makeup ในสาขานี้');
+        onOpenChange(false);
+        return;
+      }
+
       // Set initial values from current schedule
       const schedule = makeup.makeupSchedule;
       setFormData({
@@ -77,7 +88,7 @@ export default function EditMakeupScheduleDialog({
       });
       loadData();
     }
-  }, [open, makeup]);
+  }, [open, makeup, classInfo.branchId, canAccessBranch]);
 
   useEffect(() => {
     // Check availability when form data changes
@@ -291,14 +302,23 @@ export default function EditMakeupScheduleDialog({
                   <SelectValue placeholder="เลือกครู" />
                 </SelectTrigger>
                 <SelectContent>
-                  {teachers.map(teacher => (
-                    <SelectItem key={teacher.id} value={teacher.id}>
-                      {teacher.nickname || teacher.name}
-                      {teacher.id === classInfo.teacherId && ' (ครูประจำคลาส)'}
-                    </SelectItem>
-                  ))}
+                  {teachers.length === 0 ? (
+                    <div className="p-2 text-sm text-gray-500 text-center">
+                      ไม่มีครูที่สอนในสาขานี้
+                    </div>
+                  ) : (
+                    teachers.map(teacher => (
+                      <SelectItem key={teacher.id} value={teacher.id}>
+                        {teacher.nickname || teacher.name}
+                        {teacher.id === classInfo.teacherId && ' (ครูประจำคลาส)'}
+                      </SelectItem>
+                    ))
+                  )}
                 </SelectContent>
               </Select>
+              <p className="text-xs text-gray-500">
+                แสดงเฉพาะครูที่สอนในสาขานี้
+              </p>
             </div>
 
             {/* Room */}
@@ -312,13 +332,22 @@ export default function EditMakeupScheduleDialog({
                   <SelectValue placeholder="เลือกห้อง" />
                 </SelectTrigger>
                 <SelectContent>
-                  {rooms.map(room => (
-                    <SelectItem key={room.id} value={room.id}>
-                      {room.name} (จุ {room.capacity} คน)
-                    </SelectItem>
-                  ))}
+                  {rooms.length === 0 ? (
+                    <div className="p-2 text-sm text-gray-500 text-center">
+                      ไม่มีห้องเรียนในสาขานี้
+                    </div>
+                  ) : (
+                    rooms.map(room => (
+                      <SelectItem key={room.id} value={room.id}>
+                        {room.name} (จุ {room.capacity} คน)
+                      </SelectItem>
+                    ))
+                  )}
                 </SelectContent>
               </Select>
+              <p className="text-xs text-gray-500">
+                แสดงเฉพาะห้องในสาขานี้
+              </p>
             </div>
 
             {/* Change Reason */}
@@ -347,6 +376,16 @@ export default function EditMakeupScheduleDialog({
                 ) : (
                   availabilityMessage || 'ไม่สามารถจัดตารางในช่วงเวลานี้ได้'
                 )}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* Show branch indicator if viewing specific branch */}
+          {!isAllBranches && selectedBranchId && (
+            <Alert>
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription className="text-sm">
+                กำลังแก้ไขตาราง Makeup ในสาขาที่เลือกเท่านั้น
               </AlertDescription>
             </Alert>
           )}
