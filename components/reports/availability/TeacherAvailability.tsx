@@ -213,14 +213,18 @@ export function TeacherAvailability({
                             const isLightColor = isColorLight(subject.color);
                             textColor = isLightColor ? 'text-gray-900' : 'text-white';
                           } else {
-                            bgColor = '#3B82F6';
+                            bgColor = '#DBEAFE'; // blue-100
+                            textColor = 'text-blue-700';
                           }
                         } else if (busySlot.type === 'makeup') {
-                          bgColor = '#F97316';
+                          bgColor = '#E9D5FF'; // purple-100
+                          textColor = 'text-purple-700';
                         } else if (busySlot.type === 'trial') {
-                          bgColor = '#8B5CF6';
+                          bgColor = '#FED7AA'; // orange-100
+                          textColor = 'text-orange-700';
                         } else {
-                          bgColor = '#3B82F6';
+                          bgColor = '#DBEAFE'; // blue-100
+                          textColor = 'text-blue-700';
                         }
                         
                         // Get student info for makeup and trial
@@ -340,9 +344,9 @@ export function TeacherAvailability({
                             style={{
                               left: `${startPercent}%`,
                               width: `${width}%`,
-                              backgroundColor: '#D1FAE5',
+                              backgroundColor: '#D1FAE5', // green-100
                               border: '1px dashed #10B981',
-                              opacity: 0.5
+                              opacity: 0.7
                             }}
                           />
                         );
@@ -362,15 +366,19 @@ export function TeacherAvailability({
                   <span>ว่าง</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded" style={{ backgroundColor: '#F97316' }}></div>
+                  <div className="w-4 h-4 rounded" style={{ backgroundColor: '#DBEAFE' }}></div>
+                  <span>คลาสปกติ</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded" style={{ backgroundColor: '#E9D5FF' }}></div>
                   <span>เรียนชดเชย</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded" style={{ backgroundColor: '#8B5CF6' }}></div>
+                  <div className="w-4 h-4 rounded" style={{ backgroundColor: '#FED7AA' }}></div>
                   <span>ทดลองเรียน</span>
                 </div>
                 <div className="text-gray-500 text-xs ml-4">
-                  * คลาสปกติจะแสดงสีตามวิชา
+                  * คลาสปกติจะแสดงสีตามวิชา (ถ้ามี)
                 </div>
               </div>
             </div>

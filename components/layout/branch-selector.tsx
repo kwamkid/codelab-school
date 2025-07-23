@@ -15,16 +15,28 @@ import {
 } from "@/components/ui/select";
 import { Building2 } from 'lucide-react';
 import { Badge } from "@/components/ui/badge";
+import { usePathname } from 'next/navigation';
 
 export function BranchSelector() {
   const { adminUser, isSuperAdmin, canAccessBranch } = useAuth();
   const { selectedBranchId, setSelectedBranchId } = useBranch();
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
+  const pathname = usePathname();
 
+  // Check if current page requires specific branch selection
+  const requiresSpecificBranch = pathname.includes('/reports/availability');
+  
   useEffect(() => {
     loadBranches();
   }, [adminUser]);
+
+  useEffect(() => {
+    // Auto-select first branch if on pages that require specific branch
+    if (requiresSpecificBranch && !selectedBranchId && branches.length > 0) {
+      setSelectedBranchId(branches[0].id);
+    }
+  }, [requiresSpecificBranch, selectedBranchId, branches]);
 
   const loadBranches = async () => {
     try {
@@ -47,11 +59,16 @@ export function BranchSelector() {
         // If user has preferred branch
         if (adminUser?.branchIds && adminUser.branchIds.length === 1) {
           setSelectedBranchId(adminUser.branchIds[0]);
+        } else if (requiresSpecificBranch) {
+          // If on page that requires specific branch, select first
+          setSelectedBranchId(availableBranches[0].id);
         } else {
-          // Select first active branch
-          const firstActive = availableBranches.find(b => b.isActive);
-          if (firstActive) {
-            setSelectedBranchId(firstActive.id);
+          // Select first active branch for non-super admin
+          if (!isSuperAdmin()) {
+            const firstActive = availableBranches.find(b => b.isActive);
+            if (firstActive) {
+              setSelectedBranchId(firstActive.id);
+            }
           }
         }
       }
@@ -81,14 +98,14 @@ export function BranchSelector() {
     return null;
   }
 
-  // For super admin - show "All Branches" option
-  const showAllOption = isSuperAdmin();
+  // For super admin - show "All Branches" option (except on specific pages)
+  const showAllOption = isSuperAdmin() && !requiresSpecificBranch;
 
   return (
     <div className="flex items-center gap-2">
       <Building2 className="h-4 w-4 text-gray-500" />
       <Select 
-        value={selectedBranchId || 'all'} 
+        value={selectedBranchId || (showAllOption ? 'all' : '')} 
         onValueChange={(value) => setSelectedBranchId(value === 'all' ? null : value)}
         disabled={loading}
       >
@@ -121,6 +138,18 @@ export function BranchSelector() {
           ))}
         </SelectContent>
       </Select>
+      
+      {/* Show tooltip for pages that require specific branch */}
+      {requiresSpecificBranch && isSuperAdmin() && (
+        <div className="text-xs text-amber-600 ml-2">
+          <span className="inline-flex items-center gap-1">
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            ต้องเลือกสาขาเฉพาะ
+          </span>
+        </div>
+      )}
     </div>
   );
 }

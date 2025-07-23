@@ -11,9 +11,11 @@ import {
   Clock,
   MapPin,
   Projector,
-  PenTool
+  PenTool,
+  CheckCircle,
+  XCircle
 } from 'lucide-react';
-import { Room } from '@/types/models';
+import { Room, Subject } from '@/types/models';
 
 interface TimeSlot {
   startTime: string;
@@ -22,6 +24,8 @@ interface TimeSlot {
   conflicts?: Array<{
     type: 'class' | 'makeup' | 'trial';
     name: string;
+    subjectId?: string;
+    subjectColor?: string;
   }>;
 }
 
@@ -32,186 +36,332 @@ interface RoomAvailabilityData {
 
 interface RoomAvailabilityProps {
   roomAvailability: RoomAvailabilityData[];
+  subjects?: Subject[];
 }
 
-interface ConflictSummary {
-  name: string;
-  type: 'class' | 'makeup' | 'trial';
-  totalHours: number;
-  timeSlots: string[];
-}
+export function RoomAvailability({ roomAvailability, subjects = [] }: RoomAvailabilityProps) {
+  // Get time range from slots
+  const timeRange = roomAvailability[0]?.slots.length > 0 ? {
+    start: roomAvailability[0].slots[0].startTime,
+    end: roomAvailability[0].slots[roomAvailability[0].slots.length - 1].endTime
+  } : { start: '08:00', end: '19:00' };
 
-export function RoomAvailability({ roomAvailability }: RoomAvailabilityProps) {
-  // Helper function to merge consecutive time slots
-  const mergeConsecutiveSlots = (slots: TimeSlot[]): TimeSlot[] => {
-    if (slots.length === 0) return [];
+  // Generate time markers for header
+  const generateTimeMarkers = () => {
+    const markers = [];
+    const [startHour] = timeRange.start.split(':').map(Number);
+    const [endHour] = timeRange.end.split(':').map(Number);
     
-    const merged: TimeSlot[] = [];
-    let current = { ...slots[0] };
-    
-    for (let i = 1; i < slots.length; i++) {
-      if (current.endTime === slots[i].startTime) {
-        current.endTime = slots[i].endTime;
-      } else {
-        merged.push(current);
-        current = { ...slots[i] };
-      }
+    for (let hour = startHour; hour <= endHour; hour++) {
+      markers.push(`${String(hour).padStart(2, '0')}:00`);
     }
     
-    merged.push(current);
+    return markers;
+  };
+
+  const timeMarkers = generateTimeMarkers();
+
+  // Calculate percentage position
+  const getTimePercentage = (time: string): number => {
+    const [timeHour, timeMin] = time.split(':').map(Number);
+    const [startHour, startMin] = timeRange.start.split(':').map(Number);
+    const [endHour, endMin] = timeRange.end.split(':').map(Number);
+    
+    const timeInMinutes = timeHour * 60 + timeMin;
+    const startInMinutes = startHour * 60 + startMin;
+    const endInMinutes = endHour * 60 + endMin;
+    
+    const percentage = ((timeInMinutes - startInMinutes) / (endInMinutes - startInMinutes)) * 100;
+    return Math.max(0, Math.min(100, percentage));
+  };
+
+  // Merge consecutive slots for display
+  const mergeSlots = (slots: TimeSlot[]) => {
+    const merged: Array<{
+      startTime: string;
+      endTime: string;
+      available: boolean;
+      type?: 'class' | 'makeup' | 'trial';
+      name?: string;
+      count: number;
+      subjectId?: string;
+      subjectColor?: string;
+    }> = [];
+    
+    let current: any = null;
+    
+    slots.forEach(slot => {
+      const isAvailable = slot.available;
+      const conflictType = slot.conflicts?.[0]?.type;
+      const conflictName = slot.conflicts?.[0]?.name;
+      const subjectId = slot.conflicts?.[0]?.subjectId;
+      const subjectColor = slot.conflicts?.[0]?.subjectColor;
+      
+      if (!current || 
+          current.available !== isAvailable || 
+          current.type !== conflictType ||
+          current.name !== conflictName ||
+          current.subjectId !== subjectId) {
+        // Start new segment
+        if (current) merged.push(current);
+        current = {
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+          available: isAvailable,
+          type: conflictType,
+          name: conflictName,
+          count: 1,
+          subjectId,
+          subjectColor
+        };
+      } else {
+        // Extend current segment
+        current.endTime = slot.endTime;
+        current.count++;
+      }
+    });
+    
+    if (current) merged.push(current);
     return merged;
   };
 
-  // Calculate time difference in hours
-  const calculateHours = (startTime: string, endTime: string): number => {
-    const [startHour, startMin] = startTime.split(':').map(Number);
-    const [endHour, endMin] = endTime.split(':').map(Number);
-    const startInMinutes = startHour * 60 + startMin;
-    const endInMinutes = endHour * 60 + endMin;
-    return (endInMinutes - startInMinutes) / 60;
+  // Get color based on type
+  const getSegmentColor = (segment: any) => {
+    if (segment.available) {
+      return {
+        bg: 'bg-green-100',
+        border: 'border-green-300',
+        text: 'text-green-700'
+      };
+    }
+    
+    switch (segment.type) {
+      case 'makeup':
+        return {
+          bg: 'bg-purple-100',
+          border: 'border-purple-300',
+          text: 'text-purple-700'
+        };
+      case 'trial':
+        return {
+          bg: 'bg-orange-100', 
+          border: 'border-orange-300',
+          text: 'text-orange-700'
+        };
+      default: // class
+        // Use subject color if available
+        if (segment.subjectId && subjects.length > 0) {
+          const subject = subjects.find(s => s.id === segment.subjectId);
+          if (subject?.color) {
+            // Check if color is light for text contrast
+            const isLight = isColorLight(subject.color);
+            return {
+              bgColor: subject.color,
+              borderColor: subject.color,
+              textColor: isLight ? 'text-gray-900' : 'text-white',
+              useCustomColor: true
+            };
+          }
+        }
+        // Default blue if no subject color
+        return {
+          bg: 'bg-blue-100',
+          border: 'border-blue-300',
+          text: 'text-blue-700'
+        };
+    }
   };
 
-  // Group conflicts by class name and calculate total hours
-  const groupConflictsByClass = (slots: TimeSlot[]): ConflictSummary[] => {
-    const conflictMap = new Map<string, ConflictSummary>();
+  // Check if color is light
+  const isColorLight = (color: string): boolean => {
+    const hex = color.replace('#', '');
+    const r = parseInt(hex.substr(0, 2), 16);
+    const g = parseInt(hex.substr(2, 2), 16);
+    const b = parseInt(hex.substr(4, 2), 16);
     
-    slots.filter(s => !s.available).forEach(slot => {
-      slot.conflicts?.forEach(conflict => {
-        const key = conflict.name;
-        const hours = calculateHours(slot.startTime, slot.endTime);
-        const timeSlot = `${slot.startTime}-${slot.endTime}`;
-        
-        if (conflictMap.has(key)) {
-          const existing = conflictMap.get(key)!;
-          existing.totalHours += hours;
-          existing.timeSlots.push(timeSlot);
-        } else {
-          conflictMap.set(key, {
-            name: conflict.name,
-            type: conflict.type,
-            totalHours: hours,
-            timeSlots: [timeSlot]
-          });
-        }
-      });
-    });
+    const brightness = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+    return brightness > 155;
+  };
+
+  // Calculate stats
+  const calculateRoomStats = (slots: TimeSlot[]) => {
+    const totalSlots = slots.length;
+    const availableSlots = slots.filter(s => s.available).length;
+    const usedSlots = totalSlots - availableSlots;
+    const usagePercentage = totalSlots > 0 ? Math.round((usedSlots / totalSlots) * 100) : 0;
     
-    return Array.from(conflictMap.values()).sort((a, b) => {
-      // Sort by type first (class, makeup, trial), then by name
-      if (a.type !== b.type) {
-        const typeOrder = { 'class': 0, 'makeup': 1, 'trial': 2 };
-        return typeOrder[a.type] - typeOrder[b.type];
-      }
-      return a.name.localeCompare(b.name);
-    });
+    return {
+      availableHours: availableSlots,
+      usedHours: usedSlots,
+      totalHours: totalSlots,
+      usagePercentage
+    };
   };
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-      {roomAvailability.map(({ room, slots }) => {
-        const availableSlots = slots.filter(s => s.available);
-        const isAvailable = availableSlots.length > 0;
-        const conflictSummaries = groupConflictsByClass(slots);
-        
-        return (
-          <Card key={room.id} className={cn(
-            "transition-all",
-            !isAvailable && "opacity-60"
-          )}>
-            <CardHeader>
-              <div className="flex items-start justify-between">
-                <div>
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    <Building2 className="h-5 w-5" />
-                    {room.name}
-                  </CardTitle>
-                  <div className="flex items-center gap-2 mt-1 text-sm text-gray-600">
-                    <Users className="h-4 w-4" />
-                    <span>ความจุ {room.capacity} คน</span>
-                  </div>
-                </div>
-                <Badge 
-                  variant={isAvailable ? "default" : "secondary"}
-                  className={isAvailable ? "bg-green-100 text-green-700 border-green-200" : ""}
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle>ห้องเรียนและตารางการใช้งาน</CardTitle>
+          <div className="flex items-center gap-4 text-sm">
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 bg-green-100 border border-green-300 rounded"></div>
+              <span>ว่าง</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 bg-blue-100 border border-blue-300 rounded"></div>
+              <span>คลาสปกติ</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 bg-purple-100 border border-purple-300 rounded"></div>
+              <span>Makeup</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 bg-orange-100 border border-orange-300 rounded"></div>
+              <span>ทดลอง</span>
+            </div>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-4">
+          {/* Time Header */}
+          <div className="relative h-8 mb-2">
+            <div className="absolute inset-0 flex">
+              {timeMarkers.map((time, idx) => (
+                <div
+                  key={idx}
+                  className="text-xs text-gray-600 absolute"
+                  style={{ left: `${getTimePercentage(time)}%` }}
                 >
-                  {isAvailable ? "ว่าง" : "ไม่ว่าง"}
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                <div className="flex gap-2 text-sm">
-                  {room.floor && (
-                    <Badge variant="outline">
-                      <MapPin className="h-3 w-3 mr-1" />
-                      ชั้น {room.floor}
-                    </Badge>
-                  )}
-                  {room.hasProjector && (
-                    <Badge variant="outline">
-                      <Projector className="h-3 w-3 mr-1" />
-                      Projector
-                    </Badge>
-                  )}
-                  {room.hasWhiteboard && (
-                    <Badge variant="outline">
-                      <PenTool className="h-3 w-3 mr-1" />
-                      Whiteboard
-                    </Badge>
-                  )}
+                  {time}
                 </div>
-                
-                <div className="mt-4">
-                  <p className="text-sm font-medium mb-2">ช่วงเวลาว่าง:</p>
-                  {availableSlots.length > 0 ? (
-                    <div className="space-y-1">
-                      {mergeConsecutiveSlots(availableSlots).map((slot, idx) => (
-                        <div key={idx} className="flex items-center gap-2">
-                          <Badge 
-                            variant="outline" 
-                            className="text-green-600 border-green-500 bg-green-50"
-                          >
-                            <Clock className="h-3 w-3 mr-1" />
-                            {slot.startTime} - {slot.endTime}
-                          </Badge>
+              ))}
+            </div>
+          </div>
+
+          {/* Room Rows */}
+          <div className="space-y-3">
+            {roomAvailability.map(({ room, slots }) => {
+              const mergedSlots = mergeSlots(slots);
+              const stats = calculateRoomStats(slots);
+              
+              return (
+                <div key={room.id} className="bg-white border rounded-lg p-4">
+                  {/* Room Header */}
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-base flex items-center gap-2">
+                        <Building2 className="h-4 w-4 text-gray-600" />
+                        {room.name}
+                      </h3>
+                      <div className="flex items-center gap-4 mt-1 text-sm text-gray-600">
+                        <span className="flex items-center gap-1">
+                          <Users className="h-3.5 w-3.5" />
+                          จุ {room.capacity} คน
+                        </span>
+                        {room.floor && (
+                          <span className="flex items-center gap-1">
+                            <MapPin className="h-3.5 w-3.5" />
+                            ชั้น {room.floor}
+                          </span>
+                        )}
+                        <div className="flex items-center gap-2">
+                          {room.hasProjector && (
+                            <Projector className="h-3.5 w-3.5 text-green-600" title="มี Projector" />
+                          )}
+                          {room.hasWhiteboard && (
+                            <PenTool className="h-3.5 w-3.5 text-green-600" title="มี Whiteboard" />
+                          )}
                         </div>
-                      ))}
+                      </div>
                     </div>
-                  ) : (
-                    <p className="text-sm text-gray-500">ไม่มีช่วงเวลาว่าง</p>
-                  )}
-                </div>
-                
-                {conflictSummaries.length > 0 && (
-                  <div className="mt-3 pt-3 border-t">
-                    <p className="text-sm font-medium mb-2 text-gray-600">ตารางการใช้งาน:</p>
-                    <div className="space-y-2">
-                      {conflictSummaries.map((summary, idx) => (
-                        <div key={idx} className="border-l-2 pl-3 py-1" style={{
-                          borderColor: summary.type === 'class' ? '#3B82F6' : 
-                                       summary.type === 'makeup' ? '#F97316' : '#8B5CF6'
-                        }}>
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-medium text-gray-700">
-                              {summary.name}
-                            </span>
-                            <Badge variant="outline" className="text-xs">
-                              {summary.totalHours} ชม.
-                            </Badge>
-                          </div>
-                          <div className="text-xs text-gray-500 mt-0.5">
-                            {summary.timeSlots.join(', ')}
-                          </div>
-                        </div>
-                      ))}
+                    <div className="text-right">
+                      <div className="text-2xl font-bold text-gray-900">{stats.usagePercentage}%</div>
+                      <div className="text-xs text-gray-500">ใช้งาน</div>
                     </div>
                   </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        );
-      })}
-    </div>
+
+                  {/* Timeline Bar */}
+                  <div className="relative h-12 bg-gray-50 rounded-lg overflow-hidden">
+                    {/* Grid lines */}
+                    <div className="absolute inset-0 flex">
+                      {timeMarkers.map((_, idx) => (
+                        <div 
+                          key={idx} 
+                          className="flex-1 border-l border-gray-200 first:border-l-0"
+                        />
+                      ))}
+                    </div>
+                    
+                    {/* Time segments */}
+                    {mergedSlots.map((segment, idx) => {
+                      const startPercent = getTimePercentage(segment.startTime);
+                      const endPercent = getTimePercentage(segment.endTime);
+                      const width = endPercent - startPercent;
+                      const colors = getSegmentColor(segment);
+                      
+                      return (
+                        <div
+                          key={idx}
+                          className={cn(
+                            "absolute top-1 bottom-1 rounded border transition-all hover:z-10 hover:shadow-md",
+                            colors.useCustomColor ? '' : colors.bg,
+                            colors.useCustomColor ? '' : colors.border
+                          )}
+                          style={{
+                            left: `${startPercent}%`,
+                            width: `${width}%`,
+                            ...(colors.useCustomColor && {
+                              backgroundColor: colors.bgColor,
+                              borderColor: colors.borderColor,
+                            })
+                          }}
+                          title={segment.available 
+                            ? `ว่าง: ${segment.startTime} - ${segment.endTime}` 
+                            : `${segment.name}: ${segment.startTime} - ${segment.endTime}`
+                          }
+                        >
+                          <div className={cn(
+                            "text-xs font-medium h-full flex items-center px-2", 
+                            colors.useCustomColor ? colors.textColor : colors.text
+                          )}>
+                            {segment.available ? (
+                              <CheckCircle className="h-3.5 w-3.5" />
+                            ) : (
+                              <span className="truncate">{segment.name}</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Room Summary */}
+                  <div className="grid grid-cols-3 gap-4 mt-3 text-sm">
+                    <div>
+                      <span className="text-gray-500">ว่าง:</span>
+                      <span className="ml-2 font-medium text-green-600">
+                        {stats.availableHours} ชม.
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">ใช้งาน:</span>
+                      <span className="ml-2 font-medium text-blue-700">
+                        {stats.usedHours} ชม.
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">ทั้งหมด:</span>
+                      <span className="ml-2 font-medium">{stats.totalHours} ชม.</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

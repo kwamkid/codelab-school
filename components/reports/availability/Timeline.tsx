@@ -174,6 +174,7 @@ export function Timeline({
                         // Get subject color if it's a class
                         let bgColor = '';
                         let textColor = 'text-white';
+                        let borderColor = '';
                         
                         if (busySlot.type === 'class' && busySlot.subjectId) {
                           const subject = subjects.find(s => s.id === busySlot.subjectId);
@@ -182,14 +183,22 @@ export function Timeline({
                             const isLightColor = isColorLight(subject.color);
                             textColor = isLightColor ? 'text-gray-900' : 'text-white';
                           } else {
-                            bgColor = '#3B82F6';
+                            bgColor = '#E5E7EB';
+                            borderColor = '#D1D5DB';
+                            textColor = 'text-gray-700';
                           }
                         } else if (busySlot.type === 'makeup') {
-                          bgColor = '#F97316';
+                          bgColor = '#E9D5FF';
+                          borderColor = '#D8B4FE';
+                          textColor = 'text-purple-800';
                         } else if (busySlot.type === 'trial') {
-                          bgColor = '#8B5CF6';
+                          bgColor = '#FED7AA';
+                          borderColor = '#FDBA74';
+                          textColor = 'text-orange-800';
                         } else {
-                          bgColor = '#3B82F6';
+                          bgColor = '#E5E7EB';
+                          borderColor = '#D1D5DB';
+                          textColor = 'text-gray-700';
                         }
                         
                         // Get teacher name for display
@@ -215,8 +224,7 @@ export function Timeline({
                                   left: `${startPercent}%`,
                                   width: `${width}%`,
                                   backgroundColor: bgColor,
-                                  border: `2px solid ${bgColor}`,
-                                  filter: 'brightness(1.1)'
+                                  border: borderColor ? `1px solid ${borderColor}` : `2px solid ${bgColor}`,
                                 }}
                               >
                                 <div className="text-xs font-medium truncate">
@@ -303,11 +311,11 @@ export function Timeline({
               <p className="text-sm font-medium mb-3">สีแสดงประเภท:</p>
               <div className="flex flex-wrap items-center gap-4 text-sm">
                 <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded" style={{ backgroundColor: '#F97316' }}></div>
-                  <span>เรียนชดเชย</span>
+                  <div className="w-4 h-4 rounded" style={{ backgroundColor: '#E9D5FF', border: '1px solid #D8B4FE' }}></div>
+                  <span>Makeup Class</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded" style={{ backgroundColor: '#8B5CF6' }}></div>
+                  <div className="w-4 h-4 rounded" style={{ backgroundColor: '#FED7AA', border: '1px solid #FDBA74' }}></div>
                   <span>ทดลองเรียน</span>
                 </div>
                 <div className="text-gray-500 text-xs ml-4">

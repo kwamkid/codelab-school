@@ -4,13 +4,15 @@
 
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { BranchSelector } from '@/components/ui/branch-selector';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { 
   Building2, 
   Clock, 
   Filter,
-  AlertCircle
+  AlertCircle,
+  Camera,
+  Download,
+  Copy
 } from 'lucide-react';
 import { 
   Select,
@@ -19,6 +21,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from '@/lib/utils';
 import { formatDate } from '@/lib/utils';
 import { getDayConflicts } from '@/lib/utils/availability';
@@ -27,7 +36,7 @@ import { getTeachersByBranch } from '@/lib/services/teachers';
 import { getSubjects } from '@/lib/services/subjects';
 import { Room, Teacher, Subject } from '@/types/models';
 import { toast } from 'sonner';
-// import { useBranch } from '@/contexts/BranchContext'; // Remove this for now
+import { useBranch } from '@/contexts/BranchContext';
 
 // Import separated components
 import { Timeline } from '@/components/reports/availability/Timeline';
@@ -93,10 +102,11 @@ export default function AvailabilityReportPage() {
     return thailandDate;
   };
 
-  // const { selectedBranchId } = useBranch(); // Will use this later when BranchProvider is set up
+  // Use Branch Context
+  const { selectedBranchId, isAllBranches } = useBranch();
+  
   const [selectedDate, setSelectedDate] = useState<Date>(getCurrentThaiDate());
-  const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
-  const [timeRange, setTimeRange] = useState({ start: '08:00', end: '19:00' });
+  const [timeRange, setTimeRange] = useState({ start: '08:30', end: '17:30' });
   const [timeAlignment, setTimeAlignment] = useState<'00' | '30'>('30');
   const [loading, setLoading] = useState(false);
   
@@ -110,6 +120,7 @@ export default function AvailabilityReportPage() {
   } | null>(null);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [activeTab, setActiveTab] = useState<string>('timeline');
 
   // Load initial data
   useEffect(() => {
@@ -118,15 +129,15 @@ export default function AvailabilityReportPage() {
 
   // Load availability when filters change or on mount
   useEffect(() => {
-    if (selectedBranch && selectedDate) {
+    if (selectedDate) {
       console.log('Loading availability with:', {
-        branch: selectedBranch,
+        branch: selectedBranchId || 'all branches',
         date: selectedDate.toISOString(),
         dateLocal: selectedDate.toLocaleDateString('th-TH')
       });
       loadAvailability();
     }
-  }, [selectedBranch, selectedDate, timeRange, timeAlignment]);
+  }, [selectedBranchId, selectedDate, timeRange, timeAlignment]);
 
   const loadSubjects = async () => {
     try {
@@ -138,30 +149,43 @@ export default function AvailabilityReportPage() {
   };
 
   const loadAvailability = async () => {
-    if (!selectedBranch) return;
-    
     setLoading(true);
     try {
+      // For "all branches", we need to load data differently
+      if (!selectedBranchId && isAllBranches) {
+        // When viewing all branches, show empty state or aggregate view
+        console.log('Viewing all branches - please select a specific branch');
+        setRoomAvailability([]);
+        setTeacherAvailability([]);
+        setDayInfo(null);
+        return;
+      }
+      
+      if (!selectedBranchId) {
+        // No branch selected
+        return;
+      }
+      
       console.log('Loading availability for:', {
         date: selectedDate,
         dateString: selectedDate.toISOString(),
         dateLocal: selectedDate.toLocaleDateString('th-TH'),
-        branch: selectedBranch,
+        branch: selectedBranchId,
         timeRange
       });
       
       // Get day conflicts
-      const conflicts = await getDayConflicts(selectedDate, selectedBranch);
+      const conflicts = await getDayConflicts(selectedDate, selectedBranchId);
       console.log('Conflicts found:', conflicts);
       setDayInfo(conflicts);
 
       // Get rooms
-      const rooms = await getRoomsByBranch(selectedBranch);
+      const rooms = await getRoomsByBranch(selectedBranchId);
       const roomData = processRoomAvailability(rooms, conflicts.busySlots);
       setRoomAvailability(roomData);
 
       // Get teachers
-      const teachers = await getTeachersByBranch(selectedBranch);
+      const teachers = await getTeachersByBranch(selectedBranchId);
       setTeachers(teachers);
       const teacherData = await processTeacherAvailability(teachers, conflicts.busySlots);
       setTeacherAvailability(teacherData);
@@ -192,7 +216,9 @@ export default function AvailabilityReportPage() {
           slot.available = false;
           slot.conflicts = conflicts.map(c => ({
             type: c.type,
-            name: c.name
+            name: c.name,
+            subjectId: c.subjectId,
+            subjectColor: c.subjectColor
           }));
         }
       });
@@ -307,11 +333,116 @@ export default function AvailabilityReportPage() {
     setSelectedDate(newDate);
   };
 
+  // Export functions
+  const captureElement = async (elementId: string, filename: string) => {
+    try {
+      const element = document.getElementById(elementId);
+      if (!element) {
+        toast.error('ไม่พบข้อมูลที่ต้องการ Export');
+        return;
+      }
+
+      // Dynamically import html2canvas only when needed
+      const html2canvas = (await import('html2canvas')).default;
+      
+      // Add export class for styling
+      element.classList.add('exporting');
+      
+      const canvas = await html2canvas(element, {
+        backgroundColor: '#ffffff',
+        scale: 2, // Higher quality
+        logging: false,
+        useCORS: true,
+        allowTaint: true
+      });
+      
+      // Remove export class
+      element.classList.remove('exporting');
+      
+      return { canvas, filename };
+    } catch (error) {
+      console.error('Error capturing element:', error);
+      toast.error('เกิดข้อผิดพลาดในการ Export');
+      return null;
+    }
+  };
+
+  const copyToClipboard = async (elementId: string) => {
+    const result = await captureElement(elementId, '');
+    if (!result) return;
+    
+    const { canvas } = result;
+    
+    try {
+      // Convert to blob
+      canvas.toBlob(async (blob) => {
+        if (!blob) {
+          toast.error('ไม่สามารถสร้างรูปภาพได้');
+          return;
+        }
+        
+        // Copy to clipboard
+        if (navigator.clipboard && window.ClipboardItem) {
+          const item = new ClipboardItem({ 'image/png': blob });
+          await navigator.clipboard.write([item]);
+          toast.success('คัดลอกรูปภาพไปยัง Clipboard แล้ว');
+        } else {
+          toast.error('เบราว์เซอร์ไม่รองรับการคัดลอกรูปภาพ');
+        }
+      }, 'image/png');
+    } catch (error) {
+      console.error('Error copying to clipboard:', error);
+      toast.error('ไม่สามารถคัดลอกรูปภาพได้');
+    }
+  };
+
+  const downloadAsImage = async (elementId: string, defaultFilename: string) => {
+    const result = await captureElement(elementId, defaultFilename);
+    if (!result) return;
+    
+    const { canvas, filename } = result;
+    
+    // Convert to blob and download
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        toast.error('ไม่สามารถสร้างรูปภาพได้');
+        return;
+      }
+      
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${filename}_${formatDate(selectedDate, 'short').replace(/\//g, '-')}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      toast.success('ดาวน์โหลดรูปภาพสำเร็จ');
+    }, 'image/png');
+  };
+
+  const handleExport = (action: 'copy' | 'download', tabName: string) => {
+    const elementId = `export-${tabName}`;
+    const filename = `availability-${tabName}`;
+    
+    if (action === 'copy') {
+      copyToClipboard(elementId);
+    } else {
+      downloadAsImage(elementId, filename);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold">รายงานห้องและครูว่าง</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-3xl font-bold">รายงานห้องและครูว่าง</h1>
+          {!isAllBranches && (
+            <span className="text-sm text-red-600 font-medium">(เฉพาะสาขาที่เลือก)</span>
+          )}
+        </div>
         <p className="text-gray-600 mt-1">
           ตรวจสอบห้องเรียนและครูที่ว่างในแต่ละช่วงเวลา
         </p>
@@ -327,16 +458,6 @@ export default function AvailabilityReportPage() {
         </CardHeader>
         <CardContent className="pb-6">
           <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-            {/* สาขา - ลดขนาด column */}
-            <div className="md:col-span-2">
-              <label className="text-sm font-medium mb-2 block">สาขา</label>
-              <BranchSelector 
-                value={selectedBranch}
-                onValueChange={setSelectedBranch}
-                showAllOption={false}
-              />
-            </div>
-            
             {/* วันที่ */}
             <div className="md:col-span-2">
               <label className="text-sm font-medium mb-2 block">วันที่</label>
@@ -438,40 +559,75 @@ export default function AvailabilityReportPage() {
       )}
 
       {/* Main Content */}
-      {selectedBranch && !loading && (
-        <Tabs defaultValue="timeline" className="space-y-4">
-          <TabsList>
-            <TabsTrigger value="timeline">Timeline</TabsTrigger>
-            <TabsTrigger value="rooms">ห้องว่าง</TabsTrigger>
-            <TabsTrigger value="teachers">ครูว่าง</TabsTrigger>
-          </TabsList>
+      {selectedBranchId && !loading && (
+        <Tabs 
+          defaultValue="timeline" 
+          className="space-y-4"
+          onValueChange={setActiveTab}
+        >
+          <div className="flex items-center justify-between">
+            <TabsList>
+              <TabsTrigger value="timeline">Timeline</TabsTrigger>
+              <TabsTrigger value="rooms">ห้องว่าง</TabsTrigger>
+              <TabsTrigger value="teachers">ครูว่าง</TabsTrigger>
+            </TabsList>
+            
+            {/* Export Button */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Camera className="h-4 w-4 mr-2" />
+                  Export
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => handleExport('copy', activeTab)}>
+                  <Copy className="h-4 w-4 mr-2" />
+                  คัดลอกรูปภาพ
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExport('download', activeTab)}>
+                  <Download className="h-4 w-4 mr-2" />
+                  ดาวน์โหลด PNG
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
 
           {/* Timeline Tab */}
           <TabsContent value="timeline">
-            <Timeline 
-              roomAvailability={roomAvailability}
-              dayInfo={dayInfo}
-              teachers={teachers}
-              subjects={subjects}
-              timeRange={timeRange}
-              timeAlignment={timeAlignment}
-            />
+            <div id="export-timeline">
+              <Timeline 
+                roomAvailability={roomAvailability}
+                dayInfo={dayInfo}
+                teachers={teachers}
+                subjects={subjects}
+                timeRange={timeRange}
+                timeAlignment={timeAlignment}
+              />
+            </div>
           </TabsContent>
 
           {/* Rooms Tab */}
           <TabsContent value="rooms">
-            <RoomAvailability roomAvailability={roomAvailability} />
+            <div id="export-rooms">
+              <RoomAvailability 
+                roomAvailability={roomAvailability}
+                subjects={subjects}
+              />
+            </div>
           </TabsContent>
 
           {/* Teachers Tab */}
           <TabsContent value="teachers">
-            <TeacherAvailability 
-              teacherAvailability={teacherAvailability}
-              timeRange={timeRange}
-              timeAlignment={timeAlignment}
-              subjects={subjects}
-              dayInfo={dayInfo}
-            />
+            <div id="export-teachers">
+              <TeacherAvailability 
+                teacherAvailability={teacherAvailability}
+                timeRange={timeRange}
+                timeAlignment={timeAlignment}
+                subjects={subjects}
+                dayInfo={dayInfo}
+              />
+            </div>
           </TabsContent>
         </Tabs>
       )}
@@ -487,17 +643,38 @@ export default function AvailabilityReportPage() {
       )}
 
       {/* Empty State */}
-      {!selectedBranch && !loading && (
+      {!selectedBranchId && !loading && (
         <Card>
           <CardContent className="p-12 text-center">
             <Building2 className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium mb-2">เลือกสาขาเพื่อดูข้อมูล</h3>
+            <h3 className="text-lg font-medium mb-2">
+              {isAllBranches ? 'กรุณาเลือกสาขาที่ต้องการดูรายงาน' : 'เลือกสาขาเพื่อดูข้อมูล'}
+            </h3>
             <p className="text-gray-600">
-              กรุณาเลือกสาขาที่ต้องการดูรายงานห้องและครูว่าง
+              {isAllBranches 
+                ? 'รายงานห้องและครูว่างจำเป็นต้องดูแยกตามสาขา เนื่องจากห้องและครูเป็นทรัพยากรเฉพาะของแต่ละสาขา'
+                : 'กรุณาเลือกสาขาจาก dropdown ด้านบนเพื่อดูรายงานห้องและครูว่าง'
+              }
             </p>
           </CardContent>
         </Card>
       )}
+      
+      <style jsx global>{`
+        /* Export mode styles */
+        .exporting {
+          padding: 20px !important;
+          background: white !important;
+        }
+        
+        .exporting .overflow-x-auto {
+          overflow: visible !important;
+        }
+        
+        .exporting .min-w-[800px] {
+          min-width: auto !important;
+        }
+      `}</style>
     </div>
   );
 }
