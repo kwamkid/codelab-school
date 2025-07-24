@@ -36,6 +36,7 @@ import {
   Building,
   Loader2,
   Bell,
+  Play,
   Shield,
   BarChart3
 } from 'lucide-react';
@@ -251,6 +252,20 @@ export default function AdminLayout({
         },
       ]
     },
+    {
+        name: 'การสอน',
+        icon: GraduationCap,
+        requiredRole: ['super_admin', 'teacher'], // เพิ่ม super_admin
+        subItems: [
+          { 
+            name: 'Slides & เนื้อหา', 
+            href: '/teaching/slides', 
+            icon: Play,
+            requiredRole: ['super_admin', 'teacher']
+          },
+          // จะเพิ่มเมนูอื่นๆ ในอนาคต
+        ]
+      },
     {
       name: 'ลูกค้า',
       icon: Users,
