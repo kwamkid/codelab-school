@@ -19,6 +19,7 @@ import {
   Users,
   Calendar,
   BookOpen,
+  Layers,
   Settings,
   LogOut,
   Menu,
@@ -265,22 +266,29 @@ export default function AdminLayout({
           icon: BookOpen,
           requiredRole: ['super_admin'] // เฉพาะ super admin (ข้อมูลกลาง)
         },
+     
       ]
     },
-    {
-        name: 'การสอน',
-        icon: GraduationCap,
-        requiredRole: ['super_admin', 'teacher'], // เพิ่ม super_admin
-        subItems: [
-          { 
-            name: 'Slides & เนื้อหา', 
-            href: '/teaching/slides', 
-            icon: Play,
-            requiredRole: ['super_admin', 'teacher']
-          },
-          // จะเพิ่มเมนูอื่นๆ ในอนาคต
-        ]
-      },
+   {
+      name: 'การสอน',
+      icon: GraduationCap,
+      requiredRole: ['super_admin', 'teacher'], // เพิ่ม super_admin
+      subItems: [
+        { 
+          name: 'สื่อการสอน', 
+          href: '/teaching-materials', 
+          icon: Layers,
+          requiredRole: ['super_admin'] // เฉพาะ super admin จัดการได้
+        },
+        { 
+          name: 'Slides & เนื้อหา', 
+          href: '/teaching/slides', 
+          icon: Play,
+          requiredRole: ['super_admin', 'teacher'] // ครูและ admin ดูได้
+        },
+        // จะเพิ่มเมนูอื่นๆ ในอนาคต
+      ]
+    },
     {
       name: 'ลูกค้า',
       icon: Users,

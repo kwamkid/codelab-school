@@ -131,19 +131,18 @@ export interface Teacher {
   updatedAt?: Date; // เพิ่ม: วันที่อัปเดต
 }
 
-// Class & Schedule Types
 export interface Class {
   id: string;
-  subjectId: string;
+  subjectId: string; // ใช้แบบเดิม ไม่ต้องแก้
   teacherId: string;
   branchId: string;
   roomId: string;
-  name: string;
-  code: string;
+  name: string; // ชื่อคลาส เช่น "VEX Beginner - Sat Morning A"
+  code: string; // รหัสคลาส เช่น "BKK01-VEXG01-2501-A"
   description?: string;
   startDate: Date;
   endDate: Date;
-  totalSessions: number;
+  totalSessions: number; // ดึงมาจาก curriculum หรือกำหนดเอง
   daysOfWeek: number[];
   startTime: string;
   endTime: string;
@@ -159,7 +158,6 @@ export interface Class {
   status: 'draft' | 'published' | 'started' | 'completed' | 'cancelled';
   createdAt: Date;
 }
-
 export interface ClassSchedule {
   id: string;
   classId: string;
@@ -407,4 +405,27 @@ export interface MigrationResult {
     status: 'success' | 'failed' | 'skipped';
     error?: string;
   }[];
+}
+
+// Teaching Materials - สื่อการสอนที่ผูกกับวิชา
+export interface TeachingMaterial {
+  id: string;
+  subjectId: string; // ผูกกับวิชาโดยตรง
+  sessionNumber: number; // ครั้งที่
+  title: string; // ชื่อบทเรียน
+  description?: string; // คำอธิบายสั้นๆ
+  objectives: string[]; // จุดประสงค์การเรียนรู้
+  materials: string[]; // อุปกรณ์ที่ใช้
+  preparation: string[]; // การเตรียมตัวก่อนสอน
+  canvaUrl: string; // Canva share URL
+  embedUrl: string; // Auto-generated embed URL
+  thumbnailUrl?: string; // รูป thumbnail
+  duration: number; // ระยะเวลา (นาที)
+  teachingNotes?: string; // บันทึกสำหรับครู
+  tags?: string[]; // แท็ก เช่น ["hands-on", "group-work", "assessment"]
+  isActive: boolean;
+  createdAt: Date;
+  createdBy: string;
+  updatedAt?: Date;
+  updatedBy?: string;
 }
