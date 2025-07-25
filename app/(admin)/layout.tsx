@@ -38,7 +38,9 @@ import {
   Bell,
   Play,
   Shield,
-  BarChart3
+  BarChart3,
+  Key,
+  User as UserIcon
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/lib/utils';
@@ -651,6 +653,29 @@ export default function AdminLayout({
                         </div>
                       </DropdownMenuLabel>
                       <DropdownMenuSeparator />
+                      
+                      {/* เมนู Profile สำหรับทุก role */}
+                      <DropdownMenuItem 
+                        onClick={() => {
+                          router.push('/profile');
+                        }}
+                      >
+                        <UserIcon className="mr-2 h-4 w-4" />
+                        <span>โปรไฟล์ของฉัน</span>
+                      </DropdownMenuItem>
+                      
+                      {/* เมนู Change Password สำหรับทุก role */}
+                      <DropdownMenuItem 
+                        onClick={() => {
+                          router.push('/profile/change-password');
+                        }}
+                      >
+                        <Key className="mr-2 h-4 w-4" />
+                        <span>เปลี่ยนรหัสผ่าน</span>
+                      </DropdownMenuItem>
+                      
+                      <DropdownMenuSeparator />
+                      
                       <DropdownMenuItem onClick={handleSignOut}>
                         <LogOut className="mr-2 h-4 w-4" />
                         <span>ออกจากระบบ</span>

@@ -7,7 +7,7 @@ import { getActiveBranches } from '@/lib/services/branches';
 import { getActiveSubjects } from '@/lib/services/subjects';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Plus, Edit, Phone, Mail, MapPin, BookOpen, Users } from 'lucide-react';
+import { Plus, Edit, Phone, Mail, MapPin, BookOpen, Users, Key } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +23,8 @@ import { formatCurrency } from '@/lib/utils';
 import { useBranch } from '@/contexts/BranchContext';
 import { PermissionGuard } from '@/components/auth/permission-guard';
 import { ActionButton } from '@/components/ui/action-button';
+import { sendPasswordResetEmail } from 'firebase/auth';
+import { auth } from '@/lib/firebase/client';
 
 export default function TeachersPage() {
   const { selectedBranchId, isAllBranches } = useBranch();
@@ -62,6 +64,22 @@ export default function TeachersPage() {
   const getSubjectName = (subjectId: string) => {
     const subject = subjects.find(s => s.id === subjectId);
     return subject?.name || subjectId;
+  };
+
+  const handleResetPassword = async (teacher: Teacher) => {
+    if (!confirm(`ส่งลิงก์รีเซ็ตรหัสผ่านไปที่ ${teacher.email}?`)) return;
+    
+    try {
+      await sendPasswordResetEmail(auth, teacher.email);
+      toast.success('ส่งลิงก์รีเซ็ตรหัสผ่านเรียบร้อย');
+    } catch (error: any) {
+      console.error('Error sending password reset:', error);
+      if (error.code === 'auth/user-not-found') {
+        toast.error('ไม่พบอีเมลนี้ในระบบ Authentication');
+      } else {
+        toast.error('เกิดข้อผิดพลาดในการส่งลิงก์');
+      }
+    }
   };
 
   if (loading) {
@@ -270,13 +288,26 @@ export default function TeachersPage() {
                         )}
                       </TableCell>
                       <TableCell className="text-right">
-                        <PermissionGuard action="update">
-                          <Link href={`/teachers/${teacher.id}/edit`}>
-                            <Button variant="ghost" size="sm">
-                              <Edit className="h-4 w-4" />
+                        <div className="flex items-center justify-end gap-1">
+                          <PermissionGuard action="update">
+                            <Link href={`/teachers/${teacher.id}/edit`}>
+                              <Button variant="ghost" size="sm" title="แก้ไขข้อมูล">
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                            </Link>
+                          </PermissionGuard>
+                          
+                          <PermissionGuard action="update">
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              onClick={() => handleResetPassword(teacher)}
+                              title="Reset Password"
+                            >
+                              <Key className="h-4 w-4" />
                             </Button>
-                          </Link>
-                        </PermissionGuard>
+                          </PermissionGuard>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}

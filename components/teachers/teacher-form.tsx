@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
-import { Loader2, Save, X } from 'lucide-react';
+import { Loader2, Save, X, Eye, EyeOff } from 'lucide-react';
 import Link from 'next/link';
 
 interface TeacherFormProps {
@@ -23,6 +23,7 @@ interface TeacherFormProps {
 export default function TeacherForm({ teacher, isEdit = false }: TeacherFormProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [formData, setFormData] = useState({
@@ -30,6 +31,7 @@ export default function TeacherForm({ teacher, isEdit = false }: TeacherFormProp
     nickname: teacher?.nickname || '',
     email: teacher?.email || '',
     phone: teacher?.phone || '',
+    password: '',
     lineUserId: teacher?.lineUserId || '',
     specialties: teacher?.specialties || [],
     availableBranches: teacher?.availableBranches || [],
@@ -70,6 +72,16 @@ export default function TeacherForm({ teacher, isEdit = false }: TeacherFormProp
       return;
     }
 
+    if (!isEdit && !formData.password) {
+      toast.error('กรุณากรอกรหัสผ่าน');
+      return;
+    }
+
+    if (!isEdit && formData.password.length < 6) {
+      toast.error('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร');
+      return;
+    }
+
     if (formData.specialties.length === 0) {
       toast.error('กรุณาเลือกวิชาที่สอนอย่างน้อย 1 วิชา');
       return;
@@ -99,7 +111,9 @@ export default function TeacherForm({ teacher, isEdit = false }: TeacherFormProp
         await updateTeacher(teacher.id, formData);
         toast.success('อัปเดตข้อมูลครูเรียบร้อยแล้ว');
       } else {
-        await createTeacher(formData);
+        const teacherData = { ...formData };
+        delete teacherData.password; // ลบ password ออกจาก teacherData
+        await createTeacher(teacherData, formData.password);
         toast.success('เพิ่มครูใหม่เรียบร้อยแล้ว');
       }
       
@@ -209,6 +223,37 @@ export default function TeacherForm({ teacher, isEdit = false }: TeacherFormProp
                 />
               </div>
             </div>
+
+            {!isEdit && (
+              <div className="space-y-2">
+                <Label htmlFor="password">รหัสผ่าน *</Label>
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    placeholder="อย่างน้อย 6 ตัวอักษร"
+                    required
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 rounded"
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-4 w-4 text-gray-500" />
+                    ) : (
+                      <Eye className="h-4 w-4 text-gray-500" />
+                    )}
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500">
+                  ครูจะใช้ email และ password นี้ในการ login
+                </p>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="lineUserId">LINE User ID (สำหรับรับการแจ้งเตือน)</Label>

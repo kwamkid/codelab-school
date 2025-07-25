@@ -120,8 +120,46 @@ export async function getTeacher(id: string): Promise<Teacher | null> {
 }
 
 // Create new teacher WITH dual creation (teachers + adminUsers)
-export async function createTeacher(teacherData: Omit<Teacher, 'id'>): Promise<string> {
+export async function createTeacher(
+  teacherData: Omit<Teacher, 'id'>, 
+  password?: string
+): Promise<string> {
   try {
+    // ถ้ามี password ให้สร้าง Auth ผ่าน API
+    if (password) {
+      try {
+        const token = await auth.currentUser?.getIdToken();
+        if (!token) {
+          throw new Error('No auth token available');
+        }
+
+        const response = await fetch('/api/admin/create-teacher', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            email: teacherData.email,
+            password,
+            teacherData
+          })
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || 'Failed to create teacher with auth');
+        }
+
+        const result = await response.json();
+        return result.teacherId;
+      } catch (error) {
+        console.error('Error creating teacher with auth:', error);
+        throw error;
+      }
+    }
+
+    // ถ้าไม่มี password ให้สร้างแบบเดิม (สำหรับ backward compatibility)
     // 1. สร้าง Teacher ใน teachers collection ก่อน
     const docRef = await addDoc(collection(db, COLLECTION_NAME), {
       ...teacherData,
