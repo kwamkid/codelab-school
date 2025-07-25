@@ -5,9 +5,9 @@ export interface Parent {
   displayName: string;
   pictureUrl?: string;
   phone: string;
-  emergencyPhone?: string; // เพิ่ม field ใหม่
+  emergencyPhone?: string;
   email?: string;
-  address?: { // เพิ่ม field ใหม่
+  address?: {
     houseNumber: string;
     street?: string;
     subDistrict: string;
@@ -20,7 +20,7 @@ export interface Parent {
   lastLoginAt: Date;
 }
 
-// เพิ่มใน types/models.ts หลัง Parent interface
+// Admin User - สำหรับ Authentication และ Permissions
 export interface AdminUser {
   id: string; // uid จาก Firebase Auth
   email: string;
@@ -33,6 +33,7 @@ export interface AdminUser {
     canViewReports?: boolean;
     canManageAllBranches?: boolean;
   };
+  teacherId?: string; // เพิ่ม: reference ไปยัง teachers collection (สำหรับ role='teacher')
   isActive: boolean;
   createdAt: Date;
   createdBy: string;
@@ -107,6 +108,7 @@ export interface Subject {
   isActive: boolean;
 }
 
+// Teacher - ข้อมูลครูแบบละเอียด (ใช้สำหรับระบบการสอน)
 export interface Teacher {
   id: string;
   name: string;
@@ -114,8 +116,8 @@ export interface Teacher {
   email: string;
   phone: string;
   lineUserId?: string;
-  specialties: string[];
-  availableBranches: string[];
+  specialties: string[]; // subject IDs
+  availableBranches: string[]; // branch IDs
   profileImage?: string;
   hourlyRate?: number;
   bankAccount?: {
@@ -124,6 +126,9 @@ export interface Teacher {
     accountName: string;
   };
   isActive: boolean;
+  hasLogin?: boolean; // เพิ่ม: flag บอกว่ามี adminUser หรือยัง
+  createdAt?: Date; // เพิ่ม: วันที่สร้าง
+  updatedAt?: Date; // เพิ่ม: วันที่อัปเดต
 }
 
 // Class & Schedule Types
@@ -169,9 +174,9 @@ export interface ClassSchedule {
     status: 'present' | 'absent' | 'late';
     note?: string;
   }[];
-  originalDate?: Date; // เก็บวันเดิมกรณี reschedule
-  rescheduledAt?: Date; // วันที่ทำการ reschedule
-  rescheduledBy?: string; // ใครเป็นคน reschedule
+  originalDate?: Date;
+  rescheduledAt?: Date;
+  rescheduledBy?: string;
 }
 
 // Enrollment & Payment Types
@@ -206,6 +211,7 @@ export interface Enrollment {
     reason: string;
   }>;
 }
+
 // Trial & Booking Types
 export interface TrialBooking {
   id: string;
@@ -225,7 +231,6 @@ export interface TrialBooking {
   }[];
 
   branchId?: string; // สาขาที่ติดต่อ/จอง
-
   
   status: 'new' | 'contacted' | 'scheduled' | 'completed' | 'converted' | 'cancelled';
   
@@ -237,9 +242,6 @@ export interface TrialBooking {
   createdAt: Date;
   updatedAt?: Date;
 }
-
-// หา TrialSession interface (ประมาณบรรทัด 241-268)
-// แก้ไขเป็น:
 
 export interface TrialSession {
   id: string;
@@ -271,7 +273,7 @@ export interface TrialSession {
   convertedToClassId?: string;
   conversionNote?: string;
   
-  // Rescheduling history (เพิ่มใหม่)
+  // Rescheduling history
   rescheduleHistory?: Array<{
     originalDate: Date;
     originalTime: string;
@@ -290,7 +292,7 @@ export interface TrialSession {
 export interface Notification {
   id: string;
   userId: string;
-  type: 'reminder' | 'announcement' | 'schedule_change' | 'payment';
+  type: 'reminder' | 'announcement' | 'schedule_change' | 'payment' | 'makeup' | 'system';
   title: string;
   body: string;
   imageUrl?: string;
@@ -322,16 +324,14 @@ export interface Promotion {
   isActive: boolean;
 }
 
-
 // Holiday Types
 export interface Holiday {
   id: string;
   name: string;
   date: Date;
-  type: 'national' | 'branch';  // ลบ 'special' ออก
+  type: 'national' | 'branch';
   branches?: string[]; // Empty for national holidays, branch IDs for branch-specific
   description?: string;
-  // ลบ isSchoolClosed และ isRecurring ออก
 }
 
 // Room Availability Check Result
@@ -346,8 +346,6 @@ export interface RoomAvailabilityResult {
     daysOfWeek: number[];
   }[];
 }
-
-// เพิ่มใน types/models.ts หลังจาก ClassSchedule interface
 
 // Makeup Class Types
 export interface MakeupClass {
@@ -396,4 +394,17 @@ export interface LinkToken {
   used: boolean;                 // สถานะการใช้งาน
   usedAt?: Date;                 // วันเวลาที่ใช้ (optional - มีค่าเมื่อใช้แล้ว)
   linkedLineUserId?: string;     // LINE User ID ที่เชื่อมต่อ (optional - มีค่าเมื่อใช้แล้ว)
+}
+
+// Utility Types for Migration
+export interface MigrationResult {
+  success: number;
+  failed: number;
+  errors: string[];
+  details?: {
+    teacherId: string;
+    teacherName: string;
+    status: 'success' | 'failed' | 'skipped';
+    error?: string;
+  }[];
 }

@@ -18,11 +18,12 @@ import {
 } from 'firebase/auth';
 import { auth } from '@/lib/firebase/client';
 
-// Get all admin users with optional branch filter
+// Get all admin users with optional branch filter (excluding teachers)
 export async function getAdminUsers(branchId?: string): Promise<AdminUser[]> {
   try {
     let q = query(
       collection(db, 'adminUsers'),
+      where('role', 'in', ['super_admin', 'branch_admin']), // ดึงเฉพาะ admin roles
       orderBy('createdAt', 'desc')
     );
     
@@ -220,7 +221,7 @@ export async function checkEmailExists(email: string): Promise<boolean> {
   }
 }
 
-// Create admin user simple
+// Create admin user simple (สำหรับการ migration หรือสร้างด้วย manual)
 export async function createAdminUserSimple(
   userId: string,
   userData: {

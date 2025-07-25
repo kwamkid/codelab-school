@@ -10,17 +10,19 @@ import {
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase/client';
 import { useRouter } from 'next/navigation';
-import { AdminUser } from '@/types/models';
+import { AdminUser, Teacher } from '@/types/models';
 
 interface AuthContextType {
   user: User | null;
   adminUser: AdminUser | null;
+  teacher: Teacher | null; // เพิ่ม teacher data
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   canAccessBranch: (branchId: string) => boolean;
   isSuperAdmin: () => boolean;
   canManageSettings: () => boolean;
+  isTeacher: () => boolean; // เพิ่ม helper function
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -28,6 +30,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [adminUser, setAdminUser] = useState<AdminUser | null>(null);
+  const [teacher, setTeacher] = useState<Teacher | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
@@ -56,13 +59,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               };
             }
             
-            setAdminUser({
+            const adminUserData = {
               id: docSnap.id,
               ...data,
               permissions,
               createdAt: data.createdAt?.toDate() || new Date(),
               updatedAt: data.updatedAt?.toDate()
-            } as AdminUser);
+            } as AdminUser;
+            
+            setAdminUser(adminUserData);
+            
+            // ถ้าเป็น teacher ให้โหลดข้อมูลจาก teachers collection ด้วย
+            if (data.role === 'teacher') {
+              try {
+                const teacherRef = doc(db, 'teachers', user.uid);
+                const teacherSnap = await getDoc(teacherRef);
+                
+                if (teacherSnap.exists()) {
+                  setTeacher({
+                    id: teacherSnap.id,
+                    ...teacherSnap.data()
+                  } as Teacher);
+                }
+              } catch (error) {
+                console.error('Error loading teacher data:', error);
+              }
+            }
           } else {
             // ถ้าไม่มีข้อมูลใน adminUsers ให้สร้าง default super_admin
             // (สำหรับ admin คนแรก)
@@ -88,6 +110,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       } else {
         setAdminUser(null);
+        setTeacher(null);
       }
       
       setLoading(false);
@@ -122,6 +145,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     try {
       await firebaseSignOut(auth);
+      setTeacher(null); // Clear teacher data
       router.push('/login');
     } catch (error) {
       console.error('Sign out error:', error);
@@ -146,16 +170,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return adminUser.permissions?.canManageSettings || false;
   };
 
+  const isTeacher = () => {
+    return adminUser?.role === 'teacher';
+  };
+
   return (
     <AuthContext.Provider value={{ 
       user, 
       adminUser,
+      teacher, // เพิ่ม teacher ใน context
       loading, 
       signIn, 
       signOut,
       canAccessBranch,
       isSuperAdmin,
-      canManageSettings
+      canManageSettings,
+      isTeacher // เพิ่ม helper function
     }}>
       {children}
     </AuthContext.Provider>

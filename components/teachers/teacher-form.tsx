@@ -104,9 +104,18 @@ export default function TeacherForm({ teacher, isEdit = false }: TeacherFormProp
       }
       
       router.push('/teachers');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving teacher:', error);
-      toast.error(isEdit ? 'ไม่สามารถอัปเดตข้อมูลได้' : 'ไม่สามารถเพิ่มครูได้');
+      
+      // Handle specific errors
+      if (error.message?.includes('already exists')) {
+        toast.error('อีเมลนี้ถูกใช้งานแล้ว');
+      } else if (error.message?.includes('Firebase Auth')) {
+        toast.warning('อัปเดตข้อมูลเรียบร้อย แต่ยังไม่สามารถอัปเดต email สำหรับ login ได้');
+        router.push('/teachers');
+      } else {
+        toast.error(isEdit ? 'ไม่สามารถอัปเดตข้อมูลได้' : 'ไม่สามารถเพิ่มครูได้');
+      }
     } finally {
       setLoading(false);
     }
@@ -182,6 +191,11 @@ export default function TeacherForm({ teacher, isEdit = false }: TeacherFormProp
                   placeholder="teacher@example.com"
                   required
                 />
+                {isEdit && (
+                  <p className="text-xs text-gray-500">
+                    หากเปลี่ยน email ครูจะต้องใช้ email ใหม่ในการ login
+                  </p>
+                )}
               </div>
               
               <div className="space-y-2">

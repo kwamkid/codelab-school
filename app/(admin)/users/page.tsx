@@ -287,13 +287,7 @@ export default function UsersPage() {
             เพิ่มผู้ใช้งาน
           </Button>
           
-          <Button 
-            onClick={() => setShowAddRightsDialog(true)}
-            variant="outline"
-          >
-            <Shield className="h-4 w-4 mr-2" />
-            เพิ่มสิทธิ์ผู้ใช้ที่มีอยู่
-          </Button>
+       
         </div>
       </div>
 

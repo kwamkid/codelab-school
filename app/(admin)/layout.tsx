@@ -217,6 +217,25 @@ export default function AdminLayout({
       icon: Home 
     },
     {
+      name: 'ผู้ใช้งาน และครู',
+      icon: Users,
+      requiredRole: ['super_admin', 'branch_admin'],
+      subItems: [
+        { 
+          name: 'ผู้ดูแลระบบ', 
+          href: '/users', 
+          icon: Shield,
+          requiredRole: ['super_admin']
+        },
+        { 
+          name: 'ครูผู้สอน', 
+          href: '/teachers', 
+          icon: UserCog,
+          requiredRole: ['super_admin', 'branch_admin']
+        },
+      ]
+    },
+    {
       name: 'ข้อมูลพื้นฐาน',
       icon: Building,
       subItems: [
@@ -230,12 +249,6 @@ export default function AdminLayout({
           name: 'ห้องเรียน', 
           href: '/rooms', 
           icon: School,
-          requiredRole: ['super_admin', 'branch_admin'] // admin ขึ้นไป
-        },
-        { 
-          name: 'ครูผู้สอน', 
-          href: '/teachers', 
-          icon: UserCog,
           requiredRole: ['super_admin', 'branch_admin'] // admin ขึ้นไป
         },
         { 
@@ -320,12 +333,6 @@ export default function AdminLayout({
           icon: Calendar 
         },
       ]
-    },
-    {
-      name: 'ผู้ใช้งาน',
-      href: '/users',
-      icon: Shield,
-      requiredRole: ['super_admin'] // เฉพาะ super admin
     },
     { 
       name: 'ตั้งค่า', 

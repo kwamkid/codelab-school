@@ -39,12 +39,11 @@ import { createAdminUser, updateAdminUser, checkEmailExists } from '@/lib/servic
 import { toast } from 'sonner';
 import { auth } from '@/lib/firebase/client';
 
-
 const formSchema = z.object({
   displayName: z.string().min(1, 'กรุณาระบุชื่อ'),
   email: z.string().email('อีเมลไม่ถูกต้อง'),
   password: z.string().min(6, 'รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร').optional(),
-  role: z.enum(['super_admin', 'branch_admin', 'teacher']),
+  role: z.enum(['super_admin', 'branch_admin']),
   branchIds: z.array(z.string()),
   permissions: z.object({
     canManageUsers: z.boolean(),
@@ -101,7 +100,7 @@ export default function UserFormDialog({
       form.reset({
         displayName: user.email, // ใช้ email เป็น displayName
         email: user.email,
-        role: user.role,
+        role: user.role === 'teacher' ? 'branch_admin' : user.role, // ถ้าเป็น teacher ให้เปลี่ยนเป็น branch_admin
         branchIds: user.branchIds || [],
         permissions: user.permissions || {
           canManageUsers: false,
@@ -113,7 +112,7 @@ export default function UserFormDialog({
       });
     } else {
       form.reset({
-        displayName: '', // จะถูก set จาก email อัตโนมัติ
+        displayName: '',
         email: '',
         password: '',
         role: 'branch_admin',
@@ -143,13 +142,6 @@ export default function UserFormDialog({
         canManageAllBranches: true,
       });
       form.setValue('branchIds', []);
-    } else if (watchRole === 'teacher') {
-      form.setValue('permissions', {
-        canManageUsers: false,
-        canManageSettings: false,
-        canViewReports: false,
-        canManageAllBranches: false,
-      });
     }
   }, [watchRole, form]);
 
@@ -349,13 +341,11 @@ export default function UserFormDialog({
                       <SelectContent>
                         <SelectItem value="super_admin">Super Admin</SelectItem>
                         <SelectItem value="branch_admin">Branch Admin</SelectItem>
-                        <SelectItem value="teacher">Teacher</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormDescription>
                       {field.value === 'super_admin' && 'มีสิทธิ์เข้าถึงและจัดการทุกอย่างในระบบ'}
                       {field.value === 'branch_admin' && 'จัดการเฉพาะสาขาที่ได้รับมอบหมาย'}
-                      {field.value === 'teacher' && 'ดูข้อมูลและจัดการคลาสที่สอนเท่านั้น'}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -365,7 +355,7 @@ export default function UserFormDialog({
               {!isSuperAdmin && (
                 <>
                   {/* Branch Selection */}
-                  {(!watchCanManageAllBranches || watchRole === 'teacher') && (
+                  {!watchCanManageAllBranches && (
                     <FormField
                       control={form.control}
                       name="branchIds"
@@ -373,27 +363,24 @@ export default function UserFormDialog({
                         <FormItem>
                           <FormLabel>สาขาที่ดูแล</FormLabel>
                           <div className="space-y-2 max-h-[200px] overflow-y-auto border rounded-md p-3">
-                            {watchRole !== 'teacher' && (
-                              <div className="flex items-center space-x-2 pb-2 border-b">
-                                <Checkbox
-                                  checked={field.value.length === 0 && watchRole !== 'teacher'}
-                                  onCheckedChange={(checked) => {
-                                    if (checked) {
-                                      field.onChange([]);
-                                    } else {
-                                      // ถ้าไม่เลือกทุกสาขา ให้เลือกสาขาแรก
-                                      if (branches.length > 0) {
-                                        field.onChange([branches[0].id]);
-                                      }
+                            <div className="flex items-center space-x-2 pb-2 border-b">
+                              <Checkbox
+                                checked={field.value.length === 0}
+                                onCheckedChange={(checked) => {
+                                  if (checked) {
+                                    field.onChange([]);
+                                  } else {
+                                    // ถ้าไม่เลือกทุกสาขา ให้เลือกสาขาแรก
+                                    if (branches.length > 0) {
+                                      field.onChange([branches[0].id]);
                                     }
-                                  }}
-                                  disabled={watchRole === 'teacher'}
-                                />
-                                <label className="text-sm font-medium">
-                                  ทุกสาขา {watchRole === 'teacher' && '(Teacher ต้องเลือกสาขา)'}
-                                </label>
-                              </div>
-                            )}
+                                  }
+                                }}
+                              />
+                              <label className="text-sm font-medium">
+                                ทุกสาขา
+                              </label>
+                            </div>
                             {branches.map((branch) => (
                               <div key={branch.id} className="flex items-center space-x-2">
                                 <Checkbox
@@ -405,18 +392,16 @@ export default function UserFormDialog({
                                       field.onChange(field.value.filter(id => id !== branch.id));
                                     }
                                   }}
-                                  disabled={watchRole !== 'teacher' && field.value.length === 0}
+                                  disabled={field.value.length === 0}
                                 />
                                 <label className="text-sm">{branch.name}</label>
                               </div>
                             ))}
                           </div>
                           <FormDescription>
-                            {watchRole === 'teacher' 
-                              ? 'Teacher ต้องเลือกสาขาที่สอน'
-                              : field.value.length === 0 
-                                ? 'เลือก "ทุกสาขา" แล้ว - สามารถดูแลทุกสาขาได้' 
-                                : `เลือกแล้ว ${field.value.length} สาขา`}
+                            {field.value.length === 0 
+                              ? 'เลือก "ทุกสาขา" แล้ว - สามารถดูแลทุกสาขาได้' 
+                              : `เลือกแล้ว ${field.value.length} สาขา`}
                           </FormDescription>
                           <FormMessage />
                         </FormItem>
@@ -425,74 +410,72 @@ export default function UserFormDialog({
                   )}
 
                   {/* Permissions */}
-                  {watchRole === 'branch_admin' && (
-                    <div className="space-y-4">
-                      <FormLabel>สิทธิ์พิเศษ</FormLabel>
-                      
-                      <FormField
-                        control={form.control}
-                        name="permissions.canManageAllBranches"
-                        render={({ field }) => (
-                          <FormItem className="flex items-center justify-between rounded-lg border p-3">
-                            <div className="space-y-0.5">
-                              <FormLabel className="text-base">จัดการทุกสาขา</FormLabel>
-                              <FormDescription>
-                                สามารถดูและจัดการข้อมูลทุกสาขา (ไม่ต้องเลือกสาขาด้านบน)
-                              </FormDescription>
-                            </div>
-                            <FormControl>
-                              <Switch
-                                checked={field.value}
-                                onCheckedChange={field.onChange}
-                              />
-                            </FormControl>
-                          </FormItem>
-                        )}
-                      />
-                      
-                      <FormField
-                        control={form.control}
-                        name="permissions.canManageSettings"
-                        render={({ field }) => (
-                          <FormItem className="flex items-center justify-between rounded-lg border p-3">
-                            <div className="space-y-0.5">
-                              <FormLabel className="text-base">จัดการตั้งค่า</FormLabel>
-                              <FormDescription>
-                                สามารถเข้าถึงหน้าตั้งค่าระบบ
-                              </FormDescription>
-                            </div>
-                            <FormControl>
-                              <Switch
-                                checked={field.value}
-                                onCheckedChange={field.onChange}
-                              />
-                            </FormControl>
-                          </FormItem>
-                        )}
-                      />
+                  <div className="space-y-4">
+                    <FormLabel>สิทธิ์พิเศษ</FormLabel>
+                    
+                    <FormField
+                      control={form.control}
+                      name="permissions.canManageAllBranches"
+                      render={({ field }) => (
+                        <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                          <div className="space-y-0.5">
+                            <FormLabel className="text-base">จัดการทุกสาขา</FormLabel>
+                            <FormDescription>
+                              สามารถดูและจัดการข้อมูลทุกสาขา (ไม่ต้องเลือกสาขาด้านบน)
+                            </FormDescription>
+                          </div>
+                          <FormControl>
+                            <Switch
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                            />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                    
+                    <FormField
+                      control={form.control}
+                      name="permissions.canManageSettings"
+                      render={({ field }) => (
+                        <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                          <div className="space-y-0.5">
+                            <FormLabel className="text-base">จัดการตั้งค่า</FormLabel>
+                            <FormDescription>
+                              สามารถเข้าถึงหน้าตั้งค่าระบบ
+                            </FormDescription>
+                          </div>
+                          <FormControl>
+                            <Switch
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                            />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
 
-                      <FormField
-                        control={form.control}
-                        name="permissions.canViewReports"
-                        render={({ field }) => (
-                          <FormItem className="flex items-center justify-between rounded-lg border p-3">
-                            <div className="space-y-0.5">
-                              <FormLabel className="text-base">ดูรายงาน</FormLabel>
-                              <FormDescription>
-                                สามารถดูรายงานและสถิติต่างๆ
-                              </FormDescription>
-                            </div>
-                            <FormControl>
-                              <Switch
-                                checked={field.value}
-                                onCheckedChange={field.onChange}
-                              />
-                            </FormControl>
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-                  )}
+                    <FormField
+                      control={form.control}
+                      name="permissions.canViewReports"
+                      render={({ field }) => (
+                        <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                          <div className="space-y-0.5">
+                            <FormLabel className="text-base">ดูรายงาน</FormLabel>
+                            <FormDescription>
+                              สามารถดูรายงานและสถิติต่างๆ
+                            </FormDescription>
+                          </div>
+                          <FormControl>
+                            <Switch
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                            />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                  </div>
                 </>
               )}
             </div>
