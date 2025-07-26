@@ -187,6 +187,22 @@ export async function updateTrialBooking(
   }
 }
 
+// Update booking branch (สำหรับแก้ record เก่าที่ไม่มีสาขา)
+export async function updateBookingBranch(
+  id: string,
+  branchId: string
+): Promise<void> {
+  try {
+    const docRef = doc(db, BOOKINGS_COLLECTION, id);
+    await updateDoc(docRef, {
+      branchId,
+      updatedAt: serverTimestamp()
+    });
+  } catch (error) {
+    console.error('Error updating booking branch:', error);
+    throw error;
+  }
+}
 // Update booking status
 export async function updateBookingStatus(
   id: string,

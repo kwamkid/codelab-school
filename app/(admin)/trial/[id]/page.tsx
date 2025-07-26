@@ -16,6 +16,13 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { 
   TestTube,
   ArrowLeft,
@@ -39,7 +46,8 @@ import {
   MoreVertical,
   History,
   Save,
-  X as XIcon
+  X as XIcon,
+  Building2
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useSearchParams } from 'next/navigation';
@@ -50,7 +58,8 @@ import {
   updateBookingStatus,
   updateTrialSession,
   cancelTrialSession,
-  updateTrialBooking
+  updateTrialBooking,
+  updateBookingBranch
 } from '@/lib/services/trial-bookings';
 import { getSubjects } from '@/lib/services/subjects';
 import { getTeachers } from '@/lib/services/teachers';
@@ -110,8 +119,10 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
   // Edit states
   const [editingParent, setEditingParent] = useState(false);
   const [editingStudent, setEditingStudent] = useState<number | null>(null);
+  const [editingBranch, setEditingBranch] = useState(false);
   const [tempParentData, setTempParentData] = useState({ name: '', phone: '' });
   const [tempStudentData, setTempStudentData] = useState<any>({});
+  const [tempBranchId, setTempBranchId] = useState<string>('');
   
   // Modal states
   const [sessionModalOpen, setSessionModalOpen] = useState(false);
@@ -252,6 +263,27 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
     }
   };
 
+  // ฟังก์ชันจัดการสาขา
+  const handleBranchEdit = () => {
+    if (!booking) return;
+    setTempBranchId(booking.branchId || '');
+    setEditingBranch(true);
+  };
+
+  const handleBranchSave = async () => {
+    if (!booking || !tempBranchId) return;
+    
+    try {
+      await updateBookingBranch(booking.id, tempBranchId);
+      setBooking({ ...booking, branchId: tempBranchId });
+      setEditingBranch(false);
+      toast.success('บันทึกข้อมูลสาขาเรียบร้อย');
+    } catch (error) {
+      console.error('Error updating branch:', error);
+      toast.error('ไม่สามารถบันทึกข้อมูลได้');
+    }
+  };
+
   const handleSessionCreated = () => {
     loadData();
     setSessionModalOpen(false);
@@ -298,11 +330,7 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-500"></div>
-      </div>
-    );
+    return <PageLoading />;
   }
 
   if (!booking) return null;
@@ -345,169 +373,178 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column - Booking Info */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Parent Info */}
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <User className="h-5 w-5 text-gray-400" />
-                  ข้อมูลผู้ปกครอง
-                </CardTitle>
-                {!editingParent && (
-                  <Button variant="ghost" size="sm" onClick={handleParentEdit}>
-                    <Edit className="h-4 w-4" />
-                  </Button>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent>
-              {editingParent ? (
-                <div className="space-y-4">
-                  <div>
-                    <Label>ชื่อ-นามสกุล</Label>
-                    <Input
-                      value={tempParentData.name}
-                      onChange={(e) => setTempParentData(prev => ({ ...prev, name: e.target.value }))}
-                    />
-                  </div>
-                  <div>
-                    <Label>เบอร์โทรศัพท์</Label>
-                    <Input
-                      value={tempParentData.phone}
-                      onChange={(e) => setTempParentData(prev => ({ ...prev, phone: e.target.value }))}
-                    />
-                  </div>
-                  <div className="flex gap-2">
-                    <Button size="sm" onClick={handleParentSave}>
-                      <Save className="h-4 w-4 mr-1" />
-                      บันทึก
+          {/* Parent & Students Info - 2 columns */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Parent Info */}
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <User className="h-5 w-5 text-gray-400" />
+                    ผู้ปกครอง
+                  </CardTitle>
+                  {!editingParent && (
+                    <Button variant="ghost" size="icon" onClick={handleParentEdit}>
+                      <Edit className="h-4 w-4" />
                     </Button>
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
-                      onClick={() => setEditingParent(false)}
-                    >
-                      <XIcon className="h-4 w-4 mr-1" />
-                      ยกเลิก
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-gray-50 rounded-lg p-4 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600">ชื่อ-นามสกุล</span>
-                    <span className="font-medium">{booking.parentName}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600">เบอร์โทรศัพท์</span>
-                    <span className="font-medium">{booking.parentPhone}</span>
-                  </div>
-                  {booking.parentEmail && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600">อีเมล</span>
-                      <span className="font-medium">{booking.parentEmail}</span>
-                    </div>
                   )}
                 </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Students Info */}
-<Card>
-  <CardHeader className="pb-3">
-    <CardTitle className="text-base flex items-center gap-2">
-      <GraduationCap className="h-5 w-5 text-gray-400" />
-      นักเรียน ({booking.students.length} คน)
-    </CardTitle>
-  </CardHeader>
-  <CardContent>
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-      {booking.students.map((student, idx) => (
-        <div key={idx} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
-          {editingStudent === idx ? (
-            <div className="space-y-3">
-              <Input
-                placeholder="ชื่อ-นามสกุล"
-                value={tempStudentData.name}
-                onChange={(e) => setTempStudentData(prev => ({ ...prev, name: e.target.value }))}
-              />
-              <Input
-                placeholder="โรงเรียน"
-                value={tempStudentData.schoolName}
-                onChange={(e) => setTempStudentData(prev => ({ ...prev, schoolName: e.target.value }))}
-              />
-              <GradeLevelCombobox
-                value={tempStudentData.gradeLevel}
-                onChange={(value) => setTempStudentData(prev => ({ ...prev, gradeLevel: value }))}
-                placeholder="พิมพ์ระดับชั้น เช่น ป.4, Grade 3..."
-              />
-              <div className="flex gap-2">
-                <Button size="sm" onClick={handleStudentSave}>บันทึก</Button>
-                <Button size="sm" variant="outline" onClick={() => setEditingStudent(null)}>ยกเลิก</Button>
-              </div>
-            </div>
-          ) : (
-            <>
-              <div className="flex items-start justify-between mb-2">
-                <div className="flex-1">
-                  <h4 className="font-medium text-base">{student.name}</h4>
-                  <div className="space-y-1 mt-1">
-                    {student.schoolName && (
-                      <p className="text-sm text-gray-600 flex items-center gap-1">
-                        <School className="h-3 w-3" />
-                        {student.schoolName}
+              </CardHeader>
+              <CardContent>
+                {editingParent ? (
+                  <div className="space-y-3">
+                    <div>
+                      <Label className="text-xs">ชื่อ-นามสกุล</Label>
+                      <Input
+                        value={tempParentData.name}
+                        onChange={(e) => setTempParentData(prev => ({ ...prev, name: e.target.value }))}
+                        className="h-9"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">เบอร์โทรศัพท์</Label>
+                      <Input
+                        value={tempParentData.phone}
+                        onChange={(e) => setTempParentData(prev => ({ ...prev, phone: e.target.value }))}
+                        className="h-9"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button size="sm" onClick={handleParentSave} className="flex-1">
+                        <Save className="h-3 w-3 mr-1" />
+                        บันทึก
+                      </Button>
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        onClick={() => setEditingParent(false)}
+                        className="flex-1"
+                      >
+                        ยกเลิก
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-xs text-gray-500">ชื่อ-นามสกุล</p>
+                      <p className="font-medium">{booking.parentName}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">เบอร์โทรศัพท์</p>
+                      <p className="font-medium flex items-center gap-1">
+                        <Phone className="h-3 w-3 text-gray-400" />
+                        {booking.parentPhone}
                       </p>
-                    )}
-                    {student.gradeLevel && (
-                      <p className="text-sm text-gray-600 flex items-center gap-1">
-                        <GraduationCap className="h-3 w-3" />
-                        ระดับชั้น: {student.gradeLevel}
-                      </p>
+                    </div>
+                    {booking.parentEmail && (
+                      <div>
+                        <p className="text-xs text-gray-500">อีเมล</p>
+                        <p className="font-medium flex items-center gap-1">
+                          <Mail className="h-3 w-3 text-gray-400" />
+                          {booking.parentEmail}
+                        </p>
+                      </div>
                     )}
                   </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Students Info */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <GraduationCap className="h-5 w-5 text-gray-400" />
+                  นักเรียน ({booking.students.length} คน)
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {booking.students.map((student, idx) => (
+                    <div key={idx} className="border rounded-lg p-3 hover:shadow-md transition-shadow">
+                      {editingStudent === idx ? (
+                        <div className="space-y-2">
+                          <Input
+                            placeholder="ชื่อ-นามสกุล"
+                            value={tempStudentData.name}
+                            onChange={(e) => setTempStudentData(prev => ({ ...prev, name: e.target.value }))}
+                            className="h-8 text-sm"
+                          />
+                          <Input
+                            placeholder="โรงเรียน"
+                            value={tempStudentData.schoolName}
+                            onChange={(e) => setTempStudentData(prev => ({ ...prev, schoolName: e.target.value }))}
+                            className="h-8 text-sm"
+                          />
+                          <GradeLevelCombobox
+                            value={tempStudentData.gradeLevel}
+                            onChange={(value) => setTempStudentData(prev => ({ ...prev, gradeLevel: value }))}
+                            placeholder="ระดับชั้น..."
+                            className="h-8 text-sm"
+                          />
+                          <div className="flex gap-1">
+                            <Button size="sm" onClick={handleStudentSave} className="text-xs h-7">บันทึก</Button>
+                            <Button size="sm" variant="outline" onClick={() => setEditingStudent(null)} className="text-xs h-7">ยกเลิก</Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex items-start justify-between mb-2">
+                            <div className="flex-1">
+                              <h4 className="font-medium text-sm">{student.name}</h4>
+                              <div className="space-y-0.5 mt-1">
+                                {student.schoolName && (
+                                  <p className="text-xs text-gray-600 flex items-center gap-1">
+                                    <School className="h-3 w-3" />
+                                    {student.schoolName}
+                                  </p>
+                                )}
+                                {student.gradeLevel && (
+                                  <p className="text-xs text-gray-600">
+                                    ระดับชั้น: {student.gradeLevel}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              onClick={() => handleStudentEdit(idx)}
+                            >
+                              <Edit className="h-3 w-3" />
+                            </Button>
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-xs text-gray-500">วิชาที่สนใจ:</p>
+                            <div className="flex flex-wrap gap-1">
+                              {student.subjectInterests.map(subjectId => {
+                                const subject = subjects.find(s => s.id === subjectId);
+                                return subject ? (
+                                  <Badge 
+                                    key={subjectId} 
+                                    className="text-xs h-5 px-1.5"
+                                    style={{ 
+                                      backgroundColor: `${subject.color}20`,
+                                      color: subject.color,
+                                      borderColor: subject.color
+                                    }}
+                                  >
+                                    {subject.name}
+                                  </Badge>
+                                ) : null;
+                              })}
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ))}
                 </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleStudentEdit(idx)}
-                  >
-                    <Edit className="h-3 w-3" />
-                  </Button>
-                  <Badge variant="outline" className="text-xs">
-                    คนที่ {idx + 1}
-                  </Badge>
-                </div>
-              </div>
-              <div className="space-y-1">
-                <p className="text-xs text-gray-500">วิชาที่สนใจ:</p>
-                <div className="flex flex-wrap gap-1">
-                  {student.subjectInterests.map(subjectId => {
-                    const subject = subjects.find(s => s.id === subjectId);
-                    return subject ? (
-                      <Badge 
-                        key={subjectId} 
-                        className="text-xs"
-                        style={{ 
-                          backgroundColor: `${subject.color}20`,
-                          color: subject.color,
-                          borderColor: subject.color
-                        }}
-                      >
-                        {subject.name}
-                      </Badge>
-                    ) : null;
-                  })}
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      ))}
-    </div>
-  </CardContent>
-</Card>
+              </CardContent>
+            </Card>
+          </div>
 
           {/* Trial Sessions */}
           <Card>
@@ -519,7 +556,7 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
                     จัดการนัดหมายทดลองเรียนสำหรับแต่ละนักเรียน
                   </CardDescription>
                 </div>
-                {unscheduledStudents.length > 0 && (
+                {unscheduledStudents.length > 0 && booking.branchId && (
                   <Button
                     onClick={() => setSessionModalOpen(true)}
                     size="sm"
@@ -532,7 +569,14 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
               </div>
             </CardHeader>
             <CardContent>
-              {sessions.length === 0 ? (
+              {!booking.branchId ? (
+                <Alert className="bg-amber-50 border-amber-200">
+                  <AlertCircle className="h-4 w-4 text-amber-600" />
+                  <AlertDescription className="text-amber-800">
+                    กรุณาเลือกสาขาก่อนจึงจะสามารถนัดหมายทดลองเรียนได้
+                  </AlertDescription>
+                </Alert>
+              ) : sessions.length === 0 ? (
                 <div className="text-center py-8">
                   <Calendar className="h-12 w-12 text-gray-300 mx-auto mb-4" />
                   <p className="text-gray-500">ยังไม่มีการนัดหมายทดลองเรียน</p>
@@ -887,6 +931,72 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
 
         {/* Right Column - Actions & History */}
         <div className="space-y-6">
+          {/* Branch Info - ย้ายมาอยู่บนสุดทางขวา */}
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Building2 className="h-5 w-5 text-gray-400" />
+                  สาขา
+                </CardTitle>
+                {!editingBranch && (
+                  <Button variant="ghost" size="icon" onClick={handleBranchEdit}>
+                    <Edit className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent>
+              {editingBranch ? (
+                <div className="space-y-4">
+                  <Select value={tempBranchId} onValueChange={setTempBranchId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="เลือกสาขา" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {branches.map((branch) => (
+                        <SelectItem key={branch.id} value={branch.id}>
+                          {branch.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={handleBranchSave} disabled={!tempBranchId} className="flex-1">
+                      <Save className="h-4 w-4 mr-1" />
+                      บันทึก
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      onClick={() => setEditingBranch(false)}
+                      className="flex-1"
+                    >
+                      ยกเลิก
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  {booking.branchId ? (
+                    <div className="flex items-center gap-2">
+                      <MapPin className="h-4 w-4 text-gray-400" />
+                      <span className="font-medium">
+                        {branches.find(b => b.id === booking.branchId)?.name || booking.branchId}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="text-center py-2">
+                      <AlertCircle className="h-8 w-8 text-amber-500 mx-auto mb-2" />
+                      <p className="text-amber-600 font-medium text-sm">ยังไม่ได้เลือกสาขา</p>
+                      <p className="text-xs text-gray-600 mt-1">คลิกปุ่มแก้ไขเพื่อเลือกสาขา</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           {/* Quick Actions */}
           <Card>
             <CardHeader className="pb-3">
@@ -950,7 +1060,7 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
       </div>
 
       {/* Modals */}
-      {sessionModalOpen && (
+      {sessionModalOpen && booking.branchId && (
         <TrialSessionDialog
           isOpen={sessionModalOpen}
           onClose={() => {
