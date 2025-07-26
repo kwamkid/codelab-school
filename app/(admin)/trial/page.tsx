@@ -47,6 +47,7 @@ import {
   Clock,
   XCircle
 } from 'lucide-react';
+import { CancelBookingDialog } from '@/components/trial/cancel-booking-dialog';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { TrialBooking, Branch } from '@/types/models';
@@ -90,6 +91,8 @@ export default function TrialBookingsPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [bookingToDelete, setBookingToDelete] = useState<TrialBooking | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [bookingToCancel, setBookingToCancel] = useState<TrialBooking | null>(null);
 
   useEffect(() => {
     loadBookings();
@@ -211,20 +214,21 @@ export default function TrialBookingsPage() {
     }
   };
 
-  const handleCancelBooking = async (booking: TrialBooking) => {
-    const reason = window.prompt('กรุณาระบุเหตุผลในการยกเลิก:');
-    if (reason === null) return; // User clicked cancel
+  const handleCancelClick = (booking: TrialBooking) => {
+    setBookingToCancel(booking);
+    setCancelDialogOpen(true);
+  };
+
+  const handleCancelConfirm = async (reason: string) => {
+    if (!bookingToCancel) return;
     
-    try {
-      await cancelTrialBooking(booking.id, reason || 'ยกเลิกโดย Admin');
-      
-      toast.success('ยกเลิกการจองเรียบร้อย');
-      loadBookings();
-      loadStats();
-    } catch (error: any) {
-      console.error('Error cancelling booking:', error);
-      toast.error(error.message || 'ไม่สามารถยกเลิกการจองได้');
-    }
+    await cancelTrialBooking(bookingToCancel.id, reason);
+    
+    toast.success('ยกเลิกการจองเรียบร้อย');
+    loadBookings();
+    loadStats();
+    setCancelDialogOpen(false);
+    setBookingToCancel(null);
   };
 
   return (
@@ -428,11 +432,11 @@ export default function TrialBookingsPage() {
                               </Link>
                               
                               {/* แสดงปุ่มยกเลิกสำหรับสถานะ new, contacted, scheduled */}
-                              {(booking.status === 'new' || booking.status === 'contacted' || booking.status === 'scheduled') && (
+                             {(booking.status === 'new' || booking.status === 'contacted' || booking.status === 'scheduled') && (
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  onClick={() => handleCancelBooking(booking)}
+                                  onClick={() => handleCancelClick(booking)}
                                   className="text-red-600 hover:text-red-700"
                                 >
                                   <XCircle className="h-4 w-4" />
@@ -486,6 +490,16 @@ export default function TrialBookingsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+         {/* Cancel Booking Dialog */}
+      <CancelBookingDialog
+        isOpen={cancelDialogOpen}
+        onClose={() => {
+          setCancelDialogOpen(false);
+          setBookingToCancel(null);
+        }}
+        onConfirm={handleCancelConfirm}
+        bookingName={bookingToCancel?.parentName}
+      />
     </div>
   );
 }

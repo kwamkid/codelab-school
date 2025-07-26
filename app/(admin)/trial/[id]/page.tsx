@@ -71,6 +71,7 @@ import TrialSessionDialog from '@/components/trial/trial-session-dialog';
 import ContactHistorySection from '@/components/trial/contact-history-section';
 import ConvertToStudentDialog from '@/components/trial/convert-to-student-dialog';
 import RescheduleTrialDialog from '@/components/trial/reschedule-trial-dialog';
+import { CancelBookingDialog } from '@/components/trial/cancel-booking-dialog';
 import { GradeLevelCombobox } from '@/components/ui/grade-level-combobox';
 import {
   DropdownMenu,
@@ -126,9 +127,11 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
   const [tempBranchId, setTempBranchId] = useState<string>('');
   
   // Modal states
+  // Modal states
   const [sessionModalOpen, setSessionModalOpen] = useState(false);
   const [convertModalOpen, setConvertModalOpen] = useState(false);
   const [rescheduleModalOpen, setRescheduleModalOpen] = useState(false);
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [selectedSession, setSelectedSession] = useState<TrialSession | null>(null);
   const [selectedStudent, setSelectedStudent] = useState<string>('');
 
@@ -285,25 +288,16 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
     }
   };
 
-  const handleCancelBooking = async () => {
+  const handleCancelBooking = async (reason: string) => {
     if (!booking) return;
     
-    // ยืนยันการยกเลิก
-    const reason = window.prompt('กรุณาระบุเหตุผลในการยกเลิก:');
-    if (reason === null) return; // User clicked cancel
+    await cancelTrialBooking(booking.id, reason);
     
-    try {
-      await cancelTrialBooking(booking.id, reason || 'ยกเลิกโดย Admin');
-      
-      setBooking({ ...booking, status: 'cancelled' });
-      toast.success('ยกเลิกการจองเรียบร้อย');
-      
-      // Reload data to update sessions
-      loadData();
-    } catch (error: any) {
-      console.error('Error cancelling booking:', error);
-      toast.error(error.message || 'ไม่สามารถยกเลิกการจองได้');
-    }
+    setBooking({ ...booking, status: 'cancelled' });
+    toast.success('ยกเลิกการจองเรียบร้อย');
+    
+    // Reload data to update sessions
+    loadData();
   };
 
   const handleSessionCreated = () => {
@@ -1077,9 +1071,9 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
               {/* ปุ่มยกเลิกการจอง - แสดงเมื่อสถานะเป็น new, contacted, scheduled */}
               {(booking.status === 'new' || booking.status === 'contacted' || booking.status === 'scheduled') && (
                 <>
-                  <div className="pt-2 mt-2 border-t">
+                 <div className="pt-2 mt-2 border-t">
                     <Button
-                      onClick={handleCancelBooking}
+                      onClick={() => setCancelDialogOpen(true)}
                       variant="outline"
                       size="sm"
                       className="w-full text-red-600 hover:text-red-700 hover:bg-red-50"
@@ -1149,6 +1143,14 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
           onSuccess={handleRescheduleSuccess}
         />
       )}
+
+      {/* Cancel Booking Dialog */}
+      <CancelBookingDialog
+        isOpen={cancelDialogOpen}
+        onClose={() => setCancelDialogOpen(false)}
+        onConfirm={handleCancelBooking}
+        bookingName={booking?.parentName}
+      />
     </div>
   );
 }

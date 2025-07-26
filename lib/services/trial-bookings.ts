@@ -26,7 +26,6 @@ const SESSIONS_COLLECTION = 'trialSessions';
 // ==================== Trial Bookings ====================
 
 // Get all trial bookings
-// Get all trial bookings
 export async function getTrialBookings(branchId?: string | null): Promise<TrialBooking[]> {
   try {
     let bookingQuery;
@@ -57,7 +56,7 @@ export async function getTrialBookings(branchId?: string | null): Promise<TrialB
         parentPhone: data.parentPhone,
         parentEmail: data.parentEmail,
         students: data.students,
-        branchId: data.branchId, // เพิ่มบรรทัดนี้
+        branchId: data.branchId,
         status: data.status,
         contactNote: data.contactNote,
         bookedBy: data.bookedBy,
@@ -72,6 +71,7 @@ export async function getTrialBookings(branchId?: string | null): Promise<TrialB
     throw error;
   }
 }
+
 // Get trial bookings by status
 export async function getTrialBookingsByStatus(status: TrialBooking['status']): Promise<TrialBooking[]> {
   try {
@@ -232,6 +232,63 @@ export async function updateBookingStatus(
   }
 }
 
+// Cancel trial booking
+export async function cancelTrialBooking(
+  id: string,
+  reason?: string
+): Promise<void> {
+  try {
+    // Get booking first to check if it can be cancelled
+    const booking = await getTrialBooking(id);
+    if (!booking) {
+      throw new Error('Booking not found');
+    }
+    
+    // Check if booking can be cancelled
+    if (booking.status === 'cancelled') {
+      throw new Error('Booking is already cancelled');
+    }
+    
+    if (booking.status === 'converted') {
+      throw new Error('Cannot cancel converted booking');
+    }
+    
+    // Update booking status to cancelled
+    const updateData: any = {
+      status: 'cancelled',
+      updatedAt: serverTimestamp(),
+    };
+    
+    if (reason) {
+      updateData.notes = reason;
+    }
+    
+    const docRef = doc(db, BOOKINGS_COLLECTION, id);
+    await updateDoc(docRef, updateData);
+    
+    // Cancel all associated trial sessions
+    const sessions = await getTrialSessionsByBooking(id);
+    const batch = writeBatch(db);
+    
+    for (const session of sessions) {
+      if (session.status === 'scheduled') {
+        const sessionRef = doc(db, SESSIONS_COLLECTION, session.id);
+        batch.update(sessionRef, {
+          status: 'cancelled',
+          feedback: reason || 'ยกเลิกการจอง',
+          updatedAt: serverTimestamp()
+        });
+      }
+    }
+    
+    // Commit the batch
+    await batch.commit();
+  } catch (error) {
+    console.error('Error cancelling trial booking:', error);
+    throw error;
+  }
+}
+
 // ==================== Trial Sessions ====================
 
 // Get all trial sessions
@@ -255,7 +312,7 @@ export async function getTrialSessions(branchId?: string | null): Promise<TrialS
     const querySnapshot = await getDocs(sessionQuery);
     
     return querySnapshot.docs.map(doc => {
-      const data = doc.data() as any; // Type assertion to any
+      const data = doc.data() as any;
       
       // Convert rescheduleHistory dates if exists
       let rescheduleHistory = data.rescheduleHistory;
@@ -608,9 +665,6 @@ export async function checkTrialRoomAvailability(
   }
 }
 
-// lib/services/trial-bookings.ts
-// (แสดงเฉพาะส่วนที่ต้องแก้ไข - ค้นหาฟังก์ชัน convertTrialToEnrollment และแทนที่ด้วยโค้ดนี้)
-
 // Convert trial to enrollment with enhanced data
 export async function convertTrialToEnrollment(
   bookingId: string,
@@ -833,7 +887,7 @@ export async function getTrialBookingStats(branchId?: string | null): Promise<{
   bySource: Record<string, number>;
 }> {
   try {
-    const bookings = await getTrialBookings(branchId); // ส่ง branchId ไปด้วย
+    const bookings = await getTrialBookings(branchId);
     
     const stats = {
       total: bookings.length,
