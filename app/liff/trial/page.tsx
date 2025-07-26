@@ -361,19 +361,19 @@ export default function TrialBookingPage() {
     
     try {
       const bookingData = {
-        source: 'online',
+        source: 'online' as const,
         parentName: parentName.trim(),
         parentPhone: parentPhone.replace(/-/g, ''),
-        parentEmail: parentEmail.trim() || undefined,
-        branchId: selectedBranch,
+        branchId: selectedBranch, // ต้องมี branchId
         students: students.map(s => ({
           name: s.name.trim(),
-          schoolName: s.schoolName.trim() || undefined,
-          gradeLevel: s.gradeLevel || undefined,
-          subjectInterests: s.subjectInterests
+          subjectInterests: s.subjectInterests,
+          ...(s.schoolName.trim() && { schoolName: s.schoolName.trim() }),
+          ...(s.gradeLevel && { gradeLevel: s.gradeLevel })
         })),
-        contactNote: contactNote.trim() || undefined,
-        status: 'new'
+        status: 'new',
+        ...(parentEmail.trim() && { parentEmail: parentEmail.trim() }),
+        ...(contactNote.trim() && { contactNote: contactNote.trim() })
       }
       
       // ส่งข้อมูลไป API

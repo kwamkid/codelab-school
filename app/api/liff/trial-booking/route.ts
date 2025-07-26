@@ -103,6 +103,7 @@ export async function POST(request: NextRequest) {
       parentName: body.parentName.trim(),
       parentPhone: cleanPhone,
       parentEmail: body.parentEmail?.trim() || null,
+      branchId: body.branchId, // เพิ่ม branchId
       students: body.students.map(s => ({
         name: s.name.trim(),
         schoolName: s.schoolName?.trim() || null,
