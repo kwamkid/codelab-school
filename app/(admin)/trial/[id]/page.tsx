@@ -59,7 +59,8 @@ import {
   updateTrialSession,
   cancelTrialSession,
   updateTrialBooking,
-  updateBookingBranch
+  updateBookingBranch,
+  cancelTrialBooking
 } from '@/lib/services/trial-bookings';
 import { getSubjects } from '@/lib/services/subjects';
 import { getTeachers } from '@/lib/services/teachers';
@@ -281,6 +282,27 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
     } catch (error) {
       console.error('Error updating branch:', error);
       toast.error('ไม่สามารถบันทึกข้อมูลได้');
+    }
+  };
+
+  const handleCancelBooking = async () => {
+    if (!booking) return;
+    
+    // ยืนยันการยกเลิก
+    const reason = window.prompt('กรุณาระบุเหตุผลในการยกเลิก:');
+    if (reason === null) return; // User clicked cancel
+    
+    try {
+      await cancelTrialBooking(booking.id, reason || 'ยกเลิกโดย Admin');
+      
+      setBooking({ ...booking, status: 'cancelled' });
+      toast.success('ยกเลิกการจองเรียบร้อย');
+      
+      // Reload data to update sessions
+      loadData();
+    } catch (error: any) {
+      console.error('Error cancelling booking:', error);
+      toast.error(error.message || 'ไม่สามารถยกเลิกการจองได้');
     }
   };
 
@@ -1048,6 +1070,33 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
                   <CheckCircle className="h-4 w-4" />
                   <AlertDescription>
                     มีนักเรียนที่ทดลองเรียนแล้ว สามารถแปลงเป็นนักเรียนจริงได้
+                  </AlertDescription>
+                </Alert>
+              )}
+              
+              {/* ปุ่มยกเลิกการจอง - แสดงเมื่อสถานะเป็น new, contacted, scheduled */}
+              {(booking.status === 'new' || booking.status === 'contacted' || booking.status === 'scheduled') && (
+                <>
+                  <div className="pt-2 mt-2 border-t">
+                    <Button
+                      onClick={handleCancelBooking}
+                      variant="outline"
+                      size="sm"
+                      className="w-full text-red-600 hover:text-red-700 hover:bg-red-50"
+                    >
+                      <XCircle className="h-4 w-4 mr-2" />
+                      ยกเลิกการจอง
+                    </Button>
+                  </div>
+                </>
+              )}
+              
+              {/* แสดงข้อความถ้าถูกยกเลิกแล้ว */}
+              {booking.status === 'cancelled' && (
+                <Alert>
+                  <XCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    การจองนี้ถูกยกเลิกแล้ว
                   </AlertDescription>
                 </Alert>
               )}

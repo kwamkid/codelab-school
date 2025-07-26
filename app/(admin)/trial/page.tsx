@@ -44,12 +44,18 @@ import {
   Trash2,
   Eye,
   Building2,
-  Clock
+  Clock,
+  XCircle
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { TrialBooking, Branch } from '@/types/models';
-import { getTrialBookings, getTrialBookingStats, deleteTrialBooking } from '@/lib/services/trial-bookings';
+import { 
+  getTrialBookings, 
+  getTrialBookingStats, 
+  deleteTrialBooking, 
+  cancelTrialBooking 
+} from '@/lib/services/trial-bookings';
 import { getBranches } from '@/lib/services/branches';
 import { formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -202,6 +208,22 @@ export default function TrialBookingsPage() {
       setDeleting(false);
       setDeleteDialogOpen(false);
       setBookingToDelete(null);
+    }
+  };
+
+  const handleCancelBooking = async (booking: TrialBooking) => {
+    const reason = window.prompt('กรุณาระบุเหตุผลในการยกเลิก:');
+    if (reason === null) return; // User clicked cancel
+    
+    try {
+      await cancelTrialBooking(booking.id, reason || 'ยกเลิกโดย Admin');
+      
+      toast.success('ยกเลิกการจองเรียบร้อย');
+      loadBookings();
+      loadStats();
+    } catch (error: any) {
+      console.error('Error cancelling booking:', error);
+      toast.error(error.message || 'ไม่สามารถยกเลิกการจองได้');
     }
   };
 
@@ -404,12 +426,26 @@ export default function TrialBookingsPage() {
                                   <span className="ml-2 hidden sm:inline">ดูรายละเอียด</span>
                                 </Button>
                               </Link>
+                              
+                              {/* แสดงปุ่มยกเลิกสำหรับสถานะ new, contacted, scheduled */}
+                              {(booking.status === 'new' || booking.status === 'contacted' || booking.status === 'scheduled') && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleCancelBooking(booking)}
+                                  className="text-red-600 hover:text-red-700"
+                                >
+                                  <XCircle className="h-4 w-4" />
+                                </Button>
+                              )}
+                              
+                              {/* แสดงปุ่มลบสำหรับสถานะ new และ cancelled เท่านั้น */}
                               {(booking.status === 'new' || booking.status === 'cancelled') && (
                                 <Button
                                   variant="outline"
                                   size="sm"
                                   onClick={() => handleDeleteClick(booking)}
-                                  className="text-red-600 hover:text-red-700"
+                                  className="text-gray-600 hover:text-gray-700"
                                 >
                                   <Trash2 className="h-4 w-4" />
                                 </Button>

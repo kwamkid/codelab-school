@@ -203,6 +203,7 @@ export async function updateBookingBranch(
     throw error;
   }
 }
+
 // Update booking status
 export async function updateBookingStatus(
   id: string,
