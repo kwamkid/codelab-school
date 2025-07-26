@@ -19,6 +19,13 @@ import { Subject, TeachingMaterial } from '@/types/models';
 import { toast } from 'sonner';
 import { ActionButton } from '@/components/ui/action-button';
 import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export default function TeachingMaterialsPage() {
   const router = useRouter();
@@ -26,6 +33,7 @@ export default function TeachingMaterialsPage() {
   const [materialCounts, setMaterialCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
   useEffect(() => {
     loadData();
@@ -81,12 +89,20 @@ export default function TeachingMaterialsPage() {
     }
   };
 
+  // Get unique categories
+  const categories = ['all', ...new Set(subjects.map(s => s.category))];
+
   // Filter subjects
-  const filteredSubjects = subjects.filter(subject => 
-    subject.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    subject.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    subject.description.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredSubjects = subjects.filter(subject => {
+    const matchSearch = 
+      subject.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      subject.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      subject.description.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const matchCategory = selectedCategory === 'all' || subject.category === selectedCategory;
+    
+    return matchSearch && matchCategory;
+  });
 
   // Group subjects by category
   const subjectsByCategory = filteredSubjects.reduce((acc, subject) => {
@@ -117,61 +133,36 @@ export default function TeachingMaterialsPage() {
         </div>
       </div>
 
-      {/* Search */}
+      {/* Filters */}
       <Card>
-        <CardContent className="p-6">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-            <Input
-              placeholder="ค้นหาวิชา..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-            />
+        <CardContent className="p-4">
+          <div className="flex flex-col md:flex-row gap-3">
+            <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+              <SelectTrigger className="w-full md:w-[200px]">
+                <SelectValue placeholder="เลือกหมวดหมู่" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">ทุกหมวดหมู่</SelectItem>
+                {categories.filter(c => c !== 'all').map(category => (
+                  <SelectItem key={category} value={category}>
+                    {category}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+              <Input
+                placeholder="ค้นหาวิชา..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
+              />
+            </div>
           </div>
         </CardContent>
       </Card>
-
-      {/* Statistics */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">วิชาทั้งหมด</p>
-                <p className="text-2xl font-bold">{subjects.length}</p>
-              </div>
-              <BookOpen className="h-8 w-8 text-gray-400" />
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">สื่อการสอนทั้งหมด</p>
-                <p className="text-2xl font-bold">
-                  {Object.values(materialCounts).reduce((sum, count) => sum + count, 0)}
-                </p>
-              </div>
-              <Layers className="h-8 w-8 text-gray-400" />
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">หมวดหมู่</p>
-                <p className="text-2xl font-bold">{Object.keys(subjectsByCategory).length}</p>
-              </div>
-              <Clock className="h-8 w-8 text-gray-400" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
 
       {/* Subjects by Category */}
       {Object.keys(subjectsByCategory).length === 0 ? (
@@ -185,51 +176,63 @@ export default function TeachingMaterialsPage() {
         <div className="space-y-6">
           {Object.entries(subjectsByCategory).map(([category, categorySubjects]) => (
             <div key={category}>
-              <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-                <Badge className={getCategoryColor(category)}>{category}</Badge>
-                <span className="text-gray-600">({categorySubjects.length} วิชา)</span>
-              </h2>
+              <div className="flex items-center gap-3 mb-4">
+                <h2 className="text-xl font-semibold">หมวดหมู่</h2>
+                <Badge className={getCategoryColor(category)} variant="secondary">
+                  {category}
+                </Badge>
+                <span className="text-gray-500">({categorySubjects.length} วิชา)</span>
+              </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {categorySubjects.map((subject) => (
-                  <Card
-                    key={subject.id}
-                    className="hover:shadow-lg transition-shadow cursor-pointer"
-                    onClick={() => router.push(`/teaching-materials/${subject.id}`)}
-                  >
-                    <CardHeader className="pb-4">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <CardTitle className="text-lg">{subject.name}</CardTitle>
-                          <p className="text-sm text-gray-600 mt-1">{subject.code}</p>
+                {categorySubjects.map((subject) => {
+                  const materialCount = materialCounts[subject.id] || 0;
+                  
+                  return (
+                    <Card
+                      key={subject.id}
+                      className="hover:shadow-lg transition-all duration-200 cursor-pointer hover:scale-[1.02]"
+                      onClick={() => router.push(`/teaching-materials/${subject.id}`)}
+                    >
+                      <CardHeader className="pb-3">
+                        <div className="flex justify-between items-start gap-2">
+                          <div className="flex-1">
+                            <CardTitle className="text-lg">{subject.name}</CardTitle>
+                            <p className="text-sm text-gray-600 mt-1">{subject.code}</p>
+                          </div>
+                          <Badge className={getLevelBadgeColor(subject.level)} variant="secondary">
+                            {subject.level}
+                          </Badge>
                         </div>
-                        <Badge className={getLevelBadgeColor(subject.level)}>
-                          {subject.level}
-                        </Badge>
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-sm text-gray-600 line-clamp-2 mb-4">
-                        {subject.description}
-                      </p>
-                      
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4 text-sm text-gray-500">
-                          <span>อายุ {subject.ageRange.min}-{subject.ageRange.max} ปี</span>
-                          <span className="flex items-center gap-1">
-                            <Layers className="h-4 w-4" />
-                            {materialCounts[subject.id] || 0} บทเรียน
-                          </span>
+                      </CardHeader>
+                      <CardContent>
+                        {/* Material Count - Prominent Display */}
+                        <div className="bg-gray-50 rounded-lg p-3 mb-3">
+                          <div className="flex items-center justify-center gap-2">
+                            <Layers className="h-5 w-5 text-gray-600" />
+                            <span className="text-2xl font-bold text-gray-800">
+                              {materialCount}
+                            </span>
+                            <span className="text-gray-600 font-medium">
+                              บทเรียน
+                            </span>
+                          </div>
                         </div>
                         
-                        <Button variant="ghost" size="sm">
-                          จัดการ
-                          <ArrowRight className="h-4 w-4 ml-1" />
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-gray-500">
+                            อายุ {subject.ageRange.min}-{subject.ageRange.max} ปี
+                          </span>
+                          
+                          <Button variant="ghost" size="sm" className="text-blue-600 hover:text-blue-700">
+                            จัดการ
+                            <ArrowRight className="h-4 w-4 ml-1" />
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
               </div>
             </div>
           ))}

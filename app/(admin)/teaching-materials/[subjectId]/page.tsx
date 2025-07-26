@@ -36,14 +36,15 @@ import {
   MoreHorizontal,
   Edit,
   Trash2,
-  BookOpen,
-  Clock,
   Copy,
-  GripVertical,
   Eye,
   EyeOff,
   Play,
-  Loader2
+  Loader2,
+  ArrowUp,
+  ArrowDown,
+  Clock,
+  Hash
 } from 'lucide-react';
 import { getSubject } from '@/lib/services/subjects';
 import { 
@@ -56,7 +57,6 @@ import { Subject, TeachingMaterial } from '@/types/models';
 import { toast } from 'sonner';
 import { ActionButton } from '@/components/ui/action-button';
 import { useAuth } from '@/hooks/useAuth';
-import { ArrowUp, ArrowDown } from 'lucide-react';
 
 export default function SubjectMaterialsPage() {
   const params = useParams();
@@ -163,6 +163,32 @@ export default function SubjectMaterialsPage() {
     }
   };
 
+  const getCategoryColor = (category: string) => {
+    switch (category) {
+      case 'Coding':
+        return 'bg-blue-100 text-blue-700';
+      case 'Robotics':
+        return 'bg-green-100 text-green-700';
+      case 'AI':
+        return 'bg-purple-100 text-purple-700';
+      default:
+        return 'bg-gray-100 text-gray-700';
+    }
+  };
+
+  const getLevelColor = (level: string) => {
+    switch (level) {
+      case 'Beginner':
+        return 'bg-green-100 text-green-700';
+      case 'Intermediate':
+        return 'bg-blue-100 text-blue-700';
+      case 'Advanced':
+        return 'bg-purple-100 text-purple-700';
+      default:
+        return 'bg-gray-100 text-gray-700';
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -187,6 +213,7 @@ export default function SubjectMaterialsPage() {
 
   const activeMaterials = materials.filter(m => m.isActive);
   const inactiveMaterials = materials.filter(m => !m.isActive);
+  const totalDuration = materials.reduce((sum, m) => sum + m.duration, 0);
 
   return (
     <div className="space-y-6">
@@ -211,73 +238,44 @@ export default function SubjectMaterialsPage() {
         </ActionButton>
       </div>
 
-      {/* Subject Info */}
+      {/* Subject Info - Optimized */}
       <Card>
         <CardContent className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div>
-              <p className="text-sm text-gray-600">รหัสวิชา</p>
-              <p className="font-medium">{subject.code}</p>
+          <div className="flex flex-wrap items-center gap-6">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-600">รหัส:</span>
+              <span className="font-semibold">{subject.code}</span>
             </div>
-            <div>
-              <p className="text-sm text-gray-600">หมวดหมู่</p>
-              <Badge>{subject.category}</Badge>
+            
+            <Badge className={getCategoryColor(subject.category)}>
+              {subject.category}
+            </Badge>
+            
+            <Badge variant="outline" className={getLevelColor(subject.level)}>
+              {subject.level}
+            </Badge>
+            
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-600">อายุ:</span>
+              <span className="font-medium">{subject.ageRange.min}-{subject.ageRange.max} ปี</span>
             </div>
-            <div>
-              <p className="text-sm text-gray-600">ระดับ</p>
-              <Badge variant="outline">{subject.level}</Badge>
+            
+            <div className="flex items-center gap-2">
+              <Hash className="h-4 w-4 text-gray-500" />
+              <span className="font-medium">{materials.length} บทเรียน</span>
             </div>
-            <div>
-              <p className="text-sm text-gray-600">อายุ</p>
-              <p className="font-medium">{subject.ageRange.min}-{subject.ageRange.max} ปี</p>
+            
+            <div className="flex items-center gap-2">
+              <Clock className="h-4 w-4 text-gray-500" />
+              <span className="font-medium">{Math.floor(totalDuration / 60)} ชม. {totalDuration % 60} นาที</span>
             </div>
           </div>
+          
           {subject.description && (
-            <p className="text-gray-600 mt-4">{subject.description}</p>
+            <p className="text-gray-600 mt-4 pt-4 border-t">{subject.description}</p>
           )}
         </CardContent>
       </Card>
-
-      {/* Statistics */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">บทเรียนทั้งหมด</p>
-                <p className="text-2xl font-bold">{materials.length}</p>
-              </div>
-              <BookOpen className="h-8 w-8 text-gray-400" />
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">พร้อมใช้งาน</p>
-                <p className="text-2xl font-bold">{activeMaterials.length}</p>
-              </div>
-              <Eye className="h-8 w-8 text-green-500" />
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">เวลารวม</p>
-                <p className="text-2xl font-bold">
-                  {Math.floor(materials.reduce((sum, m) => sum + m.duration, 0) / 60)} ชม.
-                </p>
-              </div>
-              <Clock className="h-8 w-8 text-gray-400" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
 
       {/* Materials List */}
       {materials.length === 0 ? (
@@ -301,7 +299,10 @@ export default function SubjectMaterialsPage() {
           {activeMaterials.length > 0 && (
             <Card>
               <CardHeader>
-                <CardTitle>บทเรียนที่ใช้งาน</CardTitle>
+                <CardTitle className="flex items-center gap-2">
+                  <Eye className="h-5 w-5 text-green-500" />
+                  บทเรียนที่ใช้งาน ({activeMaterials.length})
+                </CardTitle>
               </CardHeader>
               <Table>
                 <TableHeader>
@@ -309,45 +310,52 @@ export default function SubjectMaterialsPage() {
                     <TableHead className="w-20">ครั้งที่</TableHead>
                     <TableHead>ชื่อบทเรียน</TableHead>
                     <TableHead>แท็ก</TableHead>
-                    <TableHead className="text-center">ระยะเวลา</TableHead>
-                    <TableHead className="text-center">การดำเนินการ</TableHead>
+                    <TableHead className="text-center w-40">จัดลำดับ</TableHead>
+                    <TableHead className="text-center w-24">การดำเนินการ</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {activeMaterials.map((material, index) => (
                     <TableRow key={material.id}>
-                      <TableCell className="font-medium">
-                        <Badge variant="outline">
-                          #{material.sessionNumber}
+                      <TableCell>
+                        <Badge 
+                          variant="default" 
+                          className="text-lg font-bold bg-blue-500 hover:bg-blue-600"
+                        >
+                          {material.sessionNumber}
                         </Badge>
                       </TableCell>
                       <TableCell>
                         <div>
-                          <p className="font-medium">{material.title}</p>
+                          <p className="font-semibold">{material.title}</p>
                           {material.description && (
-                            <p className="text-sm text-gray-600 line-clamp-1">
+                            <p className="text-sm text-gray-600 line-clamp-1 mt-1">
                               {material.description}
                             </p>
                           )}
                         </div>
                       </TableCell>
                       <TableCell>
-                        <div className="flex flex-wrap gap-1">
-                          {material.tags?.map(tag => (
-                            <Badge key={tag} variant="secondary" className="text-xs">
-                              {tag}
-                            </Badge>
-                          ))}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <span className="text-sm">{material.duration} นาที</span>
+                        {material.tags && material.tags.length > 0 && (
+                          <div className="flex flex-wrap gap-1">
+                            {material.tags.slice(0, 3).map(tag => (
+                              <Badge key={tag} variant="outline" className="text-xs">
+                                {tag}
+                              </Badge>
+                            ))}
+                            {material.tags.length > 3 && (
+                              <span className="text-xs text-gray-500">
+                                +{material.tags.length - 3}
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center justify-center gap-1">
                           <Button
                             variant="ghost"
-                            size="icon"
+                            size="sm"
                             onClick={() => handleMoveUp(index)}
                             disabled={index === 0 || reordering}
                             title="เลื่อนขึ้น"
@@ -357,14 +365,17 @@ export default function SubjectMaterialsPage() {
                           
                           <Button
                             variant="ghost"
-                            size="icon"
+                            size="sm"
                             onClick={() => handleMoveDown(index)}
                             disabled={index === activeMaterials.length - 1 || reordering}
                             title="เลื่อนลง"
                           >
                             <ArrowDown className="h-4 w-4" />
                           </Button>
-                          
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center justify-center gap-1">
                           <Button
                             variant="ghost"
                             size="sm"
@@ -372,6 +383,7 @@ export default function SubjectMaterialsPage() {
                               // Preview functionality
                               toast.info('กำลังพัฒนาฟีเจอร์ Preview');
                             }}
+                            title="ดูตัวอย่าง"
                           >
                             <Play className="h-4 w-4" />
                           </Button>
@@ -423,17 +435,17 @@ export default function SubjectMaterialsPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <EyeOff className="h-5 w-5" />
-                  บทเรียนที่ไม่ใช้งาน
+                  <EyeOff className="h-5 w-5 text-gray-400" />
+                  บทเรียนที่ไม่ใช้งาน ({inactiveMaterials.length})
                 </CardTitle>
               </CardHeader>
               <Table>
                 <TableBody>
                   {inactiveMaterials.map((material) => (
                     <TableRow key={material.id} className="opacity-60">
-                      <TableCell className="font-medium">
+                      <TableCell className="w-20">
                         <Badge variant="secondary">
-                          #{material.sessionNumber}
+                          {material.sessionNumber}
                         </Badge>
                       </TableCell>
                       <TableCell>{material.title}</TableCell>

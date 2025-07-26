@@ -64,20 +64,61 @@ export async function getTeachingMaterial(id: string): Promise<TeachingMaterial 
   }
 }
 
+// Check if session number already exists for a subject
+export async function checkSessionNumberExists(
+  subjectId: string, 
+  sessionNumber: number,
+  excludeId?: string
+): Promise<{ exists: boolean; existingTitle?: string }> {
+  try {
+    const q = query(
+      collection(db, COLLECTION_NAME),
+      where('subjectId', '==', subjectId),
+      where('sessionNumber', '==', sessionNumber)
+    );
+    
+    const querySnapshot = await getDocs(q);
+    
+    // If we're updating, exclude the current material from the check
+    if (excludeId) {
+      const conflictingDoc = querySnapshot.docs.find(doc => doc.id !== excludeId);
+      if (conflictingDoc) {
+        return { 
+          exists: true, 
+          existingTitle: conflictingDoc.data().title 
+        };
+      }
+      return { exists: false };
+    }
+    
+    if (!querySnapshot.empty) {
+      return { 
+        exists: true, 
+        existingTitle: querySnapshot.docs[0].data().title 
+      };
+    }
+    
+    return { exists: false };
+  } catch (error) {
+    console.error('Error checking session number:', error);
+    throw error;
+  }
+}
+
 // Create teaching material
 export async function createTeachingMaterial(
   data: Omit<TeachingMaterial, 'id' | 'embedUrl' | 'createdAt' | 'updatedAt'>,
   createdBy: string
 ): Promise<string> {
   try {
+    // Check if session number already exists
+    const checkResult = await checkSessionNumberExists(data.subjectId, data.sessionNumber);
+    if (checkResult.exists) {
+      throw new Error(`ครั้งที่ ${data.sessionNumber} มีอยู่แล้ว (${checkResult.existingTitle}) กรุณาเลือกครั้งที่อื่น`);
+    }
+    
     // Auto-generate embed URL
     const embedUrl = convertCanvaToEmbedUrl(data.canvaUrl);
-    
-    // Get next session number if not provided
-    if (!data.sessionNumber) {
-      const materials = await getTeachingMaterials(data.subjectId);
-      data.sessionNumber = materials.length + 1;
-    }
     
     const docRef = await addDoc(collection(db, COLLECTION_NAME), {
       ...data,
@@ -107,6 +148,18 @@ export async function updateTeachingMaterial(
     delete updateData.id;
     delete updateData.createdAt;
     delete updateData.createdBy;
+    
+    // If session number is being updated, check for duplicates
+    if (updateData.sessionNumber !== undefined && updateData.subjectId) {
+      const checkResult = await checkSessionNumberExists(
+        updateData.subjectId, 
+        updateData.sessionNumber,
+        id // exclude current material
+      );
+      if (checkResult.exists) {
+        throw new Error(`ครั้งที่ ${updateData.sessionNumber} มีอยู่แล้ว (${checkResult.existingTitle}) กรุณาเลือกครั้งที่อื่น`);
+      }
+    }
     
     // If Canva URL is updated, regenerate embed URL
     if (updateData.canvaUrl) {
@@ -168,9 +221,15 @@ export async function duplicateTeachingMaterial(
       throw new Error('Material not found');
     }
     
-    // Get all materials to determine new session number
+    // Get all materials to find available session number
     const materials = await getTeachingMaterials(original.subjectId);
-    const newSessionNumber = Math.max(...materials.map(m => m.sessionNumber)) + 1;
+    const existingNumbers = materials.map(m => m.sessionNumber);
+    
+    // Find the next available session number
+    let newSessionNumber = 1;
+    while (existingNumbers.includes(newSessionNumber)) {
+      newSessionNumber++;
+    }
     
     // Create copy
     const newData = {
@@ -198,5 +257,19 @@ export async function getActiveTeachingMaterials(subjectId: string): Promise<Tea
   } catch (error) {
     console.error('Error getting active materials:', error);
     return [];
+  }
+}
+
+// Get next available session number
+export async function getNextSessionNumber(subjectId: string): Promise<number> {
+  try {
+    const materials = await getTeachingMaterials(subjectId);
+    if (materials.length === 0) return 1;
+    
+    const maxNumber = Math.max(...materials.map(m => m.sessionNumber));
+    return maxNumber + 1;
+  } catch (error) {
+    console.error('Error getting next session number:', error);
+    return 1;
   }
 }

@@ -27,6 +27,15 @@ export function BranchSelector() {
   // Check if current page requires specific branch selection
   const requiresSpecificBranch = pathname.includes('/reports/availability');
   
+  // Pages that should not show branch selector (global data)
+  const globalDataPages = [
+    '/teaching-materials',
+    '/teaching/slides',
+    '/subjects',
+    '/users'
+  ];
+  const isGlobalDataPage = globalDataPages.some(page => pathname.startsWith(page));
+  
   useEffect(() => {
     loadBranches();
   }, [adminUser]);
@@ -78,6 +87,16 @@ export function BranchSelector() {
       setLoading(false);
     }
   };
+
+  // Don't show selector on global data pages
+  if (isGlobalDataPage) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-gray-600">
+        <Building2 className="h-4 w-4" />
+        <span className="font-medium">ข้อมูลส่วนกลาง</span>
+      </div>
+    );
+  }
 
   // Don't show selector if user has only one branch
   if (!isSuperAdmin() && adminUser?.branchIds && adminUser.branchIds.length === 1) {
