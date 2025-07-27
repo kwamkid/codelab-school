@@ -171,6 +171,8 @@ export interface ClassSchedule {
     studentId: string;
     status: 'present' | 'absent' | 'late';
     note?: string;
+    checkedAt?: Date;      // เพิ่ม: เวลาที่เช็ค
+    checkedBy?: string;    // เพิ่ม: ใครเช็ค
   }[];
   originalDate?: Date;
   rescheduledAt?: Date;

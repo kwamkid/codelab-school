@@ -320,7 +320,7 @@ export async function getClassSchedule(
   }
 }
 
-// Update class schedule with time validation
+// Update class schedule - FIXED VERSION with better attendance handling
 export async function updateClassSchedule(
   classId: string,
   scheduleId: string,
@@ -335,51 +335,54 @@ export async function updateClassSchedule(
       throw new Error('Schedule not found');
     }
     
-    const currentSchedule = scheduleDoc.data();
-    const sessionDate = currentSchedule.sessionDate.toDate();
-    
-    // Get class info for time
-    const classDoc = await getDoc(doc(db, COLLECTION_NAME, classId));
-    if (!classDoc.exists()) {
-      throw new Error('Class not found');
-    }
-    
-    const classData = classDoc.data();
-    const [endHour, endMinute] = classData.endTime.split(':').map(Number);
-    
-    // Create end time for this session
-    const sessionEndTime = new Date(sessionDate);
-    sessionEndTime.setHours(endHour, endMinute, 0, 0);
-    
-    const now = new Date();
+    const currentData = scheduleDoc.data();
     
     // Prepare update data
     const updateData: any = { ...data };
     
-    // Check if trying to mark as completed but session hasn't ended yet
-    if (data.status === 'completed' && sessionEndTime > now) {
-      // Don't set to completed if session hasn't ended
-      // Unless there's attendance data
-      if (!data.attendance || data.attendance.length === 0) {
-        delete updateData.status;
+    // Handle attendance updates
+    if (data.attendance !== undefined) {
+      // Add metadata to each attendance record
+      updateData.attendance = data.attendance.map((att: any) => ({
+        studentId: att.studentId,
+        status: att.status,
+        note: att.note || '',
+        checkedAt: att.checkedAt || new Date(),
+        checkedBy: att.checkedBy || 'system'
+      }));
+      
+      // Set status based on attendance
+      if (data.attendance.length > 0) {
+        updateData.status = 'completed';
+      } else {
+        updateData.status = 'scheduled';
+      }
+      
+      // Log for debugging
+      console.log(`Updating attendance for schedule ${scheduleId}:`, {
+        studentCount: data.attendance.length,
+        status: updateData.status
+      });
+    } else {
+      // If not updating attendance, preserve existing attendance
+      if (currentData.attendance && currentData.attendance.length > 0) {
+        // Preserve existing attendance
+        updateData.attendance = currentData.attendance;
+        
+        // Keep completed status if attendance exists
+        if (!data.hasOwnProperty('status')) {
+          updateData.status = 'completed';
+        }
       }
     }
     
-    // If clearing all attendance (all students unmarked), don't mark as completed
-    if (data.attendance && data.attendance.length === 0 && sessionEndTime > now) {
-      updateData.status = 'scheduled';
-    }
+    // Always add update timestamp
+    updateData.lastUpdated = serverTimestamp();
     
-    // Convert attendance array properly if exists
-    if (updateData.attendance) {
-      updateData.attendance = updateData.attendance.map((att: any) => ({
-        studentId: att.studentId,
-        status: att.status,
-        note: att.note || ''
-      }));
-    }
-    
+    // Update the document
     await updateDoc(scheduleRef, updateData);
+    
+    console.log('Successfully updated schedule:', scheduleId);
   } catch (error) {
     console.error('Error updating class schedule:', error);
     throw error;
@@ -795,6 +798,134 @@ export async function getClassWithSchedules(classId: string): Promise<(Class & {
   } catch (error) {
     console.error('Error getting class with schedules:', error);
     return null;
+  }
+}
+
+// Get attendance for a specific student across all classes
+export async function getStudentAttendanceHistory(
+  studentId: string,
+  startDate?: Date,
+  endDate?: Date
+): Promise<Array<{
+  classId: string;
+  scheduleId: string;
+  sessionDate: Date;
+  sessionNumber: number;
+  status: 'present' | 'absent' | 'late';
+  note?: string;
+  checkedAt?: Date;
+  checkedBy?: string;
+}>> {
+  try {
+    // Get all enrollments for this student
+    const { getEnrollmentsByStudent } = await import('./enrollments');
+    const enrollments = await getEnrollmentsByStudent(studentId);
+    
+    const attendanceHistory: any[] = [];
+    
+    // For each enrolled class
+    for (const enrollment of enrollments) {
+      const schedules = await getClassSchedules(enrollment.classId);
+      
+      // Filter by date range if provided
+      const filteredSchedules = schedules.filter(schedule => {
+        if (startDate && schedule.sessionDate < startDate) return false;
+        if (endDate && schedule.sessionDate > endDate) return false;
+        return true;
+      });
+      
+      // Extract attendance for this student
+      filteredSchedules.forEach(schedule => {
+        if (schedule.attendance) {
+          const studentAttendance = schedule.attendance.find(
+            att => att.studentId === studentId
+          );
+          
+          if (studentAttendance) {
+            attendanceHistory.push({
+              classId: enrollment.classId,
+              scheduleId: schedule.id,
+              sessionDate: schedule.sessionDate,
+              sessionNumber: schedule.sessionNumber,
+              status: studentAttendance.status,
+              note: studentAttendance.note,
+              checkedAt: (studentAttendance as any).checkedAt,
+              checkedBy: (studentAttendance as any).checkedBy
+            });
+          }
+        }
+      });
+    }
+    
+    // Sort by date
+    return attendanceHistory.sort((a, b) => 
+      b.sessionDate.getTime() - a.sessionDate.getTime()
+    );
+  } catch (error) {
+    console.error('Error getting student attendance history:', error);
+    return [];
+  }
+}
+
+// Get attendance summary for a class
+export async function getClassAttendanceSummary(classId: string): Promise<{
+  totalSessions: number;
+  completedSessions: number;
+  studentStats: Map<string, {
+    present: number;
+    absent: number;
+    late: number;
+    attendanceRate: number;
+  }>;
+}> {
+  try {
+    const schedules = await getClassSchedules(classId);
+    const studentStats = new Map();
+    
+    let completedSessions = 0;
+    
+    schedules.forEach(schedule => {
+      if (schedule.attendance && schedule.attendance.length > 0) {
+        completedSessions++;
+        
+        schedule.attendance.forEach(att => {
+          if (!studentStats.has(att.studentId)) {
+            studentStats.set(att.studentId, {
+              present: 0,
+              absent: 0,
+              late: 0,
+              attendanceRate: 0
+            });
+          }
+          
+          const stats = studentStats.get(att.studentId)!;
+          if (att.status === 'present') stats.present++;
+          else if (att.status === 'absent') stats.absent++;
+          else if (att.status === 'late') stats.late++;
+        });
+      }
+    });
+    
+    // Calculate attendance rate for each student
+    studentStats.forEach((stats, studentId) => {
+      const total = stats.present + stats.absent + stats.late;
+      if (total > 0) {
+        stats.attendanceRate = ((stats.present + stats.late) / total) * 100;
+      }
+    });
+    
+    return {
+      totalSessions: schedules.length,
+      completedSessions,
+      studentStats
+    };
+  } catch (error) {
+    console.error('Error getting class attendance summary:', error);
+    return {
+      totalSessions: 0,
+      completedSessions: 0,
+      studentStats: new Map()
+    };
   }
 }
 

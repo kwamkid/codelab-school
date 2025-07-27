@@ -28,18 +28,12 @@ import {
   RotateCcw,
   Trash2
 } from 'lucide-react';
-import { getEnrollmentsByClass } from '@/lib/services/enrollments';
-import { Student } from '@/types/models';
-import { getStudentsByParent } from '@/lib/services/parents';
-import { updateClassSchedule } from '@/lib/services/classes';
-import { toast } from 'sonner';
-import { Label } from '@/components/ui/label';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import MakeupClassDialog from '@/components/classes/makeup-class-dialog';
 import { getMakeupClass, recordMakeupAttendance, updateMakeupAttendance } from '@/lib/services/makeup';
 import { getTrialSession, updateTrialSession } from '@/lib/services/trial-bookings';
 import { useRouter } from 'next/navigation';
 import { auth } from '@/lib/firebase/client';
+import { toast } from 'sonner';
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -69,17 +63,6 @@ interface ClassDetailDialogProps {
   onAttendanceSaved?: () => void;
 }
 
-interface StudentWithAttendance extends Student {
-  parentName: string;
-  parentPhone: string;
-  lineDisplayName?: string;
-  enrollmentId: string;
-  attendance?: {
-    status: 'present' | 'absent' | 'late';
-    note?: string;
-  };
-}
-
 export default function ClassDetailDialog({ 
   open, 
   onOpenChange, 
@@ -88,19 +71,10 @@ export default function ClassDetailDialog({
   onAttendanceSaved
 }: ClassDetailDialogProps) {
   const router = useRouter();
-  const [students, setStudents] = useState<StudentWithAttendance[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [attendanceRecords, setAttendanceRecords] = useState<Map<string, string>>(new Map());
-  const [selectedStudent, setSelectedStudent] = useState<StudentWithAttendance | null>(null);
-  const [showMakeupDialog, setShowMakeupDialog] = useState(false);
   const [makeupInfo, setMakeupInfo] = useState<any>(null);
   const [trialInfo, setTrialInfo] = useState<any>(null);
   const [loadingMakeup, setLoadingMakeup] = useState(false);
-  const [actualTeacherId, setActualTeacherId] = useState<string>('');
-  const [originalTeacherId, setOriginalTeacherId] = useState<string>('');
-  const [teachers, setTeachers] = useState<any[]>([]);
-  const [loadingTeachers, setLoadingTeachers] = useState(false);
+  const [saving, setSaving] = useState(false);
   
   // For Makeup attendance
   const [makeupAttendance, setMakeupAttendance] = useState<'present' | 'absent' | ''>('');
@@ -115,7 +89,6 @@ export default function ClassDetailDialog({
   // For convert dialog
   const [trialBooking, setTrialBooking] = useState<any>(null);
   const [showConvertConfirm, setShowConvertConfirm] = useState(false);
-
   const [trialSubjectName, setTrialSubjectName] = useState<string>('');
 
   // For reset confirmation
@@ -129,40 +102,9 @@ export default function ClassDetailDialog({
         loadMakeupInfo();
       } else if (event.extendedProps.type === 'trial') {
         loadTrialInfo();
-      } else {
-        loadStudents();
-        loadTeachers();
       }
     }
   }, [open, event]);
-
-  const loadTeachers = async () => {
-    if (!event) return;
-    
-    setLoadingTeachers(true);
-    try {
-      const teachersModule = await import('@/lib/services/teachers');
-      const allTeachers = await teachersModule.getActiveTeachers();
-      setTeachers(allTeachers);
-      
-      // Set default teacher from class
-      const scheduleDoc = await import('@/lib/services/classes')
-        .then(m => m.getClassSchedule(event.classId, scheduleId));
-      
-      if (scheduleDoc?.actualTeacherId) {
-        setActualTeacherId(scheduleDoc.actualTeacherId);
-      } else {
-        const classModule = await import('@/lib/services/classes');
-        const classData = await classModule.getClass(event.classId);
-        setActualTeacherId(classData?.teacherId || '');
-        setOriginalTeacherId(classData?.teacherId || '');
-      }
-    } catch (error) {
-      console.error('Error loading teachers:', error);
-    } finally {
-      setLoadingTeachers(false);
-    }
-  };
 
   const loadMakeupInfo = async () => {
     if (!event) return;
@@ -247,160 +189,6 @@ export default function ClassDetailDialog({
     }
   };
 
-  const loadStudents = async () => {
-    if (!event || event.extendedProps.type !== 'class') return;
-    
-    setLoading(true);
-    try {
-      const enrollments = await getEnrollmentsByClass(event.classId);
-      
-      const studentPromises = enrollments
-        .filter(e => e.status === 'active')
-        .map(async (enrollment) => {
-          const parent = await import('@/lib/services/parents').then(m => m.getParent(enrollment.parentId));
-          const students = await getStudentsByParent(enrollment.parentId);
-          const student = students.find(s => s.id === enrollment.studentId);
-          
-          if (student && parent) {
-            const scheduleDoc = await import('@/lib/services/classes')
-              .then(m => m.getClassSchedule(event.classId, scheduleId));
-            
-            const attendanceRecord = scheduleDoc?.attendance?.find(
-              a => a.studentId === student.id
-            );
-            
-            return {
-              ...student,
-              parentName: parent.displayName,
-              parentPhone: parent.phone,
-              enrollmentId: enrollment.id,
-              attendance: attendanceRecord
-            } as StudentWithAttendance;
-          }
-          return null;
-        });
-      
-      const studentsData = (await Promise.all(studentPromises)).filter(Boolean) as StudentWithAttendance[];
-      setStudents(studentsData);
-      
-      const initialAttendance = new Map<string, string>();
-      studentsData.forEach(student => {
-        if (student.attendance) {
-          initialAttendance.set(student.id, student.attendance.status);
-        }
-      });
-      setAttendanceRecords(initialAttendance);
-    } catch (error) {
-      console.error('Error loading students:', error);
-      toast.error('ไม่สามารถโหลดข้อมูลนักเรียนได้');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleAttendanceChange = async (studentId: string, status: string) => {
-    const newRecords = new Map(attendanceRecords);
-    
-    if (status === 'none') {
-      newRecords.delete(studentId);
-    } else {
-      newRecords.set(studentId, status);
-    }
-    setAttendanceRecords(newRecords);
-  };
-
-  const handleSaveAttendance = async () => {
-    if (!event || event.extendedProps.type !== 'class') return;
-    
-    setSaving(true);
-    try {
-      const attendanceArray = Array.from(attendanceRecords.entries()).map(([studentId, status]) => ({
-        studentId,
-        status: status as 'present' | 'absent' | 'late',
-        note: ''
-      }));
-      
-      const updateData: any = {
-        attendance: attendanceArray,
-        status: attendanceArray.length > 0 ? 'completed' : 'scheduled'
-      };
-      
-      if (actualTeacherId) {
-        updateData.actualTeacherId = actualTeacherId;
-      }
-      
-      await updateClassSchedule(event.classId, scheduleId, updateData);
-      
-      // Auto-manage makeup classes after saving
-      const currentUser = auth.currentUser;
-      if (currentUser) {
-        const { getMakeupByOriginalSchedule, deleteMakeupForSchedule, createMakeupRequest } = 
-          await import('@/lib/services/makeup');
-        
-        // Get previous attendance data
-        const scheduleDoc = await import('@/lib/services/classes')
-          .then(m => m.getClassSchedule(event.classId, scheduleId));
-        
-        const previousAttendance = new Map<string, string>();
-        if (scheduleDoc?.attendance) {
-          scheduleDoc.attendance.forEach(att => {
-            previousAttendance.set(att.studentId, att.status);
-          });
-        }
-        
-        // Process each student's attendance
-        for (const student of students) {
-          const previousStatus = previousAttendance.get(student.id);
-          const currentStatus = attendanceRecords.get(student.id);
-          
-          const existingMakeup = await getMakeupByOriginalSchedule(
-            student.id,
-            event.classId,
-            scheduleId
-          );
-          
-          // If changed from absent to present/late, delete makeup
-          if (previousStatus === 'absent' && 
-              (currentStatus === 'present' || currentStatus === 'late')) {
-            if (existingMakeup) {
-              await deleteMakeupForSchedule(
-                student.id,
-                event.classId,
-                scheduleId,
-                currentUser.uid,
-                'นักเรียนมาเรียนตามปกติ'
-              );
-            }
-          }
-          
-          // If marked as absent, create makeup request
-          if (currentStatus === 'absent' && !existingMakeup) {
-            await createMakeupRequest({
-              type: 'ad-hoc',
-              originalClassId: event.classId,
-              originalScheduleId: scheduleId,
-              studentId: student.id,
-              parentId: student.parentId,
-              requestDate: new Date(),
-              requestedBy: currentUser.uid,
-              reason: 'ขาดเรียน (บันทึกโดยระบบ)',
-              status: 'pending'
-            });
-          }
-        }
-      }
-      
-      toast.success('บันทึกการเช็คชื่อเรียบร้อยแล้ว');
-      onAttendanceSaved?.();
-      onOpenChange(false);
-    } catch (error) {
-      console.error('Error saving attendance:', error);
-      toast.error('ไม่สามารถบันทึกการเช็คชื่อได้');
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const handleSaveMakeupAttendance = async () => {
     if (!makeupInfo || !makeupAttendance) return;
     
@@ -472,10 +260,6 @@ export default function ClassDetailDialog({
     }
   };
 
-  const handleMakeupCreated = async () => {
-    // Do nothing - no need to save attendance here
-  };
-
   const handleViewMakeupDetail = () => {
     if (makeupInfo) {
       router.push(`/makeup/${makeupInfo.id}`);
@@ -517,30 +301,7 @@ export default function ClassDetailDialog({
       const currentUser = auth.currentUser;
       if (!currentUser) throw new Error('User not authenticated');
       
-      if (event.extendedProps.type === 'class') {
-        // Get all makeup classes created for this schedule
-        const { getMakeupClassesByClass, deleteMakeupClass } = await import('@/lib/services/makeup');
-        const makeupClasses = await getMakeupClassesByClass(event.classId);
-        
-        // Delete makeup classes that were created for this schedule
-        for (const makeup of makeupClasses) {
-          if (makeup.originalScheduleId === scheduleId && makeup.status === 'pending') {
-            await deleteMakeupClass(makeup.id, currentUser.uid, 'ล้างข้อมูลการเช็คชื่อ');
-          }
-        }
-        
-        // Reset regular class attendance
-        await updateClassSchedule(event.classId, scheduleId, {
-          attendance: [],
-          status: 'scheduled',
-          actualTeacherId: null
-        });
-        
-        // Clear local state
-        setAttendanceRecords(new Map());
-        await loadStudents(); // Reload students
-        
-      } else if (event.extendedProps.type === 'makeup' && makeupInfo) {
+      if (event.extendedProps.type === 'makeup' && makeupInfo) {
         // Reset makeup attendance
         const { revertMakeupToScheduled } = await import('@/lib/services/makeup');
         await revertMakeupToScheduled(
@@ -585,9 +346,7 @@ export default function ClassDetailDialog({
 
   // Check if can show reset button
   const canShowResetButton = () => {
-    if (event?.extendedProps.type === 'class') {
-      return attendanceRecords.size > 0;
-    } else if (event?.extendedProps.type === 'makeup') {
+    if (event?.extendedProps.type === 'makeup') {
       return makeupInfo?.status === 'completed' || makeupInfo?.attendance;
     } else if (event?.extendedProps.type === 'trial') {
       return trialInfo?.status === 'attended' || trialInfo?.status === 'absent';
@@ -599,6 +358,7 @@ export default function ClassDetailDialog({
 
   const isMakeup = event.extendedProps.type === 'makeup';
   const isTrial = event.extendedProps.type === 'trial';
+  const isRegularClass = event.extendedProps.type === 'class';
   const eventDate = event.start as Date;
   const eventEndDate = event.end as Date | null;
 
@@ -608,7 +368,6 @@ export default function ClassDetailDialog({
     const isPast = eventEndDate ? eventEndDate < now : false;
     
     if (isMakeup) {
-      // ถ้าเป็น Makeup ที่ผ่านมาแล้ว
       if (isPast || event.extendedProps.makeupStatus === 'completed') {
         return (
           <Badge className="bg-green-100 text-green-700">
@@ -624,7 +383,6 @@ export default function ClassDetailDialog({
         </Badge>
       );
     } else if (isTrial) {
-      // ถ้าเป็น Trial ที่ผ่านมาแล้ว
       if (isPast) {
         return (
           <Badge className="bg-green-100 text-green-700">
@@ -639,28 +397,36 @@ export default function ClassDetailDialog({
           ทดลองเรียน
         </Badge>
       );
-    } else if (isPast || event.extendedProps.status === 'completed') {
-      // คลาสปกติที่ผ่านมาแล้ว หรือมีสถานะ completed
-      return (
-        <Badge className="bg-green-100 text-green-700">
-          <CheckCircle className="h-3 w-3 mr-1" />
-          เรียนเสร็จแล้ว
-        </Badge>
-      );
-    } else if (event.extendedProps.status === 'rescheduled') {
-      return (
-        <Badge className="bg-amber-100 text-amber-700">
-          <AlertCircle className="h-3 w-3 mr-1" />
-          เลื่อนเวลา
-        </Badge>
-      );
-    } else {
-      return (
-        <Badge className="bg-gray-100 text-gray-700">
-          <Calendar className="h-3 w-3 mr-1" />
-          ตามตาราง
-        </Badge>
-      );
+    } else if (isRegularClass) {
+      // For regular class, check if past end time
+      if (isPast) {
+        return (
+          <Badge className="bg-green-100 text-green-700">
+            <CheckCircle className="h-3 w-3 mr-1" />
+            สอนเสร็จแล้ว
+          </Badge>
+        );
+      } else {
+        const now = new Date();
+        const isToday = eventDate.toDateString() === now.toDateString();
+        const startTime = eventDate;
+        
+        if (isToday && now >= startTime && now <= eventEndDate!) {
+          return (
+            <Badge className="bg-blue-100 text-blue-700">
+              <Clock className="h-3 w-3 mr-1 animate-pulse" />
+              กำลังเรียน
+            </Badge>
+          );
+        } else {
+          return (
+            <Badge className="bg-gray-100 text-gray-700">
+              <Calendar className="h-3 w-3 mr-1" />
+              รอเรียน
+            </Badge>
+          );
+        }
+      }
     }
   };
 
@@ -669,10 +435,10 @@ export default function ClassDetailDialog({
     if (isMakeup) {
       return `${event.extendedProps.originalClassName} - Makeup`;
     } else if (isTrial) {
-      // Use loaded subject name or fallback to event props
       return trialSubjectName || event.extendedProps.trialSubjectName || 'ทดลองเรียน';
     } else {
-      return event.title.split(' - ')[0];
+      // For regular class, show full subject name from title
+      return event.title.split(' - ')[0]; // This should already be the full subject name
     }
   };
 
@@ -684,7 +450,6 @@ export default function ClassDetailDialog({
       const endTime = eventEndDate.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false });
       return `${startTime} - ${endTime}`;
     } else {
-      // Fallback for events without end time
       return startTime;
     }
   };
@@ -707,11 +472,14 @@ export default function ClassDetailDialog({
                   <DialogTitle className="text-xl">
                     {getEventTitle()}
                     {event.extendedProps.sessionNumber && !isMakeup && !isTrial && (
-                      <span className="ml-2">ครั้งที่ {event.extendedProps.sessionNumber}</span>
+                      <span className="ml-2 text-sm text-gray-500">(ครั้งที่ {event.extendedProps.sessionNumber})</span>
                     )}
                   </DialogTitle>
                 </div>
-                <p className="text-sm text-gray-500 mt-1">{event.title.split(' - ')[1] || ''}</p>
+                {/* Show class name instead of code */}
+                <p className="text-sm text-gray-500 mt-1">
+                  {isRegularClass ? event.extendedProps.className || '' : (event.title.split(' - ')[1] || '')}
+                </p>
                 <div className="flex items-center gap-2 mt-2 text-sm">
                   <Calendar className="h-4 w-4 text-gray-400" />
                   <span className="font-medium">{formatDate(eventDate, 'full')}</span>
@@ -1035,146 +803,60 @@ export default function ClassDetailDialog({
                 )}
               </>
             ) : (
-              /* For Regular Classes - Show tabs */
-              <Tabs defaultValue="details" className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="details">รายละเอียด</TabsTrigger>
-                  <TabsTrigger value="attendance" disabled={students.length === 0}>
-                    เช็คชื่อ ({students.length})
-                  </TabsTrigger>
-                </TabsList>
+              /* For Regular Classes - Show details only */
+              <div className="space-y-4">
+                {/* Location and Teacher Info */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-sm">
+                    <MapPin className="h-4 w-4 text-gray-400" />
+                    <span>
+                      สาขา <span className="font-medium">{event.extendedProps.branchName}</span>
+                      <span className="mx-2 text-gray-400">|</span>
+                      ห้องเรียน <span className="font-medium">{event.extendedProps.roomName}</span>
+                    </span>
+                  </div>
 
-                <TabsContent value="details" className="space-y-4 mt-4">
-                  {/* Location and Teacher Info */}
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2 text-sm">
-                      <MapPin className="h-4 w-4 text-gray-400" />
-                      <span>
-                        สาขา <span className="font-medium">{event.extendedProps.branchName}</span>
-                        <span className="mx-2 text-gray-400">|</span>
-                        ห้องเรียน <span className="font-medium">{event.extendedProps.roomName}</span>
-                      </span>
-                    </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <User className="h-4 w-4 text-gray-400" />
+                    <span>
+                      ครู <span className="font-medium">{event.extendedProps.teacherName}</span>
+                      {event.extendedProps.enrolled !== undefined && (
+                        <>
+                          <span className="mx-2 text-gray-400">|</span>
+                          นักเรียน <span className="font-medium">{event.extendedProps.enrolled}/{event.extendedProps.maxStudents}</span> คน
+                        </>
+                      )}
+                    </span>
+                  </div>
+                </div>
 
-                    <div className="flex items-center gap-2 text-sm">
-                      <User className="h-4 w-4 text-gray-400" />
-                      <span>
-                        ครู <span className="font-medium">{event.extendedProps.teacherName}</span>
-                        {event.extendedProps.enrolled !== undefined && (
-                          <>
-                            <span className="mx-2 text-gray-400">|</span>
-                            นักเรียน <span className="font-medium">{event.extendedProps.enrolled}/{event.extendedProps.maxStudents}</span> คน
-                          </>
-                        )}
+                {/* Status Info */}
+                {isPastEvent() && (
+                  <div className="p-4 bg-green-50 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle className="h-4 w-4 text-green-600" />
+                      <span className="text-green-900">
+                        คลาสนี้สอนเสร็จสิ้นแล้ว
                       </span>
                     </div>
                   </div>
-
-                  {/* Status Info */}
-                  {event.extendedProps.status === 'completed' && (
-                    <div className="p-4 bg-green-50 rounded-lg">
-                      <div className="flex items-center gap-2">
-                        <CheckCircle className="h-4 w-4 text-green-600" />
-                        <span className="text-green-900">
-                          คลาสนี้ได้ทำการเรียนการสอนเสร็จสิ้นแล้ว
-                        </span>
-                      </div>
+                )}
+                
+                {/* Class Info Card */}
+                <div className="p-4 bg-gray-50 rounded-lg space-y-2">
+                  <h4 className="font-medium text-gray-900">ข้อมูลคลาส</h4>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <span className="text-gray-500">ชื่อคลาส:</span>
+                      <span className="ml-2 font-medium">{event.extendedProps.className || '-'}</span>
                     </div>
-                  )}
-                </TabsContent>
-
-                <TabsContent value="attendance" className="mt-4">
-                  <div className="space-y-4">
-                    {/* Teacher Selection */}
-                    <div className="p-3 bg-gray-50 rounded-lg">
-                      <Label htmlFor="actual-teacher" className="text-sm font-medium">ครูผู้สอน</Label>
-                      <Select
-                        value={actualTeacherId}
-                        onValueChange={setActualTeacherId}
-                        disabled={loadingTeachers}
-                      >
-                        <SelectTrigger id="actual-teacher" className="mt-2">
-                          <SelectValue placeholder="เลือกครูผู้สอน" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {teachers.map((teacher) => (
-                            <SelectItem key={teacher.id} value={teacher.id}>
-                              {teacher.nickname || teacher.name}
-                              {teacher.id === originalTeacherId && ' (ครูประจำคลาส)'}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                    <div>
+                      <span className="text-gray-500">รหัสคลาส:</span>
+                      <span className="ml-2 font-medium text-xs">{event.extendedProps.classCode || '-'}</span>
                     </div>
-
-                    {/* Attendance Summary */}
-                    {students.length > 0 && (
-                      <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                        <span className="text-sm font-medium">
-                          สถานะการเช็คชื่อ
-                        </span>
-                        <span className="text-sm text-gray-600">
-                          เช็คแล้ว {attendanceRecords.size} จาก {students.length} คน
-                        </span>
-                      </div>
-                    )}
-
-                    {/* Student List */}
-                    {loading ? (
-                      <div className="text-center py-8 text-gray-500">
-                        กำลังโหลดข้อมูลนักเรียน...
-                      </div>
-                    ) : students.length === 0 ? (
-                      <div className="text-center py-8 text-gray-500">
-                        ยังไม่มีนักเรียนในคลาสนี้
-                      </div>
-                    ) : (
-                      <div className="space-y-2 max-h-96 overflow-y-auto">
-                        {students.map((student) => (
-                          <div 
-                            key={student.id} 
-                            className="p-3 border rounded-lg hover:bg-gray-50 transition-colors"
-                          >
-                            <div className="flex items-start justify-between">
-                              <div className="flex-1">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-medium">{student.nickname}</span>
-                                  <span className="text-sm text-gray-500">({student.name})</span>
-                                </div>
-                                <div className="text-sm text-gray-500 mt-1">
-                                  <span className="flex items-center gap-1">
-                                    <Phone className="h-3 w-3" />
-                                    {student.parentName} - {student.parentPhone}
-                                  </span>
-                                </div>
-                              </div>
-                              
-                              <div className="flex items-center gap-2">
-                                <Button
-                                  size="sm"
-                                  variant={attendanceRecords.get(student.id) === 'present' ? 'default' : 'outline'}
-                                  className={attendanceRecords.get(student.id) === 'present' ? 'bg-green-500 hover:bg-green-600' : ''}
-                                  onClick={() => handleAttendanceChange(student.id, 'present')}
-                                >
-                                  มาเรียน
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant={attendanceRecords.get(student.id) === 'absent' ? 'default' : 'outline'}
-                                  className={attendanceRecords.get(student.id) === 'absent' ? 'bg-red-500 hover:bg-red-600' : ''}
-                                  onClick={() => handleAttendanceChange(student.id, 'absent')}
-                                >
-                                  ขาดเรียน
-                                </Button>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
                   </div>
-                </TabsContent>
-              </Tabs>
+                </div>
+              </div>
             )}
           </div>
 
@@ -1234,41 +916,10 @@ export default function ClassDetailDialog({
                   {saving ? 'กำลังบันทึก...' : 'บันทึกการเข้าเรียน'}
                 </Button>
               )}
-              
-              {/* Save button for Regular Class */}
-              {!isMakeup && !isTrial && students.length > 0 && (
-                <Button 
-                  onClick={handleSaveAttendance}
-                  disabled={saving || attendanceRecords.size === 0}
-                  className="bg-red-500 hover:bg-red-600"
-                >
-                  {saving ? 'กำลังบันทึก...' : `บันทึกการเช็คชื่อ (${attendanceRecords.size})`}
-                </Button>
-              )}
             </div>
           </div>
         </DialogContent>
       </Dialog>
-
-      {/* Makeup Class Dialog */}
-      {selectedStudent && event && (
-        <MakeupClassDialog
-          open={showMakeupDialog}
-          onOpenChange={setShowMakeupDialog}
-          student={selectedStudent}
-          classInfo={{
-            id: event.classId,
-            name: event.title,
-            teacherId: actualTeacherId || '',
-            branchId: event.extendedProps.branchId,
-            roomId: event.extendedProps.roomName
-          }}
-          scheduleId={scheduleId}
-          sessionDate={eventDate}
-          sessionNumber={event.extendedProps.sessionNumber || 1}
-          onMakeupCreated={handleMakeupCreated}
-        />
-      )}
 
       {/* Reset Confirmation Dialog */}
       <AlertDialog open={showResetConfirm} onOpenChange={setShowResetConfirm}>
@@ -1281,9 +932,7 @@ export default function ClassDetailDialog({
               <div>
                 <AlertDialogTitle>ยืนยันการล้างข้อมูล</AlertDialogTitle>
                 <AlertDialogDescription className="mt-1">
-                  {event.extendedProps.type === 'class' 
-                    ? 'คุณต้องการล้างข้อมูลการเช็คชื่อทั้งหมดใช่หรือไม่?'
-                    : event.extendedProps.type === 'makeup'
+                  {event.extendedProps.type === 'makeup'
                     ? 'คุณต้องการล้างข้อมูลการเข้าเรียน Makeup Class ใช่หรือไม่?'
                     : 'คุณต้องการล้างข้อมูลการเข้าเรียนทดลองใช่หรือไม่?'
                   }
@@ -1296,9 +945,6 @@ export default function ClassDetailDialog({
             <ul className="list-disc list-inside space-y-1">
               <li>ข้อมูลที่บันทึกไว้จะถูกลบทั้งหมด</li>
               <li>สามารถบันทึกข้อมูลใหม่ได้หลังจากล้าง</li>
-              {event.extendedProps.type === 'class' && (
-                <li>Makeup request ที่สร้างไว้จะถูกลบด้วย</li>
-              )}
             </ul>
           </div>
           <AlertDialogFooter>

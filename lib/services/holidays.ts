@@ -123,6 +123,30 @@ export async function getHolidaysForBranch(
   }
 }
 
+export async function getHolidaysByBranch(branchId: string | null): Promise<Holiday[]> {
+  try {
+    const currentYear = new Date().getFullYear();
+    const allHolidays = await getHolidays(currentYear);
+    
+    if (!branchId) {
+      // Return all holidays if no branch specified (super admin)
+      return allHolidays;
+    }
+    
+    // Filter holidays that apply to this branch
+    return allHolidays.filter(holiday => {
+      // National holidays apply to all branches
+      if (holiday.type === 'national') return true;
+      
+      // Branch-specific holidays
+      return holiday.branches?.includes(branchId);
+    });
+  } catch (error) {
+    console.error('Error getting holidays by branch:', error);
+    return [];
+  }
+}
+
 // Get holidays in date range
 export async function getHolidaysInRange(
   startDate: Date,

@@ -11,12 +11,14 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { EventInput } from '@fullcalendar/core';
-import { Holiday, MakeupClass, TrialSession } from '@/types/models';
+import { Holiday, MakeupClass, TrialSession, Class, Subject, Teacher, Branch, Room } from '@/types/models';
 
 export interface CalendarEvent extends EventInput {
   classId: string;
   extendedProps: {
     type: 'class' | 'makeup' | 'trial' | 'holiday';
+    className?: string;         // เพิ่ม: ชื่อคลาส
+    classCode?: string;        // เพิ่ม: รหัสคลาส
     branchId: string;
     branchName: string;
     roomName: string;
@@ -56,10 +58,10 @@ export interface CalendarEvent extends EventInput {
 
 // Cache for static data
 let staticDataCache: {
-  subjects: Map<string, any>;
-  teachers: Map<string, any>;
-  branches: Map<string, any>;
-  rooms: Map<string, any>;
+  subjects: Map<string, Subject>;
+  teachers: Map<string, Teacher>;
+  branches: Map<string, Branch>;
+  rooms: Map<string, Room>;
   lastFetch: number;
 } | null = null;
 
@@ -80,26 +82,51 @@ async function getStaticData() {
     getDocs(collection(db, 'branches'))
   ]);
 
-  const subjects = new Map(
-    subjectsSnapshot.docs.map(doc => [doc.id, { id: doc.id, ...doc.data() }])
+  const subjects = new Map<string, Subject>(
+    subjectsSnapshot.docs.map(doc => {
+      const subjectData = { 
+        id: doc.id, 
+        ...doc.data() 
+      } as Subject;
+      
+      // Debug log
+      console.log('Subject loaded:', {
+        id: subjectData.id,
+        name: subjectData.name,
+        code: subjectData.code
+      });
+      
+      return [doc.id, subjectData];
+    })
   );
   
-  const teachers = new Map(
-    teachersSnapshot.docs.map(doc => [doc.id, { id: doc.id, ...doc.data() }])
+  const teachers = new Map<string, Teacher>(
+    teachersSnapshot.docs.map(doc => [doc.id, { 
+      id: doc.id, 
+      ...doc.data() 
+    } as Teacher])
   );
   
-  const branches = new Map(
-    branchesSnapshot.docs.map(doc => [doc.id, { id: doc.id, ...doc.data() }])
+  const branches = new Map<string, Branch>(
+    branchesSnapshot.docs.map(doc => [doc.id, { 
+      id: doc.id, 
+      ...doc.data(),
+      createdAt: doc.data().createdAt?.toDate() || new Date()
+    } as Branch])
   );
 
   // Get all rooms for all branches
-  const roomsMap = new Map();
+  const roomsMap = new Map<string, Room>();
   for (const branch of branches.values()) {
     const roomsSnapshot = await getDocs(
       collection(db, 'branches', branch.id, 'rooms')
     );
     roomsSnapshot.docs.forEach(doc => {
-      roomsMap.set(`${branch.id}-${doc.id}`, { id: doc.id, ...doc.data() });
+      roomsMap.set(`${branch.id}-${doc.id}`, { 
+        id: doc.id, 
+        branchId: branch.id,
+        ...doc.data() 
+      } as Room);
     });
   }
 
@@ -138,7 +165,7 @@ export async function getOptimizedCalendarEvents(
     // Process holidays
     holidaysSnapshot.docs.forEach(doc => {
       const holidayData = doc.data();
-      const holiday: Holiday & { id: string } = {
+      const holiday: Holiday = {
         id: doc.id,
         name: holidayData.name,
         date: holidayData.date.toDate(),
@@ -194,7 +221,13 @@ export async function getOptimizedCalendarEvents(
     
     // Process each class and get its schedules
     const schedulePromises = classesSnapshot.docs.map(async (classDoc) => {
-      const classData = { id: classDoc.id, ...classDoc.data() };
+      const classData: Class = { 
+        id: classDoc.id, 
+        ...classDoc.data(),
+        startDate: classDoc.data().startDate?.toDate() || new Date(),
+        endDate: classDoc.data().endDate?.toDate() || new Date(),
+        createdAt: classDoc.data().createdAt?.toDate() || new Date()
+      } as Class;
       
       // Get schedules for this class in date range
       const schedulesQuery = query(
@@ -224,7 +257,28 @@ export async function getOptimizedCalendarEvents(
       const branch = branches.get(classData.branchId);
       const room = rooms.get(`${classData.branchId}-${classData.roomId}`);
       
-      if (!subject || !teacher || !branch) return;
+      // Debug log
+      console.log('Processing class schedule:', {
+        classId: classData.id,
+        className: classData.name,
+        classCode: classData.code,
+        subjectId: classData.subjectId,
+        subjectData: subject ? {
+          id: subject.id,
+          name: subject.name,
+          code: subject.code
+        } : 'Subject not found'
+      });
+      
+      if (!subject || !teacher || !branch) {
+        console.warn('Missing data for class:', {
+          classId,
+          hasSubject: !!subject,
+          hasTeacher: !!teacher,
+          hasBranch: !!branch
+        });
+        return;
+      }
       
       const sessionDate = scheduleData.sessionDate.toDate();
       const [startHour, startMinute] = classData.startTime.split(':').map(Number);
@@ -256,10 +310,18 @@ export async function getOptimizedCalendarEvents(
         effectiveStatus = 'past_incomplete';
       }
       
+      // Create title with debug
+      const eventTitle = `${subject.name} - ${classData.name}`;
+      console.log('Event title created:', {
+        subjectName: subject.name,
+        className: classData.name,
+        finalTitle: eventTitle
+      });
+      
       events.push({
         id: `${classId}-${id}`,
         classId: classId,
-        title: `${subject.name} - ${classData.code}`,
+        title: eventTitle,
         start: eventStart,
         end: eventEnd,
         backgroundColor,
@@ -268,6 +330,8 @@ export async function getOptimizedCalendarEvents(
                    effectiveStatus === 'past_incomplete' ? '#92400E' : '#374151',
         extendedProps: {
           type: 'class',
+          className: classData.name, // Add class name
+          classCode: classData.code, // Add class code
           branchId: classData.branchId,
           branchName: branch.name,
           roomName: room?.name || classData.roomId,
@@ -310,12 +374,18 @@ export async function getOptimizedCalendarEvents(
     });
     
     // Batch get class info
-    const classInfoMap = new Map();
+    const classInfoMap = new Map<string, Class>();
     if (classIds.size > 0) {
       for (const classId of classIds) {
         const classDoc = classesSnapshot.docs.find(doc => doc.id === classId);
         if (classDoc) {
-          classInfoMap.set(classId, { id: classDoc.id, ...classDoc.data() });
+          classInfoMap.set(classId, { 
+            id: classDoc.id, 
+            ...classDoc.data(),
+            startDate: classDoc.data().startDate?.toDate() || new Date(),
+            endDate: classDoc.data().endDate?.toDate() || new Date(),
+            createdAt: classDoc.data().createdAt?.toDate() || new Date()
+          } as Class);
         }
       }
     }
@@ -341,7 +411,7 @@ export async function getOptimizedCalendarEvents(
     // Process makeup events
     for (const doc of makeupSnapshot.docs) {
       const makeupData = doc.data();
-      const makeup: MakeupClass & { id: string } = {
+      const makeup: MakeupClass = {
         id: doc.id,
         type: makeupData.type,
         originalClassId: makeupData.originalClassId,
@@ -449,7 +519,7 @@ export async function getOptimizedCalendarEvents(
     
     trialSnapshot.docs.forEach(doc => {
       const trialData = doc.data();
-      const trial: TrialSession & { id: string } = {
+      const trial: TrialSession = {
         id: doc.id,
         bookingId: trialData.bookingId,
         studentName: trialData.studentName,
