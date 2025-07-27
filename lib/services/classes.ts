@@ -929,7 +929,26 @@ export async function getClassAttendanceSummary(classId: string): Promise<{
   }
 }
 
+// เพิ่มที่ท้ายไฟล์ lib/services/classes.ts ก่อน export { generateSchedules }
+
+// Get enrolled students for a class
+export async function getEnrolledStudents(classId: string): Promise<string[]> {
+  try {
+    const { getEnrollmentsByClass } = await import('./enrollments');
+    const enrollments = await getEnrollmentsByClass(classId);
+    
+    // Return only active enrollments
+    return enrollments
+      .filter(e => e.status === 'active')
+      .map(e => e.studentId);
+  } catch (error) {
+    console.error('Error getting enrolled students:', error);
+    return [];
+  }
+}
+
 // Export functions
 export {
   generateSchedules,
 };
+
