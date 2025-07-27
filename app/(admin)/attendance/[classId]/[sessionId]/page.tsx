@@ -29,6 +29,7 @@ import { createMakeupRequest } from '@/lib/services/makeup';
 import { getStudentWithParent } from '@/lib/services/parents';
 import { Class, ClassSchedule, Teacher } from '@/types/models';
 import { formatDateWithDay, formatTime } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { 
   Calendar,
   Clock,
@@ -48,7 +49,7 @@ interface StudentAttendance {
   studentName: string;
   studentNickname?: string;
   parentName: string;
-  status: 'present' | 'absent' | 'late' | 'sick' | 'leave';
+  status: 'present' | 'absent' | 'late' | 'sick' | 'leave' | '';
   note: string;
   existingMakeup?: boolean;
 }
@@ -78,10 +79,11 @@ export default function AttendanceCheckPage() {
     try {
       setLoading(true);
       
-      // Load class and schedule
-      const [cls, sched] = await Promise.all([
+      // Load all data in parallel
+      const [cls, sched, enrollments] = await Promise.all([
         getClass(classId),
-        getClassSchedule(classId, sessionId)
+        getClassSchedule(classId, sessionId),
+        getEnrollmentsByClass(classId)
       ]);
       
       if (!cls || !sched) {
@@ -99,32 +101,31 @@ export default function AttendanceCheckPage() {
       const branchTeachers = await getTeachersByBranch(cls.branchId);
       setTeachers(branchTeachers);
       
-      // Load enrolled students
-      const enrollments = await getEnrollmentsByClass(classId);
+      // Get enrolled student IDs
       const enrolledStudentIds = enrollments.map(e => e.studentId);
       
-      // Load student details with parent info
-      const studentsWithDetails = await Promise.all(
-        enrolledStudentIds.map(async (studentId) => {
-          const studentData = await getStudentWithParent(studentId);
-          if (!studentData) return null;
-          
-          // Check existing attendance
-          const existingAttendance = sched.attendance?.find(
-            att => att.studentId === studentId
-          );
-          
-          return {
-            studentId,
-            studentName: studentData.name,
-            studentNickname: studentData.nickname,
-            parentName: studentData.parentName,
-            status: existingAttendance?.status || 'present',
-            note: existingAttendance?.note || '',
-            existingMakeup: false
-          } as StudentAttendance;
-        })
-      );
+      // Load student details in parallel
+      const studentPromises = enrolledStudentIds.map(async (studentId) => {
+        const studentData = await getStudentWithParent(studentId);
+        if (!studentData) return null;
+        
+        // Check existing attendance
+        const existingAttendance = sched.attendance?.find(
+          att => att.studentId === studentId
+        );
+        
+        return {
+          studentId,
+          studentName: studentData.name,
+          studentNickname: studentData.nickname,
+          parentName: studentData.parentName,
+          status: existingAttendance?.status || '', // Default to empty string instead of 'present'
+          note: existingAttendance?.note || '',
+          existingMakeup: false
+        } as StudentAttendance;
+      });
+      
+      const studentsWithDetails = await Promise.all(studentPromises);
       
       // Filter out null values and sort by name
       const validStudents = studentsWithDetails
@@ -183,10 +184,13 @@ export default function AttendanceCheckPage() {
     try {
       setSaving(true);
       
+      // Filter out students with empty status
+      const attendanceToSave = attendance.filter(att => att.status !== '');
+      
       // Prepare attendance data
-      const attendanceData = attendance.map(att => ({
+      const attendanceData = attendanceToSave.map(att => ({
         studentId: att.studentId,
-        status: att.status,
+        status: att.status as 'present' | 'absent' | 'late' | 'sick' | 'leave',
         note: att.note,
         checkedAt: new Date(),
         checkedBy: user?.uid || 'system'
@@ -197,20 +201,21 @@ export default function AttendanceCheckPage() {
         actualTeacherId,
         attendance: attendanceData,
         note: globalNote,
-        status: 'completed',
-        attendanceCompletedAt: new Date(),
-        attendanceCompletedBy: user?.uid || 'system'
+        status: attendanceData.length > 0 ? 'completed' : 'scheduled',
+        attendanceCompletedAt: attendanceData.length > 0 ? new Date() : undefined,
+        attendanceCompletedBy: attendanceData.length > 0 ? (user?.uid || 'system') : undefined
       });
       
-      // Create makeup requests for absent students
-      const absentStudents = attendance.filter(att => att.status === 'absent');
+      // Create makeup requests for absent students in parallel
+      const absentStudents = attendanceToSave.filter(att => 
+        att.status === 'absent' || att.status === 'sick' || att.status === 'leave'
+      );
       
-      for (const student of absentStudents) {
+      const makeupPromises = absentStudents.map(async (student) => {
         try {
-          // Get parent ID from student data
           const studentData = await getStudentWithParent(student.studentId);
           if (studentData) {
-            await createMakeupRequest({
+            return createMakeupRequest({
               type: 'ad-hoc',
               originalClassId: classId,
               originalScheduleId: sessionId,
@@ -218,7 +223,7 @@ export default function AttendanceCheckPage() {
               parentId: studentData.parentId,
               requestDate: new Date(),
               requestedBy: 'system',
-              reason: 'ขาดเรียน - สร้างอัตโนมัติจากการเช็คชื่อ',
+              reason: `${student.status === 'sick' ? 'ป่วย' : student.status === 'leave' ? 'ลา' : 'ขาดเรียน'} - สร้างอัตโนมัติจากการเช็คชื่อ`,
               status: 'pending',
               originalSessionNumber: schedule?.sessionNumber,
               originalSessionDate: schedule?.sessionDate
@@ -227,7 +232,9 @@ export default function AttendanceCheckPage() {
         } catch (error) {
           console.error('Error creating makeup for student:', student.studentId, error);
         }
-      }
+      });
+      
+      await Promise.all(makeupPromises);
       
       toast.success('บันทึกการเช็คชื่อเรียบร้อยแล้ว');
       router.push(`/attendance/${classId}`);
@@ -241,30 +248,55 @@ export default function AttendanceCheckPage() {
   };
 
   const getAttendanceStats = () => {
+    const checkedStudents = attendance.filter(a => a.status !== '');
     const stats = {
       total: attendance.length,
-      present: attendance.filter(a => a.status === 'present').length,
-      absent: attendance.filter(a => a.status === 'absent').length,
-      late: attendance.filter(a => a.status === 'late').length,
-      sick: attendance.filter(a => a.status === 'sick').length,
-      leave: attendance.filter(a => a.status === 'leave').length,
+      checked: checkedStudents.length,
+      present: checkedStudents.filter(a => a.status === 'present').length,
+      absent: checkedStudents.filter(a => a.status === 'absent').length,
+      late: checkedStudents.filter(a => a.status === 'late').length,
+      sick: checkedStudents.filter(a => a.status === 'sick').length,
+      leave: checkedStudents.filter(a => a.status === 'leave').length,
     };
-    
-    stats.absent = stats.absent + stats.sick + stats.leave;
     
     return stats;
   };
 
   const getStatusButton = (status: StudentAttendance['status']) => {
     const configs = {
-      present: { label: 'มา', icon: CheckCircle, color: 'text-green-600 bg-green-50 hover:bg-green-100' },
-      absent: { label: 'ขาด', icon: XCircle, color: 'text-red-600 bg-red-50 hover:bg-red-100' },
-      late: { label: 'สาย', icon: ClockIconOutline, color: 'text-orange-600 bg-orange-50 hover:bg-orange-100' },
-      sick: { label: 'ป่วย', icon: AlertTriangle, color: 'text-yellow-600 bg-yellow-50 hover:bg-yellow-100' },
-      leave: { label: 'ลา', icon: AlertCircle, color: 'text-blue-600 bg-blue-50 hover:bg-blue-100' },
+      present: { 
+        label: 'มา', 
+        icon: CheckCircle, 
+        color: 'text-green-600 bg-green-50 hover:bg-green-100',
+        activeColor: 'text-white bg-green-600 hover:bg-green-700 ring-2 ring-green-600 ring-offset-2'
+      },
+      absent: { 
+        label: 'ขาด', 
+        icon: XCircle, 
+        color: 'text-red-600 bg-red-50 hover:bg-red-100',
+        activeColor: 'text-white bg-red-600 hover:bg-red-700 ring-2 ring-red-600 ring-offset-2'
+      },
+      late: { 
+        label: 'สาย', 
+        icon: ClockIconOutline, 
+        color: 'text-orange-600 bg-orange-50 hover:bg-orange-100',
+        activeColor: 'text-white bg-orange-600 hover:bg-orange-700 ring-2 ring-orange-600 ring-offset-2'
+      },
+      sick: { 
+        label: 'ป่วย', 
+        icon: AlertTriangle, 
+        color: 'text-yellow-600 bg-yellow-50 hover:bg-yellow-100',
+        activeColor: 'text-white bg-yellow-600 hover:bg-yellow-700 ring-2 ring-yellow-600 ring-offset-2'
+      },
+      leave: { 
+        label: 'ลา', 
+        icon: AlertCircle, 
+        color: 'text-blue-600 bg-blue-50 hover:bg-blue-100',
+        activeColor: 'text-white bg-blue-600 hover:bg-blue-700 ring-2 ring-blue-600 ring-offset-2'
+      },
     };
     
-    return configs[status];
+    return configs[status as keyof typeof configs];
   };
 
   if (loading) return <PageLoading />;
@@ -374,8 +406,9 @@ export default function AttendanceCheckPage() {
           <div className="flex justify-between items-center">
             <CardTitle className="text-lg">รายชื่อนักเรียน ({attendance.length} คน)</CardTitle>
             <div className="flex gap-4 text-sm">
+              <span className="text-gray-600">เช็คแล้ว: {stats.checked}/{stats.total}</span>
               <span className="text-green-600">มา: {stats.present}</span>
-              <span className="text-red-600">ขาด: {stats.absent}</span>
+              <span className="text-red-600">ขาด: {stats.absent + stats.sick + stats.leave}</span>
               <span className="text-orange-600">สาย: {stats.late}</span>
             </div>
           </div>
@@ -414,9 +447,10 @@ export default function AttendanceCheckPage() {
                             variant="ghost"
                             size="sm"
                             onClick={() => handleAttendanceChange(student.studentId, status)}
-                            className={`${config.color} ${
-                              isSelected ? 'ring-2 ring-offset-2' : ''
-                            }`}
+                            className={cn(
+                              "transition-all duration-200",
+                              isSelected ? config.activeColor : config.color
+                            )}
                           >
                             <Icon className="h-4 w-4 mr-1" />
                             {config.label}
@@ -426,7 +460,7 @@ export default function AttendanceCheckPage() {
                     </div>
                   </div>
                   
-                  {student.status !== 'present' && (
+                  {student.status !== 'present' && student.status !== '' && (
                     <div className="mt-3">
                       <Textarea
                         placeholder="หมายเหตุ..."

@@ -1,18 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { PageLoading } from '@/components/ui/loading';
-import { Calendar } from '@/components/ui/calendar';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -32,8 +26,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { useBranch } from '@/contexts/BranchContext';
 import { getClasses, getClassSchedules } from '@/lib/services/classes';
 import { getSubjects } from '@/lib/services/subjects';
-import { getTeachersByBranch } from '@/lib/services/teachers';
-import { getBranch } from '@/lib/services/branches';
+import { getTeachersByBranch, getTeachers } from '@/lib/services/teachers';
+import { getBranch, getBranches } from '@/lib/services/branches';
 import { getRoomsByBranch } from '@/lib/services/rooms';
 import { Class, ClassSchedule, Subject, Teacher, Branch, Room } from '@/types/models';
 import { formatTime, getDayName, formatDate } from '@/lib/utils';
@@ -53,7 +47,7 @@ import {
   BookOpen,
   UserCheck,
   ClipboardCheck,
-  X
+  Building2
 } from 'lucide-react';
 
 interface ClassWithDetails extends Class {
@@ -64,34 +58,62 @@ interface ClassWithDetails extends Class {
   todaySchedule?: ClassSchedule;
 }
 
+// Cache for room data
+const roomCache = new Map<string, Room[]>();
+
 export default function AttendancePage() {
   const router = useRouter();
-  const { user, isTeacher } = useAuth();
-  const { selectedBranchId } = useBranch();
+  const { user, isTeacher, adminUser, canAccessBranch, isSuperAdmin } = useAuth();
+  const { selectedBranchId, isAllBranches } = useBranch();
   const [loading, setLoading] = useState(true);
   const [allClasses, setAllClasses] = useState<ClassWithDetails[]>([]);
-  const [filteredClasses, setFilteredClasses] = useState<ClassWithDetails[]>([]);
-  const [rooms, setRooms] = useState<Room[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [roomsByBranch, setRoomsByBranch] = useState<Map<string, Room[]>>(new Map());
+  
+  // Master data states (loaded once)
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [allTeachers, setAllTeachers] = useState<Teacher[]>([]);
   
   // Filter states
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSubject, setSelectedSubject] = useState<string>('all');
   const [selectedTeacher, setSelectedTeacher] = useState<string>('all');
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [teachers, setTeachers] = useState<Teacher[]>([]);
-  const [datePickerOpen, setDatePickerOpen] = useState(false);
 
+  // Load master data once on mount
   useEffect(() => {
-    loadClassesForDate();
-  }, [selectedBranchId, user, selectedDate]);
+    loadMasterData();
+  }, []);
 
+  // Load classes when date or branch changes
   useEffect(() => {
-    applyFilters();
-  }, [searchTerm, selectedSubject, selectedTeacher, allClasses]);
+    if (subjects.length > 0 && allTeachers.length > 0) {
+      loadClassesForDate();
+    }
+  }, [selectedBranchId, selectedDate, subjects, allTeachers]);
+
+  const loadMasterData = async () => {
+    try {
+      // Load all master data in parallel
+      const [subjectsData, teachersData, branchesData] = await Promise.all([
+        getSubjects(),
+        getTeachers(),
+        getBranches()
+      ]);
+
+      setSubjects(subjectsData.filter(s => s.isActive));
+      setAllTeachers(teachersData.filter(t => t.isActive));
+      setBranches(branchesData);
+    } catch (error) {
+      console.error('Error loading master data:', error);
+    }
+  };
 
   const loadClassesForDate = async () => {
-    if (!user) return;
+    if (!user) {
+      setLoading(false);
+      return;
+    }
     
     try {
       setLoading(true);
@@ -99,24 +121,34 @@ export default function AttendancePage() {
       // Get selected date's day of week
       const dayOfWeek = selectedDate.getDay();
       
-      // Load subjects and teachers for filters
-      const [allSubjects, branchTeachers] = await Promise.all([
-        getSubjects(),
-        selectedBranchId ? getTeachersByBranch(selectedBranchId) : getTeachers()
-      ]);
-      
-      setSubjects(allSubjects.filter(s => s.isActive));
-      setTeachers(branchTeachers.filter(t => t.isActive));
-      
-      // Get all classes
+      // Determine which classes to load
       let classes: Class[] = [];
       
-      if (isTeacher()) {
-        // Teacher sees only their classes
-        classes = await getClasses(selectedBranchId || undefined, user.uid);
+      if (isAllBranches && isSuperAdmin()) {
+        // Load all classes for super admin
+        if (isTeacher() && adminUser) {
+          classes = await getClasses(undefined, adminUser.id);
+        } else {
+          classes = await getClasses();
+        }
+      } else if (selectedBranchId) {
+        // Load classes for specific branch
+        if (!canAccessBranch(selectedBranchId)) {
+          setAllClasses([]);
+          setLoading(false);
+          return;
+        }
+        
+        if (isTeacher() && adminUser) {
+          classes = await getClasses(selectedBranchId, adminUser.id);
+        } else {
+          classes = await getClasses(selectedBranchId);
+        }
       } else {
-        // Admin sees all classes in branch
-        classes = await getClasses(selectedBranchId || undefined);
+        // No branch selected
+        setAllClasses([]);
+        setLoading(false);
+        return;
       }
       
       // Filter active classes that have selected day in their schedule
@@ -125,54 +157,95 @@ export default function AttendancePage() {
         cls.daysOfWeek.includes(dayOfWeek)
       );
       
-      // Load details and check schedules
+      if (activeClasses.length === 0) {
+        setAllClasses([]);
+        setLoading(false);
+        return;
+      }
+      
+      // Create maps for quick lookup
+      const subjectMap = new Map(subjects.map(s => [s.id, s]));
+      const teacherMap = new Map(allTeachers.map(t => [t.id, t]));
+      const branchMap = new Map(branches.map(b => [b.id, b]));
+      
+      // Batch load schedules for all classes
+      const schedulePromises = activeClasses.map(cls => 
+        getClassSchedules(cls.id).then(schedules => ({
+          classId: cls.id,
+          schedules
+        }))
+      );
+      
+      const allSchedules = await Promise.all(schedulePromises);
+      const scheduleMap = new Map(allSchedules.map(({ classId, schedules }) => [classId, schedules]));
+      
+      // Get unique branch IDs that need room data
+      const uniqueBranchIds = [...new Set(activeClasses.map(cls => cls.branchId))];
+      
+      // Load rooms for branches (with cache)
+      const roomPromises = uniqueBranchIds.map(async (branchId) => {
+        if (roomCache.has(branchId)) {
+          return { branchId, rooms: roomCache.get(branchId)! };
+        }
+        
+        const rooms = await getRoomsByBranch(branchId);
+        roomCache.set(branchId, rooms);
+        return { branchId, rooms };
+      });
+      
+      const roomResults = await Promise.all(roomPromises);
+      const newRoomsByBranch = new Map(roomResults.map(({ branchId, rooms }) => [branchId, rooms]));
+      setRoomsByBranch(newRoomsByBranch);
+      
+      // Build class details
       const classesWithDetails: ClassWithDetails[] = [];
       
       for (const cls of activeClasses) {
+        // Skip if user doesn't have access to branch
+        if (!isSuperAdmin() && !canAccessBranch(cls.branchId)) {
+          continue;
+        }
+        
         // Get schedule for selected date
-        const schedules = await getClassSchedules(cls.id);
+        const schedules = scheduleMap.get(cls.id) || [];
         const selectedSchedule = schedules.find(schedule => {
           const scheduleDate = new Date(schedule.sessionDate);
           return scheduleDate.toDateString() === selectedDate.toDateString();
         });
         
         if (selectedSchedule) {
-          // Load additional details
-          const [subject, teacher, branch] = await Promise.all([
-            getSubjects().then(subjects => subjects.find(s => s.id === cls.subjectId)),
-            getTeachers().then(teachers => teachers.find(t => t.id === cls.teacherId)),
-            getBranch(cls.branchId)
-          ]);
-          
-          // Load rooms if not already loaded
-          if (rooms.length === 0 && cls.branchId) {
-            const branchRooms = await getRoomsByBranch(cls.branchId);
-            setRooms(branchRooms);
-          }
-          
-          const room = rooms.find(r => r.id === cls.roomId) || 
-                       (await getRoomsByBranch(cls.branchId)).find(r => r.id === cls.roomId);
+          // Get details from maps (instant lookup)
+          const subject = subjectMap.get(cls.subjectId);
+          const teacher = teacherMap.get(cls.teacherId);
+          const branch = branchMap.get(cls.branchId);
+          const branchRooms = newRoomsByBranch.get(cls.branchId) || [];
+          const room = branchRooms.find(r => r.id === cls.roomId);
           
           classesWithDetails.push({
             ...cls,
-            subject: subject || undefined,
-            teacher: teacher || undefined,
-            branch: branch || undefined,
-            room: room || undefined,
+            subject,
+            teacher,
+            branch,
+            room,
             todaySchedule: selectedSchedule
           });
         }
       }
       
-      // Sort by start time
+      // Sort
       classesWithDetails.sort((a, b) => {
+        if (isAllBranches) {
+          const branchCompare = (a.branch?.name || '').localeCompare(b.branch?.name || '');
+          if (branchCompare !== 0) return branchCompare;
+        }
+        
         const timeA = parseInt(a.startTime.replace(':', ''));
         const timeB = parseInt(b.startTime.replace(':', ''));
         return timeA - timeB;
       });
       
       setAllClasses(classesWithDetails);
-      setFilteredClasses(classesWithDetails);
+      
     } catch (error) {
       console.error('Error loading classes:', error);
     } finally {
@@ -180,7 +253,25 @@ export default function AttendancePage() {
     }
   };
 
-  const applyFilters = () => {
+  // Filter teachers based on selection and role
+  const availableTeachers = useMemo(() => {
+    let teachers = allTeachers;
+    
+    // Filter by branch if specific branch selected
+    if (selectedBranchId && !isAllBranches) {
+      teachers = teachers.filter(t => t.availableBranches.includes(selectedBranchId));
+    }
+    
+    // If teacher role, only show themselves
+    if (isTeacher() && adminUser) {
+      teachers = teachers.filter(t => t.id === adminUser.id);
+    }
+    
+    return teachers;
+  }, [allTeachers, selectedBranchId, isAllBranches, isTeacher, adminUser]);
+
+  // Apply filters with memoization
+  const filteredClasses = useMemo(() => {
     let filtered = [...allClasses];
     
     // Search filter
@@ -191,7 +282,8 @@ export default function AttendancePage() {
         cls.code.toLowerCase().includes(searchLower) ||
         cls.subject?.name.toLowerCase().includes(searchLower) ||
         cls.teacher?.name.toLowerCase().includes(searchLower) ||
-        cls.teacher?.nickname?.toLowerCase().includes(searchLower)
+        cls.teacher?.nickname?.toLowerCase().includes(searchLower) ||
+        cls.branch?.name.toLowerCase().includes(searchLower)
       );
     }
     
@@ -205,8 +297,8 @@ export default function AttendancePage() {
       filtered = filtered.filter(cls => cls.teacherId === selectedTeacher);
     }
     
-    setFilteredClasses(filtered);
-  };
+    return filtered;
+  }, [allClasses, searchTerm, selectedSubject, selectedTeacher]);
 
   const getAttendanceStatus = (schedule?: ClassSchedule) => {
     if (!schedule) return { status: 'pending', label: 'ยังไม่เช็คชื่อ', variant: 'secondary' as const };
@@ -214,9 +306,19 @@ export default function AttendancePage() {
     if (schedule.status === 'completed' || (schedule.attendance && schedule.attendance.length > 0)) {
       const attendanceCount = schedule.attendance?.filter(a => a.status === 'present').length || 0;
       const totalStudents = schedule.attendance?.length || 0;
+      
+      if (totalStudents === 0) {
+        return { 
+          status: 'completed', 
+          label: 'เช็คแล้ว', 
+          variant: 'default' as const 
+        };
+      }
+      
+      // แสดงจำนวนที่มาเรียน
       return { 
         status: 'completed', 
-        label: `เช็คแล้ว (${attendanceCount}/${totalStudents})`, 
+        label: `มาเรียน ${attendanceCount} คน`, 
         variant: 'default' as const 
       };
     }
@@ -243,7 +345,50 @@ export default function AttendancePage() {
 
   const isToday = selectedDate.toDateString() === new Date().toDateString();
 
+  // Format date for input
+  const formatDateForInput = (date: Date): string => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  // Handle date change from input
+  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    if (!value) return;
+    
+    const [year, month, day] = value.split('-').map(Number);
+    const newDate = new Date(year, month - 1, day);
+    newDate.setHours(0, 0, 0, 0);
+    
+    setSelectedDate(newDate);
+  };
+
   if (loading) return <PageLoading />;
+
+  // Show empty state if no branch selected and not super admin viewing all branches
+  if (!selectedBranchId && !isAllBranches) {
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">เช็คชื่อนักเรียน</h1>
+            <p className="text-muted-foreground">เลือกสาขาเพื่อดูคลาสเรียน</p>
+          </div>
+        </div>
+        
+        <Card>
+          <CardContent className="py-12">
+            <div className="text-center text-muted-foreground">
+              <Building2 className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+              <p className="text-lg">กรุณาเลือกสาขาเพื่อดูคลาสเรียน</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -252,6 +397,7 @@ export default function AttendancePage() {
           <h1 className="text-3xl font-bold tracking-tight">เช็คชื่อนักเรียน</h1>
           <p className="text-muted-foreground">
             {isToday ? 'วันนี้' : ''} {getDayName(selectedDate.getDay())} {format(selectedDate, 'd MMMM yyyy', { locale: th })}
+            {isAllBranches && ' - ทุกสาขา'}
           </p>
         </div>
       </div>
@@ -274,84 +420,75 @@ export default function AttendancePage() {
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
             {/* Date Picker */}
-            <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className={cn(
-                    "w-full justify-start text-left font-normal",
-                    !selectedDate && "text-muted-foreground"
-                  )}
-                >
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {selectedDate ? format(selectedDate, 'd MMM yyyy', { locale: th }) : "เลือกวันที่"}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="start">
-                <Calendar
-                  mode="single"
-                  selected={selectedDate}
-                  onSelect={(date) => {
-                    if (date) {
-                      setSelectedDate(date);
-                      setDatePickerOpen(false);
-                    }
-                  }}
-                  initialFocus
-                />
-              </PopoverContent>
-            </Popover>
-            
-            {/* Search */}
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-              <Input
-                placeholder="ค้นหาชื่อคลาส, รหัส..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 w-full"
+            <div>
+              <label className="text-sm font-medium mb-2 block">วันที่</label>
+              <input
+                type="date"
+                value={formatDateForInput(selectedDate)}
+                onChange={handleDateChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent h-9"
               />
             </div>
             
+            {/* Search */}
+            <div>
+              <label className="text-sm font-medium mb-2 block">ค้นหา</label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                <Input
+                  placeholder="ชื่อคลาส, รหัส..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10 w-full h-9"
+                />
+              </div>
+            </div>
+            
             {/* Subject Filter */}
-            <Select value={selectedSubject} onValueChange={setSelectedSubject}>
-              <SelectTrigger className="w-full">
-                <div className="flex items-center gap-2">
-                  <BookOpen className="h-4 w-4" />
-                  <SelectValue placeholder="ทุกวิชา" />
-                </div>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">ทุกวิชา</SelectItem>
-                {subjects.map((subject) => (
-                  <SelectItem key={subject.id} value={subject.id}>
-                    {subject.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div>
+              <label className="text-sm font-medium mb-2 block">วิชา</label>
+              <Select value={selectedSubject} onValueChange={setSelectedSubject}>
+                <SelectTrigger className="w-full h-9">
+                  <div className="flex items-center gap-2">
+                    <BookOpen className="h-4 w-4" />
+                    <SelectValue placeholder="ทุกวิชา" />
+                  </div>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">ทุกวิชา</SelectItem>
+                  {subjects.map((subject) => (
+                    <SelectItem key={subject.id} value={subject.id}>
+                      {subject.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             
             {/* Teacher Filter */}
-            <Select value={selectedTeacher} onValueChange={setSelectedTeacher}>
-              <SelectTrigger className="w-full">
-                <div className="flex items-center gap-2">
-                  <UserCheck className="h-4 w-4" />
-                  <SelectValue placeholder="ทุกครู" />
-                </div>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">ทุกครู</SelectItem>
-                {teachers.map((teacher) => (
-                  <SelectItem key={teacher.id} value={teacher.id}>
-                    {teacher.nickname || teacher.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div>
+              <label className="text-sm font-medium mb-2 block">ครู</label>
+              <Select value={selectedTeacher} onValueChange={setSelectedTeacher}>
+                <SelectTrigger className="w-full h-9">
+                  <div className="flex items-center gap-2">
+                    <UserCheck className="h-4 w-4" />
+                    <SelectValue placeholder="ทุกครู" />
+                  </div>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">ทุกครู</SelectItem>
+                  {availableTeachers.map((teacher) => (
+                    <SelectItem key={teacher.id} value={teacher.id}>
+                      {teacher.nickname || teacher.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             
             {/* Results Count */}
-            <div className="flex items-center justify-center text-sm text-muted-foreground">
-              <span>พบ {filteredClasses.length} คลาส</span>
+            <div className="flex items-center justify-center">
+              <span className="text-sm text-muted-foreground">พบ {filteredClasses.length} คลาส</span>
             </div>
           </div>
         </CardContent>
@@ -377,6 +514,7 @@ export default function AttendancePage() {
                   <TableRow>
                     <TableHead className="min-w-[120px]">เวลา</TableHead>
                     <TableHead className="min-w-[250px]">คลาสเรียน</TableHead>
+                    {isAllBranches && <TableHead className="min-w-[100px]">สาขา</TableHead>}
                     <TableHead className="min-w-[150px]">ครู / ห้อง</TableHead>
                     <TableHead className="text-center min-w-[100px]">นักเรียน</TableHead>
                     <TableHead className="min-w-[150px]">สถานะ</TableHead>
@@ -415,6 +553,13 @@ export default function AttendancePage() {
                             </div>
                           </div>
                         </TableCell>
+                        {isAllBranches && (
+                          <TableCell>
+                            <Badge variant="outline">
+                              {cls.branch?.name}
+                            </Badge>
+                          </TableCell>
+                        )}
                         <TableCell>
                           <div className="space-y-1">
                             <div className="flex items-center gap-2">
@@ -435,7 +580,7 @@ export default function AttendancePage() {
                         </TableCell>
                         <TableCell className="text-center">
                           <Badge variant="outline">
-                            {cls.enrolledCount}/{cls.maxStudents} คน
+                            {cls.enrolledCount} คน
                           </Badge>
                         </TableCell>
                         <TableCell>
