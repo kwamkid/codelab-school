@@ -219,52 +219,63 @@ export default function DashboardPage() {
     }
   }, [selectedBranchId]); // eslint-disable-line react-hooks/exhaustive-deps
   
-  const handleEventClick = (clickInfo: EventClickArg) => {
-    console.log('Event clicked:', clickInfo.event);
-    
-    // Extract schedule ID from event ID (format: classId-scheduleId)
-    const eventId = clickInfo.event.id;
-    const scheduleId = eventId.includes('-') ? eventId.split('-')[1] : '';
-    
-    // Get the class ID from extendedProps
-    const classId = clickInfo.event.extendedProps.classId || clickInfo.event.id.split('-')[0];
-    
-    const event: CalendarEvent = {
-      id: eventId,
-      classId: classId,
-      title: clickInfo.event.title,
-      start: clickInfo.event.start!,
-      end: clickInfo.event.end!,
-      backgroundColor: clickInfo.event.backgroundColor,
-      borderColor: clickInfo.event.borderColor,
-      extendedProps: {
-        branchId: clickInfo.event.extendedProps.branchId,
-        branchName: clickInfo.event.extendedProps.branchName,
-        roomName: clickInfo.event.extendedProps.roomName,
-        teacherName: clickInfo.event.extendedProps.teacherName,
-        enrolled: clickInfo.event.extendedProps.enrolled,
-        maxStudents: clickInfo.event.extendedProps.maxStudents,
-        sessionNumber: clickInfo.event.extendedProps.sessionNumber,
-        status: clickInfo.event.extendedProps.status,
-        type: clickInfo.event.extendedProps.type,
-        studentName: clickInfo.event.extendedProps.studentName,
-        studentNickname: clickInfo.event.extendedProps.studentNickname,
-        originalClassName: clickInfo.event.extendedProps.originalClassName,
-        makeupStatus: clickInfo.event.extendedProps.makeupStatus,
-        subjectColor: clickInfo.event.extendedProps.subjectColor,
-        trialStudentName: clickInfo.event.extendedProps.trialStudentName,
-        trialSubjectName: clickInfo.event.extendedProps.trialSubjectName,
-        startTime: clickInfo.event.extendedProps.startTime,
-        endTime: clickInfo.event.extendedProps.endTime,
-        attendance: clickInfo.event.extendedProps.attendance
-      }
-    };
-    
-    console.log('Setting event:', event);
-    setSelectedEvent(event);
-    setSelectedScheduleId(scheduleId);
-    setDialogOpen(true);
+  // ในไฟล์ app/(admin)/dashboard/page.tsx
+// หาฟังก์ชัน handleEventClick และแก้ไขเป็น:
+
+const handleEventClick = (clickInfo: EventClickArg) => {
+  console.log('Event clicked:', clickInfo.event);
+  console.log('Event extendedProps:', clickInfo.event.extendedProps);
+  
+  // Extract schedule ID from event ID (format: classId-scheduleId)
+  const eventId = clickInfo.event.id;
+  const scheduleId = eventId.includes('-') ? eventId.split('-')[1] : '';
+  
+  // Get the class ID from extendedProps
+  const classId = clickInfo.event.extendedProps.classId || clickInfo.event.id.split('-')[0];
+  
+  const event: CalendarEvent = {
+    id: eventId,
+    classId: classId,
+    title: clickInfo.event.title,
+    start: clickInfo.event.start!,
+    end: clickInfo.event.end!,
+    backgroundColor: clickInfo.event.backgroundColor,
+    borderColor: clickInfo.event.borderColor,
+    extendedProps: {
+      type: clickInfo.event.extendedProps.type,
+      className: clickInfo.event.extendedProps.className,         // ตรวจสอบให้แน่ใจว่าส่งไป
+      classCode: clickInfo.event.extendedProps.classCode,       // ตรวจสอบให้แน่ใจว่าส่งไป
+      branchId: clickInfo.event.extendedProps.branchId,
+      branchName: clickInfo.event.extendedProps.branchName,
+      roomName: clickInfo.event.extendedProps.roomName,
+      teacherName: clickInfo.event.extendedProps.teacherName,
+      subjectColor: clickInfo.event.extendedProps.subjectColor,
+      enrolled: clickInfo.event.extendedProps.enrolled,
+      maxStudents: clickInfo.event.extendedProps.maxStudents,
+      sessionNumber: clickInfo.event.extendedProps.sessionNumber,
+      status: clickInfo.event.extendedProps.status,
+      isFullyAttended: clickInfo.event.extendedProps.isFullyAttended,
+      startTime: clickInfo.event.extendedProps.startTime,
+      endTime: clickInfo.event.extendedProps.endTime,
+      attendance: clickInfo.event.extendedProps.attendance,
+      // For makeup
+      studentName: clickInfo.event.extendedProps.studentName,
+      studentNickname: clickInfo.event.extendedProps.studentNickname,
+      originalClassName: clickInfo.event.extendedProps.originalClassName,
+      makeupStatus: clickInfo.event.extendedProps.makeupStatus,
+      // For trial
+      trialStudentName: clickInfo.event.extendedProps.trialStudentName,
+      trialSubjectName: clickInfo.event.extendedProps.trialSubjectName,
+      trialCount: clickInfo.event.extendedProps.trialCount,
+      trialDetails: clickInfo.event.extendedProps.trialDetails
+    }
   };
+  
+  console.log('Setting event with className:', event.extendedProps.className);
+  setSelectedEvent(event);
+  setSelectedScheduleId(scheduleId);
+  setDialogOpen(true);
+};
 
   // Refresh calendar after saving attendance
   const handleDialogClose = async (open: boolean) => {

@@ -290,28 +290,23 @@ export async function getOptimizedCalendarEvents(
       const eventEnd = new Date(sessionDate);
       eventEnd.setHours(endHour, endMinute, 0, 0);
       
-      // Check attendance status
-      const hasAttendance = scheduleData.attendance && scheduleData.attendance.length > 0;
-      const isFullyAttended = hasAttendance && classData.enrolledCount > 0 &&
-        scheduleData.attendance.length >= classData.enrolledCount;
-      
-      // Determine color and status
-      let backgroundColor = '#E5E7EB';
+      // Determine color and status - SIMPLIFIED LOGIC
+      let backgroundColor = '#E5E7EB'; // สีเทา - คลาสปกติ
       let borderColor = '#D1D5DB';
       let effectiveStatus = scheduleData.status;
+      let textColor = '#374151'; // สีข้อความปกติ
       
-      if (isFullyAttended) {
-        backgroundColor = '#D1FAE5';
+      // ถ้าเวลาผ่านไปแล้ว = สอนเสร็จแล้ว
+      if (eventEnd < now) {
+        backgroundColor = '#D1FAE5'; // สีเขียว
         borderColor = '#A7F3D0';
         effectiveStatus = 'completed';
-      } else if (eventEnd < now) {
-        backgroundColor = '#FEF3C7';
-        borderColor = '#FDE68A';
-        effectiveStatus = 'past_incomplete';
+        textColor = '#065F46'; // สีข้อความเขียวเข้ม
       }
       
-      // Create title with debug
-      const eventTitle = `${subject.name} - ${classData.name}`;
+      // Create title - ใช้แค่ชื่อวิชา
+      const eventTitle = subject.name;
+      
       console.log('Event title created:', {
         subjectName: subject.name,
         className: classData.name,
@@ -326,8 +321,7 @@ export async function getOptimizedCalendarEvents(
         end: eventEnd,
         backgroundColor,
         borderColor,
-        textColor: effectiveStatus === 'completed' ? '#065F46' : 
-                   effectiveStatus === 'past_incomplete' ? '#92400E' : '#374151',
+        textColor,
         extendedProps: {
           type: 'class',
           className: classData.name, // Add class name
@@ -341,7 +335,7 @@ export async function getOptimizedCalendarEvents(
           maxStudents: classData.maxStudents,
           sessionNumber: scheduleData.sessionNumber,
           status: effectiveStatus,
-          isFullyAttended,
+          isFullyAttended: false, // ไม่ใช้แล้ว
           startTime: classData.startTime,
           endTime: classData.endTime,
           attendance: scheduleData.attendance

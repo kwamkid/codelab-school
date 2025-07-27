@@ -225,10 +225,8 @@ const DashboardCalendar = forwardRef<FullCalendar, DashboardCalendarProps>(({
       );
     }
     
-    // For day/week view - detailed display
+    // For day/week view - detailed display (4 lines format)
     if (isDayView || isWeekView) {
-      const [subjectName, classCode] = eventInfo.event.title.split(' - ');
-      
       return (
         <div className="p-2 h-full overflow-hidden">
           {isMakeup ? (
@@ -270,12 +268,10 @@ const DashboardCalendar = forwardRef<FullCalendar, DashboardCalendarProps>(({
               </div>
             </div>
           ) : (
-            // Regular class display
-            <div>
-              <div className="text-xs text-gray-600 font-medium">
-                {eventInfo.timeText}
-              </div>
-              <div className="font-semibold text-sm flex items-center gap-1.5 mt-0.5">
+            // Regular class display - 4 lines format as requested
+            <div className="space-y-0.5">
+              {/* Line 1: Subject color + Subject name + Session number */}
+              <div className="font-semibold text-sm flex items-center gap-1.5">
                 {props.subjectColor && (
                   <div 
                     className="w-3 h-3 rounded-full flex-shrink-0" 
@@ -283,27 +279,37 @@ const DashboardCalendar = forwardRef<FullCalendar, DashboardCalendarProps>(({
                   />
                 )}
                 <span className="text-gray-800">
-                  {subjectName}
+                  {eventInfo.event.title}
                   {props.sessionNumber && (
-                    <span className="ml-1 font-normal">ครั้งที่ {props.sessionNumber}</span>
+                    <span className="ml-1 font-normal"> ครั้งที่ {props.sessionNumber}</span>
                   )}
                 </span>
               </div>
-              {classCode && (
-                <div className="text-xs text-gray-600 mt-0.5">
-                  {classCode}
+              
+              {/* Line 2: Class name */}
+              {props.className && (
+                <div className="text-xs text-gray-700 font-medium truncate">
+                  {props.className}
                 </div>
               )}
-              <div className="text-xs text-gray-600 mt-0.5 flex items-center gap-1">
+              
+              {/* Line 3: Room with icon */}
+              <div className="text-xs text-gray-600 flex items-center gap-1">
                 <MapPin className="h-3 w-3" />
-                {props.roomName}
+                <span>{props.roomName}</span>
               </div>
-              {props.enrolled !== undefined && (
-                <div className="text-xs text-gray-700 mt-1 flex items-center gap-1">
-                  <Users className="h-3 w-3" />
-                  {props.enrolled}/{props.maxStudents}
-                </div>
-              )}
+              
+              {/* Line 4: Teacher + Students count with icons */}
+              <div className="text-xs text-gray-600 flex items-center gap-1">
+                <User className="h-3 w-3" />
+                <span className="truncate">{props.teacherName}</span>
+                {props.enrolled !== undefined && (
+                  <>
+                    <Users className="h-3 w-3 ml-2" />
+                    <span className="font-medium">{props.enrolled}/{props.maxStudents}</span>
+                  </>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -631,7 +637,7 @@ const DashboardCalendar = forwardRef<FullCalendar, DashboardCalendarProps>(({
           background-color: #D1D5DB !important;
         }
         
-        /* Completed class styles - Green (fully attended) */
+        /* Completed class styles - Green (time passed) */
         .dashboard-calendar .class-event.status-completed {
           background-color: #D1FAE5 !important;
           border-color: #A7F3D0 !important;
@@ -640,17 +646,6 @@ const DashboardCalendar = forwardRef<FullCalendar, DashboardCalendarProps>(({
         
         .dashboard-calendar .class-event.status-completed * {
           color: #065F46 !important;
-        }
-        
-        /* Past incomplete class styles - Amber (time passed but not fully attended) */
-        .dashboard-calendar .class-event.status-past-incomplete {
-          background-color: #FEF3C7 !important;
-          border-color: #FDE68A !important;
-          color: #92400E !important;
-        }
-        
-        .dashboard-calendar .class-event.status-past-incomplete * {
-          color: #92400E !important;
         }
         
         /* Makeup event styles - Purple */
@@ -887,14 +882,7 @@ const DashboardCalendar = forwardRef<FullCalendar, DashboardCalendarProps>(({
             className="dashboard-calendar-legend-dot" 
             style={{ backgroundColor: '#D1FAE5', borderColor: '#A7F3D0' }}
           />
-          <span>เช็คชื่อครบ/จบแล้ว</span>
-        </div>
-        <div className="dashboard-calendar-legend-item">
-          <div 
-            className="dashboard-calendar-legend-dot" 
-            style={{ backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }}
-          />
-          <span>เลยเวลา (ยังไม่เช็คชื่อ)</span>
+          <span>สอนเสร็จแล้ว</span>
         </div>
         <div className="dashboard-calendar-legend-item">
           <div 
