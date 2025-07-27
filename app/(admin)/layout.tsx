@@ -289,6 +289,12 @@ export default function AdminLayout({
         // จะเพิ่มเมนูอื่นๆ ในอนาคต
       ]
     },
+    { 
+      name: 'เช็คชื่อ', 
+      href: '/attendance', 
+      icon: UserCheck,
+      requiredRole: ['super_admin', 'branch_admin','teacher'] // ครูและ admin ดูได้
+    },
     {
       name: 'ลูกค้า',
       icon: Users,
@@ -332,14 +338,7 @@ export default function AdminLayout({
       icon: TestTube,
       requiredRole: ['super_admin', 'branch_admin'] // admin ขึ้นไป
     },
-    { 
-      name: 'เช็คชื่อ', 
-      href: '/attendance', 
-      icon: UserCheck,
-      requiredRole: ['super_admin', 'branch_admin','teacher'] // ครูและ admin ดูได้
 
-      // ทุกคนเห็นได้ (ครูเห็นเฉพาะคลาสที่สอน)
-    },
     {
       name: 'รายงาน',
       icon: BarChart3,

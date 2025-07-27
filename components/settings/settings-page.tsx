@@ -1,9 +1,10 @@
 'use client';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Settings, School, MessageSquare } from 'lucide-react';
+import { Settings, School, MessageSquare, Repeat } from 'lucide-react';
 import GeneralSettingsComponent from './general-settings';
 import LineSettingsComponent from './line-settings';
+import MakeupSettingsComponent from './makeup-settings';
 
 export default function SettingsPage() {
   return (
@@ -22,6 +23,10 @@ export default function SettingsPage() {
             <School className="h-4 w-4 mr-2" />
             ตั้งค่าทั่วไป
           </TabsTrigger>
+          <TabsTrigger value="makeup">
+            <Repeat className="h-4 w-4 mr-2" />
+            ลาและชดเชย
+          </TabsTrigger>
           <TabsTrigger value="line">
             <MessageSquare className="h-4 w-4 mr-2" />
             LINE Integration
@@ -30,6 +35,10 @@ export default function SettingsPage() {
 
         <TabsContent value="general">
           <GeneralSettingsComponent />
+        </TabsContent>
+        
+        <TabsContent value="makeup">
+          <MakeupSettingsComponent />
         </TabsContent>
         
         <TabsContent value="line">

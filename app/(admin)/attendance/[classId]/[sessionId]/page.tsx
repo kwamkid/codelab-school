@@ -206,35 +206,52 @@ export default function AttendanceCheckPage() {
         attendanceCompletedBy: attendanceData.length > 0 ? (user?.uid || 'system') : undefined
       });
       
-      // Create makeup requests for absent students in parallel
-      const absentStudents = attendanceToSave.filter(att => 
-        att.status === 'absent' || att.status === 'sick' || att.status === 'leave'
+      // Get makeup settings
+      const { getMakeupSettings } = await import('@/lib/services/settings');
+      const { getMakeupCount } = await import('@/lib/services/makeup');
+      const makeupSettings = await getMakeupSettings();
+      
+      // Filter students for makeup based on settings
+      const studentsForMakeup = attendanceToSave.filter(att => 
+        makeupSettings.allowMakeupForStatuses.includes(att.status as any)
       );
       
-      const makeupPromises = absentStudents.map(async (student) => {
-        try {
-          const studentData = await getStudentWithParent(student.studentId);
-          if (studentData) {
-            return createMakeupRequest({
-              type: 'ad-hoc',
-              originalClassId: classId,
-              originalScheduleId: sessionId,
-              studentId: student.studentId,
-              parentId: studentData.parentId,
-              requestDate: new Date(),
-              requestedBy: 'system',
-              reason: `${student.status === 'sick' ? 'ป่วย' : student.status === 'leave' ? 'ลา' : 'ขาดเรียน'} - สร้างอัตโนมัติจากการเช็คชื่อ`,
-              status: 'pending',
-              originalSessionNumber: schedule?.sessionNumber,
-              originalSessionDate: schedule?.sessionDate
-            });
+      if (makeupSettings.autoCreateMakeup && studentsForMakeup.length > 0) {
+        const makeupPromises = studentsForMakeup.map(async (student) => {
+          try {
+            // Check makeup limit if set
+            if (makeupSettings.makeupLimitPerCourse > 0) {
+              const currentCount = await getMakeupCount(student.studentId, classId);
+              if (currentCount >= makeupSettings.makeupLimitPerCourse) {
+                console.log(`Student ${student.studentId} reached makeup limit (${currentCount}/${makeupSettings.makeupLimitPerCourse})`);
+                toast.warning(`${student.studentNickname || student.studentName} เกินจำนวนครั้งที่ชดเชยได้แล้ว`);
+                return;
+              }
+            }
+            
+            const studentData = await getStudentWithParent(student.studentId);
+            if (studentData) {
+              return createMakeupRequest({
+                type: 'ad-hoc',
+                originalClassId: classId,
+                originalScheduleId: sessionId,
+                studentId: student.studentId,
+                parentId: studentData.parentId,
+                requestDate: new Date(),
+                requestedBy: 'system',
+                reason: `${student.status === 'sick' ? 'ป่วย' : student.status === 'leave' ? 'ลา' : 'ขาดเรียน'} - สร้างอัตโนมัติจากการเช็คชื่อ`,
+                status: 'pending',
+                originalSessionNumber: schedule?.sessionNumber,
+                originalSessionDate: schedule?.sessionDate
+              });
+            }
+          } catch (error) {
+            console.error('Error creating makeup for student:', student.studentId, error);
           }
-        } catch (error) {
-          console.error('Error creating makeup for student:', student.studentId, error);
-        }
-      });
-      
-      await Promise.all(makeupPromises);
+        });
+        
+        await Promise.all(makeupPromises);
+      }
       
       toast.success('บันทึกการเช็คชื่อเรียบร้อยแล้ว');
       router.push(`/attendance/${classId}`);
