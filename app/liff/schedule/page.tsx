@@ -5,14 +5,21 @@ import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { ChevronLeft, Loader2, Calendar, Users, Clock, MapPin, User } from 'lucide-react'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
+import { ChevronLeft, Loader2, Calendar, Users, Clock, MapPin, User, List, CalendarDays, CalendarRange, AlertCircle } from 'lucide-react'
 import { useLiff } from '@/components/liff/liff-provider'
 import { getParentScheduleEvents, getStudentOverallStats, StudentStats } from '@/lib/services/liff-schedule'
 import { toast } from 'sonner'
-import { DatesSetArg } from '@fullcalendar/core'
-import ScheduleCalendar, { ScheduleEvent } from '@/components/liff/schedule-calendar'
 import { LiffProvider } from '@/components/liff/liff-provider'
 import { PageLoading, SectionLoading } from '@/components/ui/loading'
+import { ScheduleEvent } from '@/components/liff/schedule-calendar'
+
+// Import new components
+import CourseList from '@/components/liff/schedule/course-list'
+import CourseCalendar from '@/components/liff/schedule/course-calendar'
+import MonthlyCalendar from '@/components/liff/schedule/monthly-calendar'
 
 function ScheduleContent() {
   const router = useRouter()
@@ -25,6 +32,11 @@ function ScheduleContent() {
   const [loadingStats, setLoadingStats] = useState(true)
   const [dataLoaded, setDataLoaded] = useState(false)
   const [authChecked, setAuthChecked] = useState(false)
+  const [selectedEvent, setSelectedEvent] = useState<ScheduleEvent | null>(null)
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [confirmLeaveOpen, setConfirmLeaveOpen] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [activeTab, setActiveTab] = useState('list')
 
   // Check authentication
   useEffect(() => {
@@ -111,12 +123,6 @@ function ScheduleContent() {
     }
   }, [profile, students])
 
-  // Calendar dates set handler (no need to load data anymore)
-  const handleDatesSet = useCallback((dateInfo: DatesSetArg) => {
-    // Just let the calendar update its view
-    // Data is already loaded for the whole year
-  }, [])
-
   // Initial load
   useEffect(() => {
     if (profile?.userId && authChecked) {
@@ -130,6 +136,69 @@ function ScheduleContent() {
       loadOverallStats()
     }
   }, [students, loadOverallStats])
+
+  // Handle leave request
+  const handleLeaveRequest = (event: ScheduleEvent) => {
+    setSelectedEvent(event)
+    setConfirmLeaveOpen(true)
+  }
+
+  // Submit leave request
+  const submitLeaveRequest = async () => {
+    if (!selectedEvent) return
+
+    try {
+      setIsSubmitting(true)
+      
+      // Get the schedule ID from the event ID (format: classId-scheduleId-studentId)
+      const [classId, scheduleId] = selectedEvent.id.split('-')
+      
+      // Call API to create makeup request
+      const response = await fetch('/api/liff/leave-request', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          studentId: selectedEvent.extendedProps.studentId,
+          classId: classId,
+          scheduleId: scheduleId,
+          reason: 'ลาผ่านระบบ LIFF',
+          type: 'scheduled', // Since parent requests in advance
+        })
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.message || 'เกิดข้อผิดพลาด')
+      }
+
+      toast.success('บันทึกการลาเรียนเรียบร้อยแล้ว', {
+        description: 'รอเจ้าหน้าที่นัดหมายวันเรียนชดเชยใหม่'
+      })
+      
+      setDialogOpen(false)
+      setConfirmLeaveOpen(false)
+      
+      // Force refresh to show red color
+      if (forceRefresh) {
+        setTimeout(() => {
+          forceRefresh()
+        }, 500) // Small delay to ensure database is updated
+      }
+    } catch (error) {
+      console.error('Error submitting leave request:', error)
+      toast.error(error instanceof Error ? error.message : 'ไม่สามารถบันทึกการลาได้')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  // Handle event click
+  const handleEventClick = (event: ScheduleEvent) => {
+    setSelectedEvent(event)
+    setDialogOpen(true)
+  }
 
   // Show loading while checking auth or loading initial data
   if (liffLoading || !authChecked || (loading && !dataLoaded)) {
@@ -185,35 +254,82 @@ function ScheduleContent() {
           </div>
         )}
 
-        {/* Calendar - No border, full width */}
-        <div className="relative -mx-4 px-4 bg-white">
-          {loading && <SectionLoading />}
-          
-          {students.length === 0 && !loading ? (
-            <Card>
-              <CardContent className="pt-6">
-                <div className="text-center py-8">
-                  <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                  <p className="text-muted-foreground mb-4">ไม่มีข้อมูลตารางเรียน</p>
-                  <Button onClick={() => router.push('/liff/profile')}>
-                    กลับไปหน้าโปรไฟล์
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ) : (
-            <ScheduleCalendar 
-              events={events}
-              onDatesSet={handleDatesSet}
-              loading={loading}
-              selectedStudentId={selectedStudentId}
-              onRefreshNeeded={forceRefresh}
-            />
-          )}
-        </div>
+        {/* Tabs */}
+        {students.length === 0 && !loading ? (
+          <Card>
+            <CardContent className="pt-6">
+              <div className="text-center py-8">
+                <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground mb-4">ไม่มีข้อมูลตารางเรียน</p>
+                <Button onClick={() => router.push('/liff/profile')}>
+                  กลับไปหน้าโปรไฟล์
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="list" className="text-xs">
+                <List className="h-4 w-4 mr-1" />
+                รายการ
+              </TabsTrigger>
+              <TabsTrigger value="course" className="text-xs">
+                <CalendarDays className="h-4 w-4 mr-1" />
+                ปฏิทินคอร์ส
+              </TabsTrigger>
+              <TabsTrigger value="monthly" className="text-xs">
+                <CalendarRange className="h-4 w-4 mr-1" />
+                รายเดือน
+              </TabsTrigger>
+            </TabsList>
 
-        {/* Statistics - Moved to bottom */}
-        {selectedStudentStats && (
+            {/* List View */}
+            <TabsContent value="list" className="mt-4">
+              {loading ? (
+                <SectionLoading />
+              ) : (
+                <CourseList 
+                  events={events}
+                  selectedStudentId={selectedStudentId}
+                  students={students}
+                  onLeaveRequest={handleLeaveRequest}
+                />
+              )}
+            </TabsContent>
+
+            {/* Course Calendar View */}
+            <TabsContent value="course" className="mt-4">
+              {loading ? (
+                <SectionLoading />
+              ) : (
+                <CourseCalendar 
+                  events={events}
+                  selectedStudentId={selectedStudentId}
+                  students={students}
+                  onLeaveRequest={handleLeaveRequest}
+                />
+              )}
+            </TabsContent>
+
+            {/* Monthly Calendar View */}
+            <TabsContent value="monthly" className="mt-4">
+              {loading ? (
+                <SectionLoading />
+              ) : (
+                <MonthlyCalendar 
+                  events={events}
+                  selectedStudentId={selectedStudentId}
+                  students={students}
+                  onEventClick={handleEventClick}
+                />
+              )}
+            </TabsContent>
+          </Tabs>
+        )}
+
+        {/* Statistics - Show only in list view */}
+        {activeTab === 'list' && selectedStudentStats && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <Card>
               <CardContent className="p-3 text-center">
@@ -265,49 +381,194 @@ function ScheduleContent() {
             </Card>
           </div>
         )}
-
-        {/* Show overall stats for all students when no student is selected */}
-        {!selectedStudentId && students.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">สรุปรายนักเรียน</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {students.map((data) => {
-                const stats = overallStats[data.student.id]
-                return (
-                  <div key={data.student.id} className="flex items-start justify-between border-b pb-3 last:border-0">
-                    <div>
-                      <p className="font-medium">{data.student.nickname || data.student.name}</p>
-                      <p className="text-sm text-muted-foreground">{data.student.name}</p>
-                    </div>
-                    {stats && (
-                      <div className="grid grid-cols-4 gap-3 text-center">
-                        <div>
-                          <p className="text-sm font-bold">{stats.totalClasses}</p>
-                          <p className="text-xs text-muted-foreground">ทั้งหมด</p>
-                        </div>
-                        <div>
-                          <p className="text-sm font-bold text-green-600">{stats.completedClasses}</p>
-                          <p className="text-xs text-muted-foreground">เรียนแล้ว</p>
-                        </div>
-                        <div>
-                          <p className="text-sm font-bold text-blue-600">{stats.upcomingClasses}</p>
-                          <p className="text-xs text-muted-foreground">จะถึง</p>
-                        </div>
-                        <div>
-                          <p className="text-sm font-bold text-purple-600">{stats.makeupClasses}</p>
-                          <p className="text-xs text-muted-foreground">ชดเชย</p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-            </CardContent>
-          </Card>
-        )}
       </div>
+
+      {/* Event Detail Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Calendar className="h-5 w-5" />
+              รายละเอียดคลาสเรียน
+            </DialogTitle>
+          </DialogHeader>
+          
+          {selectedEvent && (
+            <div className="space-y-4">
+              {/* Student Info */}
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                  <User className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <p className="font-semibold">
+                    {selectedEvent.extendedProps.studentNickname || selectedEvent.extendedProps.studentName}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {selectedEvent.extendedProps.studentName}
+                  </p>
+                </div>
+              </div>
+
+              {/* Class Type Badge */}
+              <div>
+                {selectedEvent.extendedProps.type === 'makeup' ? (
+                  <Badge variant="secondary" className="bg-purple-100 text-purple-700">
+                    Makeup Class
+                  </Badge>
+                ) : (
+                  <Badge variant="secondary">
+                    คลาสปกติ
+                  </Badge>
+                )}
+              </div>
+
+              {/* Class Details */}
+              <div className="space-y-3">
+                <div>
+                  <p className="text-sm text-muted-foreground">คลาสเรียน</p>
+                  <div className="font-medium flex items-center gap-2">
+                    {selectedEvent.extendedProps.subjectColor && (
+                      <div 
+                        className="w-3 h-3 rounded-full" 
+                        style={{ backgroundColor: selectedEvent.extendedProps.subjectColor }}
+                      />
+                    )}
+                    <span>
+                      {selectedEvent.extendedProps.type === 'makeup' 
+                        ? selectedEvent.extendedProps.originalClassName 
+                        : selectedEvent.extendedProps.className || selectedEvent.extendedProps.subjectName}
+                      {selectedEvent.extendedProps.sessionNumber && selectedEvent.extendedProps.type !== 'makeup' && (
+                        <span className="text-muted-foreground ml-2">
+                          (ครั้งที่ {selectedEvent.extendedProps.sessionNumber})
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-sm text-muted-foreground">วันที่และเวลา</p>
+                  <p className="font-medium">
+                    {selectedEvent.start.toLocaleDateString('th-TH', { 
+                      weekday: 'long', 
+                      year: 'numeric', 
+                      month: 'long', 
+                      day: 'numeric' 
+                    })}
+                  </p>
+                  <p className="text-sm">
+                    {selectedEvent.start.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} - 
+                    {selectedEvent.end.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-sm text-muted-foreground">สถานที่</p>
+                  <p className="font-medium">{selectedEvent.extendedProps.branchName}</p>
+                  <p className="text-sm">ห้อง {selectedEvent.extendedProps.roomName}</p>
+                </div>
+
+                <div>
+                  <p className="text-sm text-muted-foreground">ครูผู้สอน</p>
+                  <p className="font-medium">ครู{selectedEvent.extendedProps.teacherName}</p>
+                </div>
+              </div>
+
+              {/* Status */}
+              {selectedEvent.extendedProps.status === 'completed' && (
+                <div className="pt-3 border-t">
+                  <Badge className="w-full justify-center" variant="default">
+                    เรียนเสร็จแล้ว
+                  </Badge>
+                </div>
+              )}
+              
+              {(selectedEvent.extendedProps.status === 'absent' || selectedEvent.extendedProps.status === 'leave-requested') && (
+                <div className="pt-3 border-t">
+                  <Badge className="w-full justify-center bg-red-600 hover:bg-red-700">
+                    ลาเรียน
+                  </Badge>
+                  <p className="text-xs text-center text-muted-foreground mt-2">
+                    {selectedEvent.extendedProps.makeupScheduled 
+                      ? `นัดเรียนชดเชย: ${new Date(selectedEvent.extendedProps.makeupDate!).toLocaleDateString('th-TH')} เวลา ${selectedEvent.extendedProps.makeupTime}`
+                      : 'รอเจ้าหน้าที่นัดเรียนชดเชย'}
+                  </p>
+                </div>
+              )}
+              
+              {/* Leave Request Button */}
+              {selectedEvent.extendedProps.type === 'class' && 
+               selectedEvent.extendedProps.status !== 'completed' &&
+               selectedEvent.extendedProps.status !== 'absent' &&
+               selectedEvent.extendedProps.status !== 'leave-requested' &&
+               new Date(selectedEvent.start) > new Date() && (
+                <div className="pt-3 border-t">
+                  <Button 
+                    className="w-full" 
+                    variant="destructive"
+                    onClick={() => handleLeaveRequest(selectedEvent)}
+                  >
+                    ขอลาเรียน
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirm Leave Dialog */}
+      <AlertDialog open={confirmLeaveOpen} onOpenChange={setConfirmLeaveOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-destructive" />
+              ยืนยันการขอลาเรียน
+            </AlertDialogTitle>
+          </AlertDialogHeader>
+          <div className="space-y-2 text-sm text-muted-foreground">
+            {selectedEvent && (
+              <>
+                <div>คุณต้องการขอลาเรียนสำหรับ:</div>
+                <div className="bg-gray-50 p-3 rounded-md space-y-1 text-foreground">
+                  <p className="font-medium">{selectedEvent.extendedProps.studentNickname || selectedEvent.extendedProps.studentName}</p>
+                  <p className="text-sm">
+                    คลาส: {selectedEvent.extendedProps.className || selectedEvent.extendedProps.subjectName}
+                    {selectedEvent.extendedProps.sessionNumber && (
+                      <span className="text-muted-foreground"> (ครั้งที่ {selectedEvent.extendedProps.sessionNumber})</span>
+                    )}
+                  </p>
+                  <p className="text-sm">
+                    วันที่: {selectedEvent.start.toLocaleDateString('th-TH', { 
+                      weekday: 'long', 
+                      year: 'numeric', 
+                      month: 'long', 
+                      day: 'numeric' 
+                    })}
+                  </p>
+                  <p className="text-sm">
+                    เวลา: {selectedEvent.start.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} น.
+                  </p>
+                </div>
+                <div className="text-sm text-muted-foreground mt-3">
+                  หลังจากยืนยันการลา ระบบจะแจ้งให้เจ้าหน้าที่นัดหมายวันเรียนชดเชยให้
+                </div>
+              </>
+            )}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isSubmitting}>ยกเลิก</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={submitLeaveRequest}
+              disabled={isSubmitting}
+              className="bg-destructive hover:bg-destructive/90"
+            >
+              {isSubmitting ? 'กำลังบันทึก...' : 'ยืนยันการลา'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
