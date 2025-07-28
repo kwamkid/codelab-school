@@ -57,12 +57,14 @@ function ScheduleContent() {
     try {
       setLoading(true)
       
-      // Load data for the whole year
+      // Load data for current year and next year to cover cross-year courses
       const now = new Date()
-      const yearStart = new Date(now.getFullYear(), 0, 1) // January 1st
-      const yearEnd = new Date(now.getFullYear(), 11, 31) // December 31st
+      // Start from 3 months ago to include recent past classes
+      const yearStart = new Date(now.getFullYear(), now.getMonth() - 3, 1)
+      // End at next year to include courses that extend into next year
+      const yearEnd = new Date(now.getFullYear() + 1, 11, 31) // December 31st next year
       
-      console.log(`Loading data from ${yearStart.toDateString()} to ${yearEnd.toDateString()}`)
+      console.log(`Loading data from ${yearStart.toDateString()} to ${yearEnd.toDateString()} (covering cross-year courses)`)
       
       const { events: fetchedEvents, students: studentsData } = await getParentScheduleEvents(
         profile.userId,
