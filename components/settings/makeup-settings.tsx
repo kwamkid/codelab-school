@@ -6,15 +6,17 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Checkbox } from '@/components/ui/checkbox';
 import { 
   Save, 
   Loader2, 
   Repeat,
   Clock,
-  Bell,
-  Info,
-  AlertCircle
+  AlertCircle,
+  Calendar,
+  MessageSquare,
+  Info
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { 
@@ -23,7 +25,6 @@ import {
   MakeupSettings
 } from '@/lib/services/settings';
 import { auth } from '@/lib/firebase/client';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 
 export default function MakeupSettingsComponent() {
   const [loading, setLoading] = useState(true);
@@ -40,7 +41,7 @@ export default function MakeupSettingsComponent() {
       const data = await getMakeupSettings();
       setSettings(data);
     } catch (error) {
-      console.error('Error loading makeup settings:', error);
+      console.error('Error loading settings:', error);
       toast.error('ไม่สามารถโหลดการตั้งค่าได้');
     } finally {
       setLoading(false);
@@ -56,7 +57,7 @@ export default function MakeupSettingsComponent() {
       await updateMakeupSettings(settings, auth.currentUser.uid);
       toast.success('บันทึกการตั้งค่าเรียบร้อยแล้ว');
     } catch (error) {
-      console.error('Error saving makeup settings:', error);
+      console.error('Error saving settings:', error);
       toast.error('เกิดข้อผิดพลาดในการบันทึก');
     } finally {
       setSaving(false);
@@ -66,10 +67,9 @@ export default function MakeupSettingsComponent() {
   const handleStatusToggle = (status: 'absent' | 'sick' | 'leave') => {
     if (!settings) return;
     
-    const currentStatuses = settings.allowMakeupForStatuses || [];
-    const newStatuses = currentStatuses.includes(status)
-      ? currentStatuses.filter(s => s !== status)
-      : [...currentStatuses, status];
+    const newStatuses = settings.allowMakeupForStatuses.includes(status)
+      ? settings.allowMakeupForStatuses.filter(s => s !== status)
+      : [...settings.allowMakeupForStatuses, status];
     
     setSettings({
       ...settings,
@@ -100,25 +100,22 @@ export default function MakeupSettingsComponent() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Repeat className="h-5 w-5" />
-            การสร้าง Makeup อัตโนมัติ
+            การสร้าง Makeup Class อัตโนมัติ
           </CardTitle>
           <CardDescription>
-            ตั้งค่าการสร้างคลาสชดเชยอัตโนมัติเมื่อนักเรียนขาดเรียน
+            ตั้งค่าการสร้าง Makeup Class เมื่อนักเรียนขาดเรียน
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          {/* Auto Create Switch */}
-          <div className="flex items-center justify-between">
+          {/* Enable Auto Create */}
+          <div className="flex items-center justify-between p-4 border rounded-lg">
             <div className="space-y-0.5">
-              <Label htmlFor="autoCreate" className="text-base">
-                สร้าง Makeup อัตโนมัติ
-              </Label>
-              <p className="text-sm text-muted-foreground">
-                สร้างคำขอชดเชยทันทีเมื่อเช็คชื่อว่าขาดเรียน
+              <Label className="text-base">เปิดใช้งานการสร้างอัตโนมัติ</Label>
+              <p className="text-sm text-gray-500">
+                สร้าง Makeup Class อัตโนมัติเมื่อบันทึกว่านักเรียนขาดเรียน
               </p>
             </div>
             <Switch
-              id="autoCreate"
               checked={settings.autoCreateMakeup}
               onCheckedChange={(checked) => 
                 setSettings({...settings, autoCreateMakeup: checked})
@@ -126,166 +123,182 @@ export default function MakeupSettingsComponent() {
             />
           </div>
           
-          {/* Makeup Limit */}
-          <div className="space-y-2">
-            <Label htmlFor="makeupLimit">
-              จำนวนครั้งที่ชดเชยได้ต่อคอร์ส
-            </Label>
-            <div className="flex items-center gap-4">
-              <Input
-                id="makeupLimit"
-                type="number"
-                value={settings.makeupLimitPerCourse}
-                onChange={(e) => setSettings({
-                  ...settings, 
-                  makeupLimitPerCourse: parseInt(e.target.value) || 0
-                })}
-                className="w-24"
-                min="0"
-                max="20"
-              />
-              <span className="text-sm text-muted-foreground">
-                ครั้ง (0 = ไม่จำกัด)
-              </span>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              เมื่อเกินจำนวนนี้ ระบบจะไม่สร้างอัตโนมัติ แต่ Admin ยังสามารถสร้างเองได้
-            </p>
-          </div>
-          
-          {/* Status Selection */}
-          <div className="space-y-3">
-            <Label>สถานะที่สร้าง Makeup ให้</Label>
-            <div className="space-y-2">
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="absent"
-                  checked={settings.allowMakeupForStatuses.includes('absent')}
-                  onCheckedChange={() => handleStatusToggle('absent')}
-                />
-                <Label
-                  htmlFor="absent"
-                  className="text-sm font-normal cursor-pointer"
-                >
-                  ขาดเรียน (Absent)
+          {settings.autoCreateMakeup && (
+            <>
+              {/* Makeup Limit */}
+              <div className="space-y-2">
+                <Label htmlFor="makeupLimit">
+                  จำนวนครั้งที่ให้ Makeup ต่อคอร์ส
                 </Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="makeupLimit"
+                    type="number"
+                    min="0"
+                    max="20"
+                    value={settings.makeupLimitPerCourse}
+                    onChange={(e) => setSettings({
+                      ...settings, 
+                      makeupLimitPerCourse: parseInt(e.target.value) || 0
+                    })}
+                    className="w-24"
+                  />
+                  <span className="text-sm text-gray-500">
+                    ครั้ง (0 = ไม่จำกัด)
+                  </span>
+                </div>
+                <p className="text-sm text-gray-500">
+                  เมื่อเกินจำนวนนี้ ระบบจะไม่สร้าง Makeup อัตโนมัติ แต่ Admin ยังสร้างเองได้
+                </p>
               </div>
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="sick"
-                  checked={settings.allowMakeupForStatuses.includes('sick')}
-                  onCheckedChange={() => handleStatusToggle('sick')}
-                />
-                <Label
-                  htmlFor="sick"
-                  className="text-sm font-normal cursor-pointer"
-                >
-                  ป่วย (Sick)
-                </Label>
+              
+              {/* Status Selection */}
+              <div className="space-y-2">
+                <Label>สถานะที่จะสร้าง Makeup Class ให้</Label>
+                <div className="space-y-2">
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="absent"
+                      checked={settings.allowMakeupForStatuses.includes('absent')}
+                      onCheckedChange={() => handleStatusToggle('absent')}
+                    />
+                    <label
+                      htmlFor="absent"
+                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                    >
+                      ขาดเรียน (Absent)
+                    </label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="sick"
+                      checked={settings.allowMakeupForStatuses.includes('sick')}
+                      onCheckedChange={() => handleStatusToggle('sick')}
+                    />
+                    <label
+                      htmlFor="sick"
+                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                    >
+                      ป่วย (Sick)
+                    </label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="leave"
+                      checked={settings.allowMakeupForStatuses.includes('leave')}
+                      onCheckedChange={() => handleStatusToggle('leave')}
+                    />
+                    <label
+                      htmlFor="leave"
+                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                    >
+                      ลา (Leave)
+                    </label>
+                  </div>
+                </div>
               </div>
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="leave"
-                  checked={settings.allowMakeupForStatuses.includes('leave')}
-                  onCheckedChange={() => handleStatusToggle('leave')}
-                />
-                <Label
-                  htmlFor="leave"
-                  className="text-sm font-normal cursor-pointer"
-                >
-                  ลา (Leave)
-                </Label>
-              </div>
-            </div>
-          </div>
+            </>
+          )}
         </CardContent>
       </Card>
-      
-      {/* Rules & Deadlines */}
+
+      {/* Makeup Rules */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Clock className="h-5 w-5" />
-            กฎและระยะเวลา
+            <Calendar className="h-5 w-5" />
+            กฎการขอ Makeup
           </CardTitle>
           <CardDescription>
-            กำหนดระยะเวลาในการขอและเข้าเรียนชดเชย
+            กำหนดระยะเวลาในการขอและใช้สิทธิ์ Makeup
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Request Deadline */}
             <div className="space-y-2">
               <Label htmlFor="requestDeadline">
-                ขอชดเชยได้ภายใน
+                <Clock className="h-4 w-4 inline mr-1" />
+                ระยะเวลาที่ขอ Makeup ได้
               </Label>
               <div className="flex items-center gap-2">
                 <Input
                   id="requestDeadline"
                   type="number"
+                  min="1"
+                  max="30"
                   value={settings.makeupRequestDeadlineDays}
                   onChange={(e) => setSettings({
                     ...settings, 
                     makeupRequestDeadlineDays: parseInt(e.target.value) || 7
                   })}
                   className="w-24"
-                  min="1"
-                  max="30"
                 />
-                <span className="text-sm text-muted-foreground">
+                <span className="text-sm text-gray-500">
                   วัน หลังจากขาดเรียน
                 </span>
               </div>
             </div>
             
+            {/* Validity Period */}
             <div className="space-y-2">
-              <Label htmlFor="validityDays">
-                ต้องมาชดเชยภายใน
+              <Label htmlFor="validity">
+                <Calendar className="h-4 w-4 inline mr-1" />
+                ระยะเวลาที่ต้องมา Makeup
               </Label>
               <div className="flex items-center gap-2">
                 <Input
-                  id="validityDays"
+                  id="validity"
                   type="number"
+                  min="7"
+                  max="90"
                   value={settings.makeupValidityDays}
                   onChange={(e) => setSettings({
                     ...settings, 
                     makeupValidityDays: parseInt(e.target.value) || 30
                   })}
                   className="w-24"
-                  min="7"
-                  max="90"
                 />
-                <span className="text-sm text-muted-foreground">
-                  วัน หลังคอร์สจบ
+                <span className="text-sm text-gray-500">
+                  วัน หลังจากคอร์สจบ
                 </span>
               </div>
             </div>
           </div>
+          
+          <Alert>
+            <Info className="h-4 w-4" />
+            <AlertDescription>
+              <ul className="list-disc list-inside space-y-1 mt-2">
+                <li>นักเรียนต้องขอ Makeup ภายในระยะเวลาที่กำหนด</li>
+                <li>Makeup Class ต้องเรียนให้เสร็จภายในระยะเวลาที่กำหนดหลังคอร์สจบ</li>
+                <li>Admin สามารถสร้าง Makeup นอกเหนือจากกฎเหล่านี้ได้</li>
+              </ul>
+            </AlertDescription>
+          </Alert>
         </CardContent>
       </Card>
-      
+
       {/* Notification Settings */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Bell className="h-5 w-5" />
+            <MessageSquare className="h-5 w-5" />
             การแจ้งเตือน
           </CardTitle>
           <CardDescription>
-            ตั้งค่าการแจ้งเตือนเกี่ยวกับ Makeup Class
+            ตั้งค่าการแจ้งเตือนผู้ปกครองเกี่ยวกับ Makeup Class
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between p-4 border rounded-lg">
             <div className="space-y-0.5">
-              <Label htmlFor="lineNotify" className="text-base">
-                แจ้งเตือนผ่าน LINE
-              </Label>
-              <p className="text-sm text-muted-foreground">
-                ส่งข้อความแจ้งเตือนเมื่อมีการจัดตาราง Makeup
+              <Label className="text-base">แจ้งเตือนผ่าน LINE</Label>
+              <p className="text-sm text-gray-500">
+                ส่งข้อความแจ้งเตือนเมื่อมีการสร้างหรือนัด Makeup Class
               </p>
             </div>
             <Switch
-              id="lineNotify"
               checked={settings.sendLineNotification}
               onCheckedChange={(checked) => 
                 setSettings({...settings, sendLineNotification: checked})
@@ -293,35 +306,25 @@ export default function MakeupSettingsComponent() {
             />
           </div>
           
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label htmlFor="parentNotify" className="text-base">
-                แจ้งผู้ปกครองเมื่อสร้างอัตโนมัติ
-              </Label>
-              <p className="text-sm text-muted-foreground">
-                แจ้งให้ผู้ปกครองทราบเมื่อระบบสร้าง Makeup อัตโนมัติ
-              </p>
+          {settings.sendLineNotification && (
+            <div className="flex items-center justify-between p-4 border rounded-lg">
+              <div className="space-y-0.5">
+                <Label className="text-base">แจ้งเมื่อสร้างอัตโนมัติ</Label>
+                <p className="text-sm text-gray-500">
+                  แจ้งผู้ปกครองทันทีเมื่อระบบสร้าง Makeup Class อัตโนมัติ
+                </p>
+              </div>
+              <Switch
+                checked={settings.notifyParentOnAutoCreate}
+                onCheckedChange={(checked) => 
+                  setSettings({...settings, notifyParentOnAutoCreate: checked})
+                }
+              />
             </div>
-            <Switch
-              id="parentNotify"
-              checked={settings.notifyParentOnAutoCreate}
-              onCheckedChange={(checked) => 
-                setSettings({...settings, notifyParentOnAutoCreate: checked})
-              }
-            />
-          </div>
+          )}
         </CardContent>
       </Card>
-      
-      {/* Info Alert */}
-      <Alert>
-        <Info className="h-4 w-4" />
-        <AlertDescription>
-          <strong>หมายเหตุ:</strong> การตั้งค่านี้จะมีผลกับการเช็คชื่อใหม่เท่านั้น 
-          ไม่มีผลย้อนหลังกับข้อมูลที่มีอยู่แล้ว
-        </AlertDescription>
-      </Alert>
-      
+
       {/* Save Button */}
       <div className="flex justify-end">
         <Button 

@@ -2,7 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import { Student, Class, ClassSchedule, Teacher, Room, Enrollment } from '@/types/models';
-import { createMakeupRequest, scheduleMakeupClass, getMakeupRequestsBySchedules } from '@/lib/services/makeup';
+import { 
+  createMakeupRequest, 
+  scheduleMakeupClass, 
+  getMakeupRequestsBySchedules,
+  canCreateMakeup 
+} from '@/lib/services/makeup';
 import { getClassSchedules } from '@/lib/services/classes';
 import { getEnrollmentsByStudent } from '@/lib/services/enrollments';
 import { getActiveTeachers } from '@/lib/services/teachers';
@@ -18,7 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Calendar, Save, X, User, AlertCircle, CalendarPlus, CheckCircle, Clock, XCircle } from 'lucide-react';
+import { Calendar, Save, X, User, AlertCircle, CalendarPlus, CheckCircle, Clock, XCircle, Info, ChevronRight } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
@@ -36,6 +41,7 @@ import StudentSearchSelect from '@/components/ui/student-search-select';
 import { Badge } from "@/components/ui/badge";
 import { useBranch } from '@/contexts/BranchContext';
 import { useAuth } from '@/hooks/useAuth';
+import { Progress } from "@/components/ui/progress";
 
 interface CreateMakeupDialogProps {
   open: boolean;
@@ -53,7 +59,7 @@ export default function CreateMakeupDialog({
   onCreated
 }: CreateMakeupDialogProps) {
   const { selectedBranchId, isAllBranches } = useBranch();
-  const { adminUser, canAccessBranch } = useAuth();
+  const { adminUser, canAccessBranch, isSuperAdmin, isBranchAdmin } = useAuth();
   const [loading, setLoading] = useState(false);
   const [loadingEnrollments, setLoadingEnrollments] = useState(false);
   const [loadingSchedules, setLoadingSchedules] = useState(false);
@@ -63,6 +69,8 @@ export default function CreateMakeupDialog({
   const [rooms, setRooms] = useState<Room[]>([]);
   const [scheduleNow, setScheduleNow] = useState(false);
   const [existingMakeups, setExistingMakeups] = useState<Record<string, any>>({});
+  const [makeupLimit, setMakeupLimit] = useState<{ currentCount: number; limit: number; allowed: boolean } | null>(null);
+  const [activeTab, setActiveTab] = useState('basic');
   
   const [formData, setFormData] = useState({
     studentId: '',
@@ -70,6 +78,7 @@ export default function CreateMakeupDialog({
     scheduleId: '',
     type: 'scheduled' as 'scheduled' | 'ad-hoc',
     reason: '',
+    reasonCategory: 'other' as 'sick' | 'leave' | 'other', // เพิ่ม category
     // Makeup schedule fields
     makeupDate: '',
     makeupStartTime: '',
@@ -77,6 +86,9 @@ export default function CreateMakeupDialog({
     makeupTeacherId: '',
     makeupRoomId: ''
   });
+
+  // Check if admin can bypass limit
+  const canBypassLimit = isSuperAdmin() || isBranchAdmin();
 
   // Active students only - filter by branch if needed
   const activeStudents = students.filter(s => {
@@ -101,13 +113,15 @@ export default function CreateMakeupDialog({
     } else {
       setEnrolledClasses([]);
       setFormData(prev => ({ ...prev, classId: '', scheduleId: '' }));
+      setMakeupLimit(null);
     }
   }, [formData.studentId]);
 
-  // When class is selected, load schedules
+  // When class is selected, load schedules and check makeup limit
   useEffect(() => {
-    if (formData.classId) {
+    if (formData.classId && formData.studentId) {
       loadClassSchedules();
+      checkMakeupLimit();
       // Set default teacher and times from selected class
       const selectedClass = enrolledClasses.find(ec => ec.class.id === formData.classId)?.class;
       if (selectedClass) {
@@ -123,8 +137,16 @@ export default function CreateMakeupDialog({
     } else {
       setSchedules([]);
       setFormData(prev => ({ ...prev, scheduleId: '' }));
+      setMakeupLimit(null);
     }
-  }, [formData.classId]);
+  }, [formData.classId, formData.studentId]);
+
+  // Auto switch to schedule tab when toggle is turned on
+  useEffect(() => {
+    if (scheduleNow) {
+      setActiveTab('schedule');
+    }
+  }, [scheduleNow]);
 
   const loadStudentEnrollments = async () => {
     if (!formData.studentId) return;
@@ -192,6 +214,17 @@ export default function CreateMakeupDialog({
     }
   };
 
+  const checkMakeupLimit = async () => {
+    if (!formData.studentId || !formData.classId) return;
+    
+    try {
+      const limitInfo = await canCreateMakeup(formData.studentId, formData.classId, canBypassLimit);
+      setMakeupLimit(limitInfo);
+    } catch (error) {
+      console.error('Error checking makeup limit:', error);
+    }
+  };
+
   const loadBranchData = async (branchId: string) => {
     try {
       // Check if user has access to this branch
@@ -227,6 +260,12 @@ export default function CreateMakeupDialog({
     // Check if already has makeup for this schedule
     if (existingMakeups[formData.scheduleId]) {
       toast.error('มีการขอ Makeup สำหรับวันนี้แล้ว');
+      return;
+    }
+
+    // Check makeup limit (if not admin)
+    if (makeupLimit && !makeupLimit.allowed && !canBypassLimit) {
+      toast.error(`เกินจำนวนครั้งที่ชดเชยได้ (${makeupLimit.currentCount}/${makeupLimit.limit})`);
       return;
     }
 
@@ -294,6 +333,7 @@ export default function CreateMakeupDialog({
         scheduleId: '',
         type: 'scheduled',
         reason: '',
+        reasonCategory: 'other',
         makeupDate: '',
         makeupStartTime: '',
         makeupEndTime: '',
@@ -302,6 +342,8 @@ export default function CreateMakeupDialog({
       });
       setScheduleNow(false);
       setExistingMakeups({});
+      setMakeupLimit(null);
+      setActiveTab('basic');
     } catch (error: any) {
       console.error('Error creating makeup request:', error);
       if (error.message === 'Makeup request already exists for this schedule') {
@@ -349,9 +391,31 @@ export default function CreateMakeupDialog({
     );
   };
 
+  // Update reason when category changes
+  const handleReasonCategoryChange = (category: 'sick' | 'leave' | 'other') => {
+    setFormData(prev => {
+      let reason = '';
+      // ถ้าเป็น other ให้เคลียร์ reason ใหม่
+      if (category === 'other') {
+        reason = '';
+      } else if (category === 'sick') {
+        // ถ้าเป็นป่วย ให้ใส่ prefix แต่ให้กรอกรายละเอียดต่อ
+        reason = 'ป่วย - ';
+      } else if (category === 'leave') {
+        // ถ้าเป็นลา ให้ใส่ prefix แต่ให้กรอกรายละเอียดต่อ
+        reason = 'ลากิจ - ';
+      }
+      return {
+        ...prev,
+        reasonCategory: category,
+        reason: reason
+      };
+    });
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>สร้าง Makeup Request</DialogTitle>
           <DialogDescription>
@@ -359,275 +423,308 @@ export default function CreateMakeupDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="basic" className="w-full">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="basic">ข้อมูลการขาด</TabsTrigger>
             <TabsTrigger value="schedule" disabled={!scheduleNow}>นัด Makeup</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="basic" className="space-y-4">
-            {/* Student Selection with Search */}
-            <StudentSearchSelect
-              students={activeStudents}
-              value={formData.studentId}
-              onValueChange={(value) => setFormData(prev => ({ 
-                ...prev, 
-                studentId: value,
-                classId: '', // Reset class
-                scheduleId: '' // Reset schedule
-              }))}
-              label="นักเรียน"
-              required
-              placeholder="ค้นหาด้วยชื่อนักเรียน, ชื่อผู้ปกครอง, LINE, เบอร์โทร..."
-            />
-
-            {/* Class Selection - Show enrolled classes */}
-            <div className="space-y-2">
-              <Label>คลาสที่ลงทะเบียน *</Label>
-              <Select
-                value={formData.classId}
-                onValueChange={(value) => setFormData(prev => ({ 
-                  ...prev, 
-                  classId: value,
-                  scheduleId: '' // Reset schedule
-                }))}
-                disabled={!formData.studentId || loadingEnrollments}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={
-                    !formData.studentId ? "เลือกนักเรียนก่อน" :
-                    loadingEnrollments ? "กำลังโหลด..." :
-                    "เลือกคลาส"
-                  } />
-                </SelectTrigger>
-                <SelectContent>
-                  {enrolledClasses.length === 0 ? (
-                    <div className="p-2 text-center text-sm text-gray-500">
-                      {!formData.studentId ? "กรุณาเลือกนักเรียนก่อน" : 
-                       "นักเรียนยังไม่ได้ลงทะเบียนคลาสใดในสาขาที่คุณมีสิทธิ์"}
-                    </div>
-                  ) : (
-                    enrolledClasses.map(({ enrollment, class: cls }) => (
-                      <SelectItem key={cls.id} value={cls.id}>
-                        <div>
-                          <p className="font-medium">{cls.name}</p>
-                          <p className="text-xs text-gray-500">{cls.code}</p>
-                        </div>
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Schedule Selection with Makeup Status */}
-            <div className="space-y-2">
-              <Label>วันที่จะขาด *</Label>
-              <Select
-                value={formData.scheduleId}
-                onValueChange={(value) => setFormData(prev => ({ ...prev, scheduleId: value }))}
-                disabled={!formData.classId || loadingSchedules}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={
-                    !formData.classId ? "เลือกคลาสก่อน" :
-                    loadingSchedules ? "กำลังโหลด..." :
-                    "เลือกวันที่"
-                  } />
-                </SelectTrigger>
-                <SelectContent>
-                  {schedules.length === 0 ? (
-                    <div className="p-2 text-center text-sm text-gray-500">
-                      ไม่มีตารางเรียนที่สามารถขอ Makeup ได้
-                    </div>
-                  ) : (
-                    schedules.map(schedule => {
-                      const existingMakeup = existingMakeups[schedule.id];
-                      const isDisabled = !!existingMakeup;
-                      
-                      return (
-                        <SelectItem 
-                          key={schedule.id} 
-                          value={schedule.id}
-                          disabled={isDisabled}
-                        >
-                          <div className="flex items-center justify-between w-full gap-2">
-                            <span className={isDisabled ? 'text-gray-400' : ''}>
-                              {getScheduleInfo(schedule.id)}
-                            </span>
-                            {existingMakeup && getMakeupStatusBadge(existingMakeup)}
-                          </div>
-                        </SelectItem>
-                      );
-                    })
-                  )}
-                </SelectContent>
-              </Select>
-              {formData.scheduleId && existingMakeups[formData.scheduleId] && (
-                <Alert className="bg-amber-50 border-amber-200">
-                  <AlertCircle className="h-4 w-4 text-amber-600" />
-                  <AlertDescription className="text-sm text-amber-800">
-                    มีการขอ Makeup สำหรับวันนี้แล้ว
-                  </AlertDescription>
-                </Alert>
-              )}
-            </div>
-
-            {/* Request Type */}
-            <div className="space-y-2">
-              <Label>ประเภทการขอ</Label>
-              <Select
-                value={formData.type}
-                onValueChange={(value: 'scheduled' | 'ad-hoc') => 
-                  setFormData(prev => ({ ...prev, type: value }))
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="scheduled">ขอล่วงหน้า (แจ้งก่อนวันเรียน)</SelectItem>
-                  <SelectItem value="ad-hoc">ขอหลังขาด (แจ้งหลังขาดเรียน)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Reason */}
-            <div className="space-y-2">
-              <Label htmlFor="reason">เหตุผลที่ขาด *</Label>
-              <Textarea
-                id="reason"
-                value={formData.reason}
-                onChange={(e) => setFormData(prev => ({ ...prev, reason: e.target.value }))}
-                placeholder="เช่น ป่วย, ติดธุระสำคัญ, เดินทางต่างจังหวัด"
-                rows={3}
-                required
-              />
-            </div>
-
-            {/* Schedule Now Option */}
-            <div className="flex items-center space-x-2 p-4 bg-blue-50 rounded-lg">
-              <Switch
-                id="schedule-now"
-                checked={scheduleNow}
-                onCheckedChange={setScheduleNow}
-              />
-              <Label htmlFor="schedule-now" className="flex items-center gap-2 cursor-pointer">
-                <CalendarPlus className="h-4 w-4 text-blue-600" />
-                นัดวัน Makeup เลย
-              </Label>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="schedule" className="space-y-4">
-            {scheduleNow && formData.classId && (
-              <>
-                {/* Makeup Date */}
-                <div className="space-y-2">
-                  <Label htmlFor="makeup-date">วันที่นัด Makeup *</Label>
-                  <Input
-                    id="makeup-date"
-                    type="date"
-                    value={formData.makeupDate}
-                    onChange={(e) => setFormData(prev => ({ ...prev, makeupDate: e.target.value }))}
-                    min={new Date().toISOString().split('T')[0]}
+          <div className="flex-1 overflow-y-auto">
+            <TabsContent value="basic" className="px-1">
+              <div className="grid grid-cols-2 gap-4">
+                {/* Student Selection with Search - Full width */}
+                <div className="col-span-2">
+                  <StudentSearchSelect
+                    students={activeStudents}
+                    value={formData.studentId}
+                    onValueChange={(value) => setFormData(prev => ({ 
+                      ...prev, 
+                      studentId: value,
+                      classId: '', // Reset class
+                      scheduleId: '' // Reset schedule
+                    }))}
+                    label="นักเรียน"
+                    required
+                    placeholder="ค้นหาด้วยชื่อนักเรียน, ชื่อผู้ปกครอง, LINE, เบอร์โทร..."
                   />
                 </div>
 
-                {/* Time */}
-                <div className="grid grid-cols-2 gap-4">
+              {/* Class Selection - Show enrolled classes - Full width */}
+              <div className="space-y-2 col-span-2">
+                <Label>คลาสที่ลงทะเบียน *</Label>
+                <Select
+                  value={formData.classId}
+                  onValueChange={(value) => setFormData(prev => ({ 
+                    ...prev, 
+                    classId: value,
+                    scheduleId: '' // Reset schedule
+                  }))}
+                  disabled={!formData.studentId || loadingEnrollments}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder={
+                      !formData.studentId ? "เลือกนักเรียนก่อน" :
+                      loadingEnrollments ? "กำลังโหลด..." :
+                      "เลือกคลาส"
+                    } />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {enrolledClasses.length === 0 ? (
+                      <div className="p-2 text-center text-sm text-gray-500">
+                        {!formData.studentId ? "กรุณาเลือกนักเรียนก่อน" : 
+                         "นักเรียนยังไม่ได้ลงทะเบียนคลาสใดในสาขาที่คุณมีสิทธิ์"}
+                      </div>
+                    ) : (
+                      enrolledClasses.map(({ enrollment, class: cls }) => (
+                        <SelectItem key={cls.id} value={cls.id}>
+                          <div>
+                            <p className="font-medium">{cls.name}</p>
+                            <p className="text-xs text-gray-500">{cls.code}</p>
+                          </div>
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Makeup Limit Info - Left aligned with more space for progress */}
+              {makeupLimit && formData.classId && (
+                <Alert className={`py-2 col-span-2 ${makeupLimit.allowed || canBypassLimit ? "border-blue-200" : "border-amber-200"}`}>
+                  <div className="flex items-start gap-2">
+                    <Info className={`h-4 w-4 mt-0.5 ${makeupLimit.allowed || canBypassLimit ? "text-blue-600" : "text-amber-600"}`} />
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-medium">
+                          Makeup: {makeupLimit.currentCount}/{makeupLimit.limit === 0 ? '∞' : makeupLimit.limit}
+                        </span>
+                        {makeupLimit.limit > 0 && (
+                          <Progress 
+                            value={(makeupLimit.currentCount / makeupLimit.limit) * 100} 
+                            className="h-2 flex-1"
+                          />
+                        )}
+                      </div>
+                      {!makeupLimit.allowed && canBypassLimit && (
+                        <p className="text-xs text-amber-700 mt-1">
+                          Admin สามารถสร้างเพิ่มได้
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </Alert>
+              )}
+
+              {/* Schedule Selection with Makeup Status - Full width */}
+              <div className="space-y-2 col-span-2">
+                <Label>วันที่จะขาด *</Label>
+                <Select
+                  value={formData.scheduleId}
+                  onValueChange={(value) => setFormData(prev => ({ ...prev, scheduleId: value }))}
+                  disabled={!formData.classId || loadingSchedules}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder={
+                      !formData.classId ? "เลือกคลาสก่อน" :
+                      loadingSchedules ? "กำลังโหลด..." :
+                      "เลือกวันที่"
+                    } />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {schedules.length === 0 ? (
+                      <div className="p-2 text-center text-sm text-gray-500">
+                        ไม่มีตารางเรียนที่สามารถขอ Makeup ได้
+                      </div>
+                    ) : (
+                      schedules.map(schedule => {
+                        const existingMakeup = existingMakeups[schedule.id];
+                        const isDisabled = !!existingMakeup;
+                        
+                        return (
+                          <SelectItem 
+                            key={schedule.id} 
+                            value={schedule.id}
+                            disabled={isDisabled}
+                          >
+                            <div className="flex items-center justify-between w-full gap-2">
+                              <span className={isDisabled ? 'text-gray-400' : ''}>
+                                {getScheduleInfo(schedule.id)}
+                              </span>
+                              {existingMakeup && getMakeupStatusBadge(existingMakeup)}
+                            </div>
+                          </SelectItem>
+                        );
+                      })
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Request Type and Reason Category - Side by side */}
+              <div className="space-y-2">
+                <Label>ประเภทการขอ</Label>
+                <Select
+                  value={formData.type}
+                  onValueChange={(value: 'scheduled' | 'ad-hoc') => 
+                    setFormData(prev => ({ ...prev, type: value }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="scheduled">ขอล่วงหน้า</SelectItem>
+                    <SelectItem value="ad-hoc">ขอหลังขาด</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>สถานะการลา</Label>
+                <Select
+                  value={formData.reasonCategory}
+                  onValueChange={handleReasonCategoryChange}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="sick">ป่วย</SelectItem>
+                    <SelectItem value="leave">ลากิจ</SelectItem>
+                    <SelectItem value="other">อื่นๆ</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Reason - Always show for all categories */}
+              <div className="space-y-2 col-span-2">
+                <Label htmlFor="reason">
+                  {formData.reasonCategory === 'sick' && 'รายละเอียดอาการป่วย *'}
+                  {formData.reasonCategory === 'leave' && 'รายละเอียดการลา *'}
+                  {formData.reasonCategory === 'other' && 'เหตุผลที่ขาด *'}
+                </Label>
+                <Textarea
+                  id="reason"
+                  value={formData.reason}
+                  onChange={(e) => setFormData(prev => ({ ...prev, reason: e.target.value }))}
+                  placeholder={
+                    formData.reasonCategory === 'sick' ? 'เช่น ป่วย - ไข้หวัด, ป่วย - ท้องเสีย, ป่วย - ปวดหัว' :
+                    formData.reasonCategory === 'leave' ? 'เช่น ลากิจ - ไปต่างจังหวัด, ลากิจ - ติดธุระครอบครัว' :
+                    'เช่น ติดสอบโรงเรียน, รถติด, ฝนตกหนัก'
+                  }
+                  rows={2}
+                  required
+                />
+              </div>
+
+              {/* Schedule Now Option - Full width */}
+              <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg col-span-2">
+                <div className="flex items-center space-x-2">
+                  <Switch
+                    id="schedule-now"
+                    checked={scheduleNow}
+                    onCheckedChange={setScheduleNow}
+                  />
+                  <Label htmlFor="schedule-now" className="flex items-center gap-2 cursor-pointer">
+                    <CalendarPlus className="h-4 w-4 text-blue-600" />
+                    นัดวัน Makeup เลย
+                  </Label>
+                </div>
+                {scheduleNow && (
+                  <ChevronRight className="h-4 w-4 text-blue-600 animate-pulse" />
+                )}
+              </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="schedule" className="space-y-4 px-1">
+              {scheduleNow && formData.classId && (
+                <>
+                  {/* Makeup Date */}
                   <div className="space-y-2">
-                    <Label htmlFor="makeup-start-time">เวลาเริ่ม *</Label>
+                    <Label htmlFor="makeup-date">วันที่นัด Makeup *</Label>
                     <Input
-                      id="makeup-start-time"
-                      type="time"
-                      value={formData.makeupStartTime}
-                      onChange={(e) => setFormData(prev => ({ ...prev, makeupStartTime: e.target.value }))}
+                      id="makeup-date"
+                      type="date"
+                      value={formData.makeupDate}
+                      onChange={(e) => setFormData(prev => ({ ...prev, makeupDate: e.target.value }))}
+                      min={new Date().toISOString().split('T')[0]}
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="makeup-end-time">เวลาจบ *</Label>
-                    <Input
-                      id="makeup-end-time"
-                      type="time"
-                      value={formData.makeupEndTime}
-                      onChange={(e) => setFormData(prev => ({ ...prev, makeupEndTime: e.target.value }))}
-                    />
+
+                  {/* Time */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="makeup-start-time">เวลาเริ่ม *</Label>
+                      <Input
+                        id="makeup-start-time"
+                        type="time"
+                        value={formData.makeupStartTime}
+                        onChange={(e) => setFormData(prev => ({ ...prev, makeupStartTime: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="makeup-end-time">เวลาจบ *</Label>
+                      <Input
+                        id="makeup-end-time"
+                        type="time"
+                        value={formData.makeupEndTime}
+                        onChange={(e) => setFormData(prev => ({ ...prev, makeupEndTime: e.target.value }))}
+                      />
+                    </div>
                   </div>
-                </div>
 
-                {/* Teacher */}
-                <div className="space-y-2">
-                  <Label>ครูผู้สอน * {teachers.length === 0 && '(ไม่มีครูในสาขานี้)'}</Label>
-                  <Select
-                    value={formData.makeupTeacherId}
-                    onValueChange={(value) => setFormData(prev => ({ ...prev, makeupTeacherId: value }))}
-                    disabled={teachers.length === 0}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder={teachers.length === 0 ? "ไม่มีครูในสาขานี้" : "เลือกครู"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {teachers.map(teacher => (
-                        <SelectItem key={teacher.id} value={teacher.id}>
-                          {teacher.nickname || teacher.name}
-                          {teacher.id === enrolledClasses.find(ec => ec.class.id === formData.classId)?.class.teacherId && 
-                            ' (ครูประจำคลาส)'}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                  {/* Teacher */}
+                  <div className="space-y-2">
+                    <Label>ครูผู้สอน *</Label>
+                    <Select
+                      value={formData.makeupTeacherId}
+                      onValueChange={(value) => setFormData(prev => ({ ...prev, makeupTeacherId: value }))}
+                      disabled={teachers.length === 0}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder={teachers.length === 0 ? "ไม่มีครูในสาขานี้" : "เลือกครู"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {teachers.map(teacher => (
+                          <SelectItem key={teacher.id} value={teacher.id}>
+                            {teacher.nickname || teacher.name}
+                            {teacher.id === enrolledClasses.find(ec => ec.class.id === formData.classId)?.class.teacherId && 
+                              ' (ครูประจำคลาส)'}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-                {/* Room */}
-                <div className="space-y-2">
-                  <Label>ห้องเรียน * {rooms.length === 0 && '(ไม่มีห้องในสาขานี้)'}</Label>
-                  <Select
-                    value={formData.makeupRoomId}
-                    onValueChange={(value) => setFormData(prev => ({ ...prev, makeupRoomId: value }))}
-                    disabled={rooms.length === 0}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder={rooms.length === 0 ? "ไม่มีห้องในสาขานี้" : "เลือกห้อง"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {rooms.map(room => (
-                        <SelectItem key={room.id} value={room.id}>
-                          {room.name} (จุ {room.capacity} คน)
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </>
-            )}
-          </TabsContent>
+                  {/* Room */}
+                  <div className="space-y-2">
+                    <Label>ห้องเรียน *</Label>
+                    <Select
+                      value={formData.makeupRoomId}
+                      onValueChange={(value) => setFormData(prev => ({ ...prev, makeupRoomId: value }))}
+                      disabled={rooms.length === 0}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder={rooms.length === 0 ? "ไม่มีห้องในสาขานี้" : "เลือกห้อง"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {rooms.map(room => (
+                          <SelectItem key={room.id} value={room.id}>
+                            {room.name} (จุ {room.capacity} คน)
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
+              )}
+            </TabsContent>
+          </div>
         </Tabs>
 
-        {/* Info Alert */}
-        <Alert className="mt-4">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>
-            {!scheduleNow ? (
-              <>หลังจากสร้าง Request แล้ว สามารถจัดตารางได้ที่หน้า "Makeup Class"</>
-            ) : (
-              <>ระบบจะสร้าง Request และนัดวัน Makeup ให้ในขั้นตอนเดียว</>
-            )}
-          </AlertDescription>
-        </Alert>
-
-        {/* Show branch indicator if viewing specific branch */}
-        {!isAllBranches && selectedBranchId && (
-          <Alert>
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription className="text-sm">
-              แสดงเฉพาะคลาสและนักเรียนในสาขาที่คุณมีสิทธิ์จัดการ
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {/* Actions */}
-        <div className="flex justify-end gap-2 pt-4 border-t">
+        {/* Actions - Fixed at bottom */}
+        <div className="flex justify-end gap-2 pt-4 border-t mt-auto">
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
@@ -645,7 +742,8 @@ export default function CreateMakeupDialog({
               !formData.scheduleId || 
               !formData.reason.trim() ||
               (formData.scheduleId && !!existingMakeups[formData.scheduleId]) ||
-              (scheduleNow && (!formData.makeupDate || !formData.makeupTeacherId || !formData.makeupRoomId))
+              (scheduleNow && (!formData.makeupDate || !formData.makeupTeacherId || !formData.makeupRoomId)) ||
+              (makeupLimit && !makeupLimit.allowed && !canBypassLimit)
             }
             className="bg-red-500 hover:bg-red-600"
           >

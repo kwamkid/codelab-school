@@ -202,6 +202,59 @@ export async function getMakeupCount(studentId: string, classId: string): Promis
   }
 }
 
+// Check if student can create more makeup for a class
+export async function canCreateMakeup(
+  studentId: string, 
+  classId: string,
+  bypassLimit: boolean = false
+): Promise<{ allowed: boolean; currentCount: number; limit: number; message?: string }> {
+  try {
+    // Get makeup settings
+    const { getMakeupSettings } = await import('./settings');
+    const settings = await getMakeupSettings();
+    
+    // If auto-create is disabled and not bypassing, check limit
+    if (!settings.autoCreateMakeup && !bypassLimit) {
+      return {
+        allowed: false,
+        currentCount: 0,
+        limit: 0,
+        message: 'การสร้าง Makeup อัตโนมัติถูกปิดอยู่'
+      };
+    }
+    
+    // Get current count
+    const currentCount = await getMakeupCount(studentId, classId);
+    
+    // If no limit set (0) or bypassing limit, always allow
+    if (settings.makeupLimitPerCourse === 0 || bypassLimit) {
+      return {
+        allowed: true,
+        currentCount,
+        limit: settings.makeupLimitPerCourse,
+      };
+    }
+    
+    // Check against limit
+    const allowed = currentCount < settings.makeupLimitPerCourse;
+    
+    return {
+      allowed,
+      currentCount,
+      limit: settings.makeupLimitPerCourse,
+      message: allowed ? undefined : `เกินจำนวนครั้งที่ชดเชยได้ (${currentCount}/${settings.makeupLimitPerCourse})`
+    };
+  } catch (error) {
+    console.error('Error checking makeup limit:', error);
+    // On error, allow creation to not block user
+    return {
+      allowed: true,
+      currentCount: 0,
+      limit: 0
+    };
+  }
+}
+
 // Get makeup requests for specific schedules (NEW FUNCTION)
 export async function getMakeupRequestsBySchedules(
   studentId: string,

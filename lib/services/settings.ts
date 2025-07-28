@@ -163,7 +163,7 @@ export function validateSettings(settings: Partial<GeneralSettings>): {
   };
 }
 
-// เพิ่มใน lib/services/settings.ts หลัง GeneralSettings interface
+// ==================== MAKEUP SETTINGS ====================
 
 export interface MakeupSettings {
   // การสร้าง Makeup อัตโนมัติ

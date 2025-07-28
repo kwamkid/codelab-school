@@ -5,7 +5,7 @@ import {
   getDoc, 
   addDoc, 
   updateDoc,
-  deleteDoc,  // เพิ่มบรรทัดนี้
+  deleteDoc,
   query,
   where,
   orderBy,
@@ -19,8 +19,8 @@ import { Parent, Student } from '@/types/models';
 
 const COLLECTION_NAME = 'parents';
 
-// Get all parents
-export async function getParents(branchId?: string): Promise<Parent[]> {
+// Get all parents - ไม่ filter ตาม branch เพราะเป็นข้อมูลกลาง
+export async function getParents(): Promise<Parent[]> {
   try {
     const q = query(
       collection(db, COLLECTION_NAME),
@@ -28,44 +28,54 @@ export async function getParents(branchId?: string): Promise<Parent[]> {
     );
     const querySnapshot = await getDocs(q);
     
-    const allParents = querySnapshot.docs.map(doc => ({
+    return querySnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
       createdAt: doc.data().createdAt?.toDate() || new Date(),
       lastLoginAt: doc.data().lastLoginAt?.toDate() || new Date(),
     } as Parent));
-    
-    // ถ้าไม่ระบุ branch ให้คืนทั้งหมด
-    if (!branchId) {
-      return allParents;
-    }
-    
-    // ถ้าระบุ branch ให้ filter ผ่าน enrollments
-    const { getEnrollmentsByBranch } = await import('./enrollments');
-    const enrollments = await getEnrollmentsByBranch(branchId);
-    const parentIds = new Set(enrollments.map(e => e.parentId));
-    
-    return allParents.filter(parent => parentIds.has(parent.id));
   } catch (error) {
     console.error('Error getting parents:', error);
     throw error;
   }
 }
 
-// เพิ่ม helper function
-async function getAllParents(): Promise<Parent[]> {
-  const q = query(
-    collection(db, COLLECTION_NAME),
-    orderBy('createdAt', 'desc')
-  );
-  const querySnapshot = await getDocs(q);
-  
-  return querySnapshot.docs.map(doc => ({
-    id: doc.id,
-    ...doc.data(),
-    createdAt: doc.data().createdAt?.toDate() || new Date(),
-    lastLoginAt: doc.data().lastLoginAt?.toDate() || new Date(),
-  } as Parent));
+// Get parents with enrollment info for specific branch
+export async function getParentsWithBranchInfo(branchId?: string): Promise<(Parent & {
+  enrolledInBranch?: boolean;
+  studentCountInBranch?: number;
+})[]> {
+  try {
+    const parents = await getParents();
+    
+    if (!branchId) {
+      // ถ้าไม่เลือกสาขา ให้คืนข้อมูลปกติ
+      return parents;
+    }
+    
+    // Get enrollments for the branch
+    const { getEnrollmentsByBranch } = await import('./enrollments');
+    const enrollments = await getEnrollmentsByBranch(branchId);
+    
+    // Count students per parent in this branch
+    const parentStudentCount = new Map<string, Set<string>>();
+    enrollments.forEach(enrollment => {
+      if (!parentStudentCount.has(enrollment.parentId)) {
+        parentStudentCount.set(enrollment.parentId, new Set());
+      }
+      parentStudentCount.get(enrollment.parentId)!.add(enrollment.studentId);
+    });
+    
+    // Add branch info to parents
+    return parents.map(parent => ({
+      ...parent,
+      enrolledInBranch: parentStudentCount.has(parent.id),
+      studentCountInBranch: parentStudentCount.get(parent.id)?.size || 0
+    }));
+  } catch (error) {
+    console.error('Error getting parents with branch info:', error);
+    throw error;
+  }
 }
 
 // Get single parent
@@ -393,15 +403,14 @@ export async function getParentWithStudents(
   }
 }
 
-// Get all students with parent info (including LINE display name)
-export async function getAllStudentsWithParents(branchId?: string): Promise<(Student & { 
+// Get all students with parent info - ไม่ filter ตาม branch
+export async function getAllStudentsWithParents(): Promise<(Student & { 
   parentName: string; 
   parentPhone: string;
   lineDisplayName?: string;
 })[]> {
   try {
-    // ใช้ getParents ที่ filter by branch แล้ว
-    const parents = await getParents(branchId);
+    const parents = await getParents();
     const allStudents: (Student & { 
       parentName: string; 
       parentPhone: string;
@@ -437,7 +446,46 @@ export async function getAllStudentsWithParents(branchId?: string): Promise<(Stu
   }
 }
 
-// Get single student with parent info
+// Get students with enrollment info for branch
+export async function getAllStudentsWithBranchInfo(branchId?: string): Promise<(Student & { 
+  parentName: string; 
+  parentPhone: string;
+  lineDisplayName?: string;
+  enrolledInBranch?: boolean;
+  classesInBranch?: string[];
+})[]> {
+  try {
+    const students = await getAllStudentsWithParents();
+    
+    if (!branchId) {
+      return students;
+    }
+    
+    // Get enrollments for the branch
+    const { getEnrollmentsByBranch } = await import('./enrollments');
+    const enrollments = await getEnrollmentsByBranch(branchId);
+    
+    // Map student enrollments
+    const studentEnrollments = new Map<string, string[]>();
+    enrollments.forEach(enrollment => {
+      if (!studentEnrollments.has(enrollment.studentId)) {
+        studentEnrollments.set(enrollment.studentId, []);
+      }
+      studentEnrollments.get(enrollment.studentId)!.push(enrollment.classId);
+    });
+    
+    // Add branch info to students
+    return students.map(student => ({
+      ...student,
+      enrolledInBranch: studentEnrollments.has(student.id),
+      classesInBranch: studentEnrollments.get(student.id) || []
+    }));
+  } catch (error) {
+    console.error('Error getting students with branch info:', error);
+    return [];
+  }
+}
+
 // Get single student with parent info
 export async function getStudentWithParent(studentId: string): Promise<(Student & { 
   parentName: string; 
@@ -538,8 +586,6 @@ export async function getParentByPhone(phone: string): Promise<Parent | null> {
     return null;
   }
 }
-
-// เพิ่มใน lib/services/parents.ts ท้ายไฟล์
 
 // Delete student
 export async function deleteStudent(
