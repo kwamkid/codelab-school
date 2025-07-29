@@ -381,7 +381,20 @@ export default function EventRegistrationPage() {
         registrationData.referralSource = referralSource;
       }
 
-      await createEventRegistration(registrationData, event);
+      // Use API endpoint for registration to avoid permission issues
+      const response = await fetch('/api/events/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(registrationData)
+      });
+      
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to register');
+      }
       
       toast.success('ลงทะเบียนสำเร็จ!');
       

@@ -540,6 +540,19 @@ export async function createEventRegistration(
       attendeeCount = registrationData.parents.length;
     }
     
+    // Check if will exceed capacity
+    if (currentAttendees + attendeeCount > schedule.maxAttendees) {
+      throw new Error(`รอบนี้เหลือที่ว่างเพียง ${schedule.maxAttendees - currentAttendees} ที่`);
+    }
+    
+    console.log('[createEventRegistration] Creating registration with:', {
+      scheduleId: registrationData.scheduleId,
+      branchId: registrationData.branchId,
+      attendeeCount,
+      currentAttendees,
+      maxAttendees: schedule.maxAttendees
+    });
+    
     // Create registration
     const docRef = await addDoc(collection(db, REGISTRATIONS_COLLECTION), {
       ...registrationData,
@@ -553,12 +566,20 @@ export async function createEventRegistration(
       registeredAt: serverTimestamp(),
     });
     
-    // Update schedule attendee count
-    const branchCount = `attendeesByBranch.${registrationData.branchId}`;
-    await updateDoc(doc(db, SCHEDULES_COLLECTION, registrationData.scheduleId), {
-      [branchCount]: increment(attendeeCount),
-      status: currentAttendees + attendeeCount >= schedule.maxAttendees ? 'full' : 'available'
-    });
+    // Update schedule attendee count - Fixed syntax
+    const currentBranchCount = schedule.attendeesByBranch[registrationData.branchId] || 0;
+    const newTotal = currentAttendees + attendeeCount;
+    
+    const updateData: any = {
+      [`attendeesByBranch.${registrationData.branchId}`]: currentBranchCount + attendeeCount,
+      status: newTotal >= schedule.maxAttendees ? 'full' : 'available'
+    };
+    
+    console.log('[createEventRegistration] Updating schedule with:', updateData);
+    
+    await updateDoc(doc(db, SCHEDULES_COLLECTION, registrationData.scheduleId), updateData);
+    
+    console.log('[createEventRegistration] Registration created successfully:', docRef.id);
     
     return docRef.id;
   } catch (error) {
@@ -619,6 +640,25 @@ export async function cancelEventRegistration(
       throw new Error('การลงทะเบียนนี้ถูกยกเลิกแล้ว');
     }
     
+    console.log('[cancelEventRegistration] Cancelling registration:', {
+      registrationId,
+      scheduleId: registration.scheduleId,
+      branchId: registration.branchId,
+      attendeeCount: registration.attendeeCount
+    });
+    
+    // Get current schedule data
+    const scheduleDoc = await getDoc(doc(db, SCHEDULES_COLLECTION, registration.scheduleId));
+    if (!scheduleDoc.exists()) {
+      throw new Error('ไม่พบข้อมูลรอบเวลา');
+    }
+    
+    const scheduleData = scheduleDoc.data();
+    const currentBranchCount = scheduleData?.attendeesByBranch?.[registration.branchId] || 0;
+    const newBranchCount = Math.max(0, currentBranchCount - registration.attendeeCount); // Prevent negative
+    
+    console.log('[cancelEventRegistration] Current branch count:', currentBranchCount, 'New count:', newBranchCount);
+    
     // Update registration
     await updateDoc(doc(db, REGISTRATIONS_COLLECTION, registrationId), {
       status: 'cancelled',
@@ -627,12 +667,15 @@ export async function cancelEventRegistration(
       cancellationReason: reason
     });
     
-    // Update schedule attendee count
-    const branchCount = `attendeesByBranch.${registration.branchId}`;
-    await updateDoc(doc(db, SCHEDULES_COLLECTION, registration.scheduleId), {
-      [branchCount]: increment(-registration.attendeeCount),
+    // Update schedule attendee count - Fixed syntax
+    const updateData: any = {
+      [`attendeesByBranch.${registration.branchId}`]: newBranchCount,
       status: 'available' // Always available after cancellation
-    });
+    };
+    
+    await updateDoc(doc(db, SCHEDULES_COLLECTION, registration.scheduleId), updateData);
+    
+    console.log('[cancelEventRegistration] Cancellation completed');
   } catch (error) {
     console.error('Error cancelling registration:', error);
     throw error;
