@@ -227,36 +227,61 @@ export default function CourseCalendar({
                       <div 
                         key={event.id} 
                         className={cn(
-                          "flex items-center justify-between p-1.5 rounded mb-0.5",
+                          "flex flex-col gap-1 p-1.5 rounded mb-0.5",
                           studentColor?.light
                         )}
                       >
-                        <div className="flex items-center gap-1.5">
-                          {!selectedStudentId && (
-                            <div className={cn(
-                              "w-2 h-2 rounded-full flex-shrink-0",
-                              studentColor?.bg
-                            )} />
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            {!selectedStudentId && (
+                              <div className={cn(
+                                "w-2 h-2 rounded-full flex-shrink-0",
+                                studentColor?.bg
+                              )} />
+                            )}
+                            <span className="text-gray-700 text-xs">
+                              {event.extendedProps.studentNickname}
+                              {event.extendedProps.sessionNumber && (
+                                <span className="text-gray-500 ml-1">
+                                  (ครั้งที่ {event.extendedProps.sessionNumber})
+                                </span>
+                              )}
+                            </span>
+                          </div>
+                          {canRequestLeave && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-6 px-2 text-xs"
+                              onClick={() => onLeaveRequest(event)}
+                            >
+                              <CalendarOff className="h-3 w-3 mr-1" />
+                              ขอลา
+                            </Button>
                           )}
-                          <span className="text-gray-700">
-                            {event.extendedProps.studentNickname}
-                            {event.extendedProps.sessionNumber && (
-                              <span className="text-gray-500 ml-1">
-                                (ครั้งที่ {event.extendedProps.sessionNumber})
+                        </div>
+                        
+                        {/* Show leave/makeup status */}
+                        {(event.extendedProps.status === 'absent' || 
+                          event.extendedProps.status === 'leave-requested' ||
+                          event.extendedProps.hasMakeupRequest) && (
+                          <div className="flex items-center gap-1">
+                            <Badge 
+                              variant="destructive" 
+                              className="text-xs h-5 px-1.5"
+                            >
+                              Makeup
+                            </Badge>
+                            {event.extendedProps.makeupScheduled ? (
+                              <span className="text-xs text-green-600">
+                                นัดแล้ว: {formatDate(event.extendedProps.makeupDate, 'short')}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-orange-600">
+                                รอนัด
                               </span>
                             )}
-                          </span>
-                        </div>
-                        {canRequestLeave && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-6 px-2 text-xs"
-                            onClick={() => onLeaveRequest(event)}
-                          >
-                            <CalendarOff className="h-3 w-3 mr-1" />
-                            ขอลา
-                          </Button>
+                          </div>
                         )}
                       </div>
                     )

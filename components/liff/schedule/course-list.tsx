@@ -63,27 +63,34 @@ export default function CourseList({
   const getStatusDisplay = (event: ScheduleEvent) => {
     const isPast = event.end < now
     const status = event.extendedProps.status
+    const hasMakeup = event.extendedProps.hasMakeupRequest
+    const makeupScheduled = event.extendedProps.makeupScheduled
     
-    if (status === 'completed' || (isPast && status !== 'absent' && status !== 'leave-requested')) {
+    if (status === 'completed' || (isPast && status !== 'absent' && status !== 'leave-requested' && !hasMakeup)) {
       return {
         icon: CheckCircle,
         color: 'text-green-600',
         bgColor: 'bg-green-50',
-        label: 'เรียนแล้ว'
+        label: 'เรียนแล้ว',
+        subLabel: null
       }
-    } else if (status === 'absent' || status === 'leave-requested') {
+    } else if (status === 'absent' || status === 'leave-requested' || hasMakeup) {
       return {
         icon: XCircle,
         color: 'text-red-600',
         bgColor: 'bg-red-50',
-        label: 'ลาเรียน'
+        label: 'Makeup',
+        subLabel: makeupScheduled 
+          ? `นัดแล้ว: ${formatDate(event.extendedProps.makeupDate, 'short')}` 
+          : 'รอนัด'
       }
     } else {
       return {
         icon: Calendar,
         color: 'text-blue-600',
         bgColor: 'bg-blue-50',
-        label: 'กำลังจะถึง'
+        label: 'กำลังจะถึง',
+        subLabel: null
       }
     }
   }
@@ -187,13 +194,24 @@ export default function CourseList({
                       </div>
 
                       <div className="flex flex-col items-end gap-1">
-                        <Badge 
-                          variant={statusDisplay.color === 'text-green-600' ? 'default' : 
-                                  statusDisplay.color === 'text-red-600' ? 'destructive' : 'secondary'}
-                          className="text-xs"
-                        >
-                          {statusDisplay.label === 'ลาเรียน' ? 'Makeup' : statusDisplay.label}
-                        </Badge>
+                        <div className="flex flex-col items-end gap-1">
+                          <Badge 
+                            variant={statusDisplay.color === 'text-green-600' ? 'default' : 
+                                    statusDisplay.color === 'text-red-600' ? 'destructive' : 'secondary'}
+                            className="text-xs"
+                          >
+                            {statusDisplay.label}
+                          </Badge>
+                          
+                          {statusDisplay.subLabel && (
+                            <span className={cn(
+                              "text-xs",
+                              statusDisplay.subLabel.includes('นัดแล้ว') ? 'text-green-600' : 'text-orange-600'
+                            )}>
+                              {statusDisplay.subLabel}
+                            </span>
+                          )}
+                        </div>
                         
                         {canRequestLeave && (
                           <Button
@@ -227,8 +245,10 @@ export default function CourseList({
                   ).length}
                 </span>
                 <span className="text-red-600">
-                  ลา: {classData.events.filter((e: ScheduleEvent) => 
-                    e.extendedProps.status === 'absent' || e.extendedProps.status === 'leave-requested'
+                  ลา/Makeup: {classData.events.filter((e: ScheduleEvent) => 
+                    e.extendedProps.status === 'absent' || 
+                    e.extendedProps.status === 'leave-requested' ||
+                    e.extendedProps.hasMakeupRequest
                   ).length}
                 </span>
               </div>
