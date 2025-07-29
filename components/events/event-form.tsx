@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
-import { Event, Branch } from '@/types/models';
-import { createEvent, updateEvent } from '@/lib/services/events';
+import { Event, Branch, EventSchedule } from '@/types/models';
+import { createEvent, updateEvent, createEventSchedule, updateEventSchedule, deleteEventSchedule, getEventSchedules } from '@/lib/services/events';
 import { getActiveBranches } from '@/lib/services/branches';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,6 +20,15 @@ import {
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 import { toast } from 'sonner';
 import { 
   Loader2, 
@@ -31,13 +40,28 @@ import {
   Bell,
   Plus,
   Trash2,
-  Image
+  Image,
+  Clock,
+  Edit
 } from 'lucide-react';
 import Link from 'next/link';
+import { formatDate, formatTime } from '@/lib/utils';
 
 interface EventFormProps {
   event?: Event;
   isEdit?: boolean;
+}
+
+interface ScheduleFormData {
+  date: string;
+  startTime: string;
+  endTime: string;
+  maxAttendees: string;
+}
+
+interface TempSchedule extends ScheduleFormData {
+  tempId: string;
+  isNew: boolean;
 }
 
 export default function EventForm({ event, isEdit = false }: EventFormProps) {
@@ -45,8 +69,11 @@ export default function EventForm({ event, isEdit = false }: EventFormProps) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [branches, setBranches] = useState<Branch[]>([]);
+  const [existingSchedules, setExistingSchedules] = useState<EventSchedule[]>([]);
+  const [schedules, setSchedules] = useState<TempSchedule[]>([]);
+  const [deletedScheduleIds, setDeletedScheduleIds] = useState<string[]>([]);
   
-  // Form state
+  // Main form state
   const [formData, setFormData] = useState({
     name: event?.name || '',
     description: event?.description || '',
@@ -74,7 +101,10 @@ export default function EventForm({ event, isEdit = false }: EventFormProps) {
 
   useEffect(() => {
     loadBranches();
-  }, []);
+    if (isEdit && event?.id) {
+      loadSchedules();
+    }
+  }, [isEdit, event?.id]);
 
   const loadBranches = async () => {
     try {
@@ -83,6 +113,81 @@ export default function EventForm({ event, isEdit = false }: EventFormProps) {
     } catch (error) {
       console.error('Error loading branches:', error);
     }
+  };
+
+  const loadSchedules = async () => {
+    if (!event?.id) return;
+    
+    try {
+      const data = await getEventSchedules(event.id);
+      setExistingSchedules(data);
+      // Convert to temp schedules for editing
+      const tempSchedules = data.map(s => ({
+        tempId: s.id,
+        date: new Date(s.date).toISOString().split('T')[0],
+        startTime: s.startTime,
+        endTime: s.endTime,
+        maxAttendees: s.maxAttendees.toString(),
+        isNew: false
+      }));
+      setSchedules(tempSchedules);
+    } catch (error) {
+      console.error('Error loading schedules:', error);
+    }
+  };
+
+  // Schedule management functions
+  const handleAddSchedule = () => {
+    const newSchedule: TempSchedule = {
+      date: '',
+      startTime: '',
+      endTime: '',
+      maxAttendees: '',
+      tempId: `temp-${Date.now()}`,
+      isNew: true
+    };
+    setSchedules([...schedules, newSchedule]);
+  };
+
+  const handleUpdateSchedule = (tempId: string, field: keyof ScheduleFormData, value: string) => {
+    setSchedules(schedules.map(s => 
+      s.tempId === tempId ? { ...s, [field]: value } : s
+    ));
+  };
+
+  const handleDeleteSchedule = (tempId: string) => {
+    const schedule = schedules.find(s => s.tempId === tempId);
+    if (schedule && !schedule.isNew) {
+      // Mark existing schedule for deletion
+      setDeletedScheduleIds([...deletedScheduleIds, tempId]);
+    }
+    setSchedules(schedules.filter(s => s.tempId !== tempId));
+  };
+
+  const handleDuplicateSchedule = (schedule: TempSchedule) => {
+    const newSchedule: TempSchedule = {
+      ...schedule,
+      tempId: `temp-${Date.now()}`,
+      isNew: true
+    };
+    setSchedules([...schedules, newSchedule]);
+  };
+
+  const validateSchedule = (schedule: TempSchedule): boolean => {
+    if (!schedule.date || !schedule.startTime || !schedule.endTime || !schedule.maxAttendees) {
+      return false;
+    }
+    
+    const maxAttendees = parseInt(schedule.maxAttendees);
+    if (isNaN(maxAttendees) || maxAttendees <= 0) {
+      return false;
+    }
+    
+    if (schedule.startTime >= schedule.endTime) {
+      return false;
+    }
+    
+    return true;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -104,6 +209,18 @@ export default function EventForm({ event, isEdit = false }: EventFormProps) {
       return;
     }
 
+    if (schedules.length === 0) {
+      toast.error('กรุณาเพิ่มรอบเวลาอย่างน้อย 1 รอบ');
+      return;
+    }
+
+    // Validate all schedules
+    const invalidSchedules = schedules.filter(s => !validateSchedule(s));
+    if (invalidSchedules.length > 0) {
+      toast.error('กรุณากรอกข้อมูลรอบเวลาให้ครบถ้วนและถูกต้อง');
+      return;
+    }
+
     const startDate = new Date(formData.registrationStartDate);
     const endDate = new Date(formData.registrationEndDate);
     if (startDate > endDate) {
@@ -114,23 +231,114 @@ export default function EventForm({ event, isEdit = false }: EventFormProps) {
     setLoading(true);
 
     try {
-      const eventData = {
-        ...formData,
+      const eventData: Omit<Event, 'id' | 'createdAt' | 'updatedAt'> = {
+        name: formData.name,
+        description: formData.description,
+        fullDescription: formData.fullDescription || '',
+        imageUrl: formData.imageUrl || '',
+        location: formData.location,
+        locationUrl: formData.locationUrl || '',
+        branchIds: formData.branchIds,
+        eventType: formData.eventType,
+        highlights: formData.highlights.filter(h => h.trim()),
+        targetAudience: formData.targetAudience || '',
+        whatToBring: formData.whatToBring.filter(w => w.trim()),
         registrationStartDate: startDate,
         registrationEndDate: endDate,
-        highlights: formData.highlights.filter(h => h.trim()),
-        whatToBring: formData.whatToBring.filter(w => w.trim()),
+        countingMethod: formData.countingMethod,
+        enableReminder: formData.enableReminder,
+        reminderDaysBefore: formData.reminderDaysBefore,
+        reminderTime: formData.reminderTime || '10:00',
+        status: formData.status,
+        isActive: true,
+        createdBy: user!.uid
       };
 
+      let eventId: string;
+
       if (isEdit && event?.id) {
-        await updateEvent(event.id, eventData, user!.uid);
+        // Update event
+        const updateData: Partial<Event> = {
+          name: eventData.name,
+          description: eventData.description,
+          fullDescription: eventData.fullDescription,
+          imageUrl: eventData.imageUrl,
+          location: eventData.location,
+          locationUrl: eventData.locationUrl,
+          branchIds: eventData.branchIds,
+          eventType: eventData.eventType,
+          highlights: eventData.highlights,
+          targetAudience: eventData.targetAudience,
+          whatToBring: eventData.whatToBring,
+          registrationStartDate: eventData.registrationStartDate,
+          registrationEndDate: eventData.registrationEndDate,
+          countingMethod: eventData.countingMethod,
+          enableReminder: eventData.enableReminder,
+          reminderDaysBefore: eventData.reminderDaysBefore,
+          reminderTime: eventData.reminderTime,
+          status: eventData.status
+        };
+        
+        await updateEvent(event.id, updateData, user!.uid);
+        eventId = event.id;
         toast.success('อัปเดต Event เรียบร้อยแล้ว');
-        router.push(`/events/${event.id}`);
+
+        // Handle schedule updates
+        // 1. Delete schedules
+        for (const scheduleId of deletedScheduleIds) {
+          try {
+            await deleteEventSchedule(scheduleId);
+          } catch (error) {
+            console.error('Error deleting schedule:', error);
+          }
+        }
+
+        // 2. Update existing schedules
+        for (const schedule of schedules.filter(s => !s.isNew && !deletedScheduleIds.includes(s.tempId))) {
+          const scheduleData = {
+            eventId,
+            date: new Date(schedule.date),
+            startTime: schedule.startTime,
+            endTime: schedule.endTime,
+            maxAttendees: parseInt(schedule.maxAttendees)
+          };
+          await updateEventSchedule(schedule.tempId, scheduleData);
+        }
+
+        // 3. Create new schedules
+        for (const schedule of schedules.filter(s => s.isNew)) {
+          const scheduleData = {
+            eventId,
+            date: new Date(schedule.date),
+            startTime: schedule.startTime,
+            endTime: schedule.endTime,
+            maxAttendees: parseInt(schedule.maxAttendees),
+            status: 'available' as const,
+            attendeesByBranch: {}
+          };
+          await createEventSchedule(scheduleData);
+        }
       } else {
-        const newEventId = await createEvent(eventData, user!.uid);
+        // Create new event
+        eventId = await createEvent(eventData, user!.uid);
         toast.success('สร้าง Event เรียบร้อยแล้ว');
-        router.push(`/events/${newEventId}`);
+
+        // Create all schedules
+        for (const schedule of schedules) {
+          const scheduleData = {
+            eventId,
+            date: new Date(schedule.date),
+            startTime: schedule.startTime,
+            endTime: schedule.endTime,
+            maxAttendees: parseInt(schedule.maxAttendees),
+            status: 'available' as const,
+            attendeesByBranch: {}
+          };
+          await createEventSchedule(scheduleData);
+        }
       }
+
+      router.push(`/events/${eventId}`);
     } catch (error) {
       console.error('Error saving event:', error);
       toast.error(isEdit ? 'ไม่สามารถอัปเดต Event ได้' : 'ไม่สามารถสร้าง Event ได้');
@@ -331,6 +539,181 @@ export default function EventForm({ event, isEdit = false }: EventFormProps) {
           </CardContent>
         </Card>
 
+        {/* Registration Settings */}
+        <Card>
+          <CardHeader>
+            <CardTitle>การลงทะเบียน</CardTitle>
+            <CardDescription>กำหนดช่วงเวลาและวิธีนับจำนวนผู้เข้าร่วม</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="registrationStartDate">วันเปิดรับลงทะเบียน *</Label>
+                <Input
+                  id="registrationStartDate"
+                  type="date"
+                  value={formData.registrationStartDate}
+                  onChange={(e) => setFormData({ ...formData, registrationStartDate: e.target.value })}
+                  required
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="registrationEndDate">วันปิดรับลงทะเบียน *</Label>
+                <Input
+                  id="registrationEndDate"
+                  type="date"
+                  value={formData.registrationEndDate}
+                  onChange={(e) => setFormData({ ...formData, registrationEndDate: e.target.value })}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="countingMethod">วิธีนับจำนวน *</Label>
+              <Select
+                value={formData.countingMethod}
+                onValueChange={(value) => setFormData({ ...formData, countingMethod: value as Event['countingMethod'] })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="registrations">นับจำนวนการลงทะเบียน</SelectItem>
+                  <SelectItem value="students">นับจำนวนนักเรียน</SelectItem>
+                  <SelectItem value="parents">นับจำนวนผู้ปกครอง</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-500">
+                {formData.countingMethod === 'registrations' && 'นับทุกการลงทะเบียนเป็น 1'}
+                {formData.countingMethod === 'students' && 'นับจำนวนนักเรียนที่ลงทะเบียน'}
+                {formData.countingMethod === 'parents' && 'นับจำนวนผู้ปกครองที่ลงทะเบียน'}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Event Schedules */}
+        <Card>
+          <CardHeader>
+            <CardTitle>รอบเวลา</CardTitle>
+            <CardDescription>กำหนดวันและเวลาที่จัด Event (สามารถเพิ่มได้หลายรอบ)</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Schedules Table */}
+            <div className="border rounded-lg overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-40">วันที่</TableHead>
+                    <TableHead className="w-24">เวลาเริ่ม</TableHead>
+                    <TableHead className="w-24">เวลาจบ</TableHead>
+                    <TableHead className="w-28">จำนวนที่รับ</TableHead>
+                    <TableHead className="text-right">จัดการ</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {schedules.map((schedule) => (
+                    <TableRow key={schedule.tempId}>
+                      <TableCell>
+                        <Input
+                          type="date"
+                          value={schedule.date}
+                          onChange={(e) => handleUpdateSchedule(schedule.tempId, 'date', e.target.value)}
+                          min={new Date().toISOString().split('T')[0]}
+                          className="h-9"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          type="time"
+                          value={schedule.startTime}
+                          onChange={(e) => handleUpdateSchedule(schedule.tempId, 'startTime', e.target.value)}
+                          className="h-9"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          type="time"
+                          value={schedule.endTime}
+                          onChange={(e) => handleUpdateSchedule(schedule.tempId, 'endTime', e.target.value)}
+                          className="h-9"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          type="number"
+                          min="1"
+                          value={schedule.maxAttendees}
+                          onChange={(e) => handleUpdateSchedule(schedule.tempId, 'maxAttendees', e.target.value)}
+                          placeholder="50"
+                          className="h-9"
+                        />
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              if (validateSchedule(schedule)) {
+                                handleDuplicateSchedule(schedule);
+                                toast.success('คัดลอกรอบเวลาแล้ว');
+                              } else {
+                                toast.error('กรุณากรอกข้อมูลให้ครบก่อนคัดลอก');
+                              }
+                            }}
+                            title="คัดลอก"
+                          >
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeleteSchedule(schedule.tempId)}
+                            className="text-red-600 hover:text-red-700"
+                            title="ลบ"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {schedules.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center py-8 text-gray-500">
+                        ยังไม่มีรอบเวลา คลิก "เพิ่มรอบเวลา" เพื่อเริ่มต้น
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+            
+            {/* Add Button */}
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleAddSchedule}
+              className="w-full"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              เพิ่มรอบเวลา
+            </Button>
+            
+            {/* Helper text */}
+            <p className="text-xs text-gray-500">
+              💡 คำแนะนำ: คลิกปุ่ม "คัดลอก" 📋 เพื่อสร้างรอบใหม่ที่มีข้อมูลคล้ายกัน | กรอกข้อมูลให้ครบทุกช่องก่อนบันทึก
+            </p>
+          </CardContent>
+        </Card>
+
         {/* Event Details */}
         <Card>
           <CardHeader>
@@ -414,61 +797,6 @@ export default function EventForm({ event, isEdit = false }: EventFormProps) {
                   เพิ่มรายการ
                 </Button>
               </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Registration Settings */}
-        <Card>
-          <CardHeader>
-            <CardTitle>การลงทะเบียน</CardTitle>
-            <CardDescription>กำหนดช่วงเวลาและวิธีนับจำนวนผู้เข้าร่วม</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="registrationStartDate">วันเปิดรับลงทะเบียน *</Label>
-                <Input
-                  id="registrationStartDate"
-                  type="date"
-                  value={formData.registrationStartDate}
-                  onChange={(e) => setFormData({ ...formData, registrationStartDate: e.target.value })}
-                  required
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="registrationEndDate">วันปิดรับลงทะเบียน *</Label>
-                <Input
-                  id="registrationEndDate"
-                  type="date"
-                  value={formData.registrationEndDate}
-                  onChange={(e) => setFormData({ ...formData, registrationEndDate: e.target.value })}
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="countingMethod">วิธีนับจำนวน *</Label>
-              <Select
-                value={formData.countingMethod}
-                onValueChange={(value) => setFormData({ ...formData, countingMethod: value as Event['countingMethod'] })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="registrations">นับจำนวนการลงทะเบียน</SelectItem>
-                  <SelectItem value="students">นับจำนวนนักเรียน</SelectItem>
-                  <SelectItem value="parents">นับจำนวนผู้ปกครอง</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-gray-500">
-                {formData.countingMethod === 'registrations' && 'นับทุกการลงทะเบียนเป็น 1'}
-                {formData.countingMethod === 'students' && 'นับจำนวนนักเรียนที่ลงทะเบียน'}
-                {formData.countingMethod === 'parents' && 'นับจำนวนผู้ปกครองที่ลงทะเบียน'}
-              </p>
             </div>
           </CardContent>
         </Card>
