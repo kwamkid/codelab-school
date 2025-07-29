@@ -397,7 +397,59 @@ export default function EventRegistrationPage() {
       }
       
       toast.success('ลงทะเบียนสำเร็จ!');
+     
       
+      // Send Flex Message if user has LINE ID
+      if (lineProfile?.userId) {
+        try {
+          // Import LINE settings service
+          const { getLineSettings } = await import('@/lib/services/line-settings');
+          const settings = await getLineSettings();
+          
+          if (settings?.messagingChannelAccessToken) {
+            // Generate Google Calendar URL
+            const calendarDate = new Date(schedule.date);
+            const [startHours, startMinutes] = schedule.startTime.split(':');
+            const [endHours, endMinutes] = schedule.endTime.split(':');
+            
+            const startDateTime = new Date(calendarDate);
+            startDateTime.setHours(parseInt(startHours), parseInt(startMinutes));
+            
+            const endDateTime = new Date(calendarDate);
+            endDateTime.setHours(parseInt(endHours), parseInt(endMinutes));
+            
+            const googleCalendarUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(event.name)}&dates=${startDateTime.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')}Z/${endDateTime.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')}Z&details=${encodeURIComponent(`Event: ${event.name}\n${event.description || ''}\n\nจำนวนผู้เข้าร่วม: ${registrationData.attendeeCount} คน`)}&location=${encodeURIComponent(event.location)}`;
+            
+            // Send Flex Message
+            await fetch('/api/line/send-flex-message', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                userId: lineProfile.userId,
+                template: 'eventRegistration',
+                data: {
+                  eventName: event.name,
+                  eventDate: formatDate(schedule.date, 'long'),
+                  eventTime: `${schedule.startTime} - ${schedule.endTime} น.`,
+                  location: event.location,
+                  attendeeCount: registrationData.attendeeCount,
+                  registrationId: result.registrationId,
+                  googleCalendarUrl
+                },
+                accessToken: settings.messagingChannelAccessToken,
+                altText: `✅ ลงทะเบียน ${event.name} สำเร็จ!`
+              })
+            });
+          }
+        } catch (error) {
+          console.error('Error sending flex message:', error);
+          // Don't show error to user, just log it
+        }
+      }
+      
+
       // ไปหน้า success ทุกกรณี เพื่อหลีกเลี่ยงปัญหา permission
       router.push(`/liff/events/register/${eventId}/success`);
       

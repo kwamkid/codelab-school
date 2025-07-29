@@ -650,7 +650,207 @@ const FLEX_TEMPLATES = {
       paddingAll: "20px"
     }
   }),
-
+    eventRegistration: (data: {
+    eventName: string;
+    eventDate: string;
+    eventTime: string;
+    location: string;
+    attendeeCount: number;
+    registrationId: string;
+    googleCalendarUrl?: string;
+  }) => ({
+    type: "bubble",
+    size: "kilo",
+    header: {
+      type: "box",
+      layout: "vertical",
+      contents: [
+        {
+          type: "box",
+          layout: "horizontal",
+          contents: [
+            {
+              type: "text",
+              text: "✅ ลงทะเบียนสำเร็จ!",
+              weight: "bold",
+              size: "md",
+              color: "#ffffff",
+              flex: 1
+            }
+          ]
+        }
+      ],
+      backgroundColor: "#06C755",
+      paddingAll: "15px"
+    },
+    body: {
+      type: "box",
+      layout: "vertical",
+      contents: [
+        {
+          type: "text",
+          text: data.eventName,
+          size: "lg",
+          weight: "bold",
+          color: "#111111",
+          wrap: true,
+          margin: "md",
+          align: "center"
+        },
+        {
+          type: "separator",
+          margin: "md"
+        },
+        {
+          type: "box",
+          layout: "vertical",
+          margin: "md",
+          spacing: "sm",
+          contents: [
+            {
+              type: "box",
+              layout: "horizontal",
+              contents: [
+                {
+                  type: "text",
+                  text: "📅 วันที่",
+                  size: "sm",
+                  color: "#555555",
+                  flex: 0,
+                  weight: "bold"
+                },
+                {
+                  type: "text",
+                  text: data.eventDate,
+                  size: "sm",
+                  color: "#111111",
+                  align: "end"
+                }
+              ]
+            },
+            {
+              type: "box",
+              layout: "horizontal",
+              contents: [
+                {
+                  type: "text",
+                  text: "⏰ เวลา",
+                  size: "sm",
+                  color: "#555555",
+                  flex: 0
+                },
+                {
+                  type: "text",
+                  text: data.eventTime,
+                  size: "sm",
+                  color: "#111111",
+                  align: "end"
+                }
+              ]
+            },
+            {
+              type: "box",
+              layout: "horizontal",
+              contents: [
+                {
+                  type: "text",
+                  text: "📍 สถานที่",
+                  size: "sm",
+                  color: "#555555",
+                  flex: 0
+                },
+                {
+                  type: "text",
+                  text: data.location,
+                  size: "sm",
+                  color: "#111111",
+                  align: "end",
+                  wrap: true
+                }
+              ]
+            },
+            {
+              type: "box",
+              layout: "horizontal",
+              contents: [
+                {
+                  type: "text",
+                  text: "👥 จำนวนผู้เข้าร่วม",
+                  size: "sm",
+                  color: "#555555",
+                  flex: 0
+                },
+                {
+                  type: "text",
+                  text: `${data.attendeeCount} คน`,
+                  size: "sm",
+                  color: "#111111",
+                  align: "end"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          type: "separator",
+          margin: "md"
+        },
+        {
+          type: "box",
+          layout: "vertical",
+          margin: "md",
+          spacing: "sm",
+          contents: [
+            {
+              type: "text",
+              text: "📋 หมายเลขการลงทะเบียน",
+              size: "xs",
+              color: "#aaaaaa",
+              align: "center"
+            },
+            {
+              type: "text",
+              text: data.registrationId,
+              size: "xs",
+              color: "#666666",
+              align: "center",
+              weight: "bold"
+            }
+          ]
+        },
+        {
+          type: "text",
+          text: "เจ้าหน้าที่จะติดต่อกลับเพื่อยืนยันการเข้าร่วมงาน",
+          size: "xs",
+          color: "#06C755",
+          wrap: true,
+          margin: "md",
+          align: "center",
+          weight: "bold"
+        }
+      ],
+      paddingAll: "20px"
+    },
+    footer: data.googleCalendarUrl ? {
+      type: "box",
+      layout: "vertical",
+      spacing: "sm",
+      contents: [
+        {
+          type: "button",
+          style: "primary",
+          color: "#4285F4",
+          action: {
+            type: "uri",
+            label: "เพิ่มใน Google Calendar",
+            uri: data.googleCalendarUrl
+          }
+        }
+      ],
+      paddingAll: "10px"
+    } : undefined
+  }),
+  
   trialConfirmation: (data: {
     studentName: string;
     subjectName: string;
