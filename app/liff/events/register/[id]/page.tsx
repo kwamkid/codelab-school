@@ -22,6 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { GradeLevelCombobox } from '@/components/ui/grade-level-combobox';
 import { 
   Calendar, 
   MapPin, 
@@ -63,7 +64,7 @@ export default function EventRegistrationPage() {
   const router = useRouter();
   const eventId = params.id as string;
   
-  const { liff, profile, isLoggedIn } = useLiff();
+  const { liff, profile, isLoggedIn, isLoading: liffLoading } = useLiff();
   const { parent, students: existingStudents, loading: parentLoading, refetch: refetchParent } = useLiffParent();
   
   const [loading, setLoading] = useState(true);
@@ -100,6 +101,7 @@ export default function EventRegistrationPage() {
   // Debug logging
   useEffect(() => {
     console.log('[EventRegistration] Component state:', {
+      liffLoading,
       isLoggedIn,
       parentLoading,
       hasParent: !!parent,
@@ -107,14 +109,17 @@ export default function EventRegistrationPage() {
       registrationType,
       dataLoaded
     });
-  }, [isLoggedIn, parentLoading, parent, existingStudents, registrationType, dataLoaded]);
+  }, [liffLoading, isLoggedIn, parentLoading, parent, existingStudents, registrationType, dataLoaded]);
 
   // Auto-detect registration type based on login status
   useEffect(() => {
+    // Wait for LIFF to finish loading
+    if (liffLoading) return;
+    
     if (!parentLoading && isLoggedIn && parent) {
       setRegistrationType('member');
     }
-  }, [isLoggedIn, parent, parentLoading]);
+  }, [liffLoading, isLoggedIn, parent, parentLoading]);
 
   useEffect(() => {
     loadData();
@@ -122,6 +127,9 @@ export default function EventRegistrationPage() {
 
   // Pre-fill data when parent data is available and member type is selected
   useEffect(() => {
+    // Wait for LIFF to finish loading
+    if (liffLoading) return;
+    
     if (registrationType === 'member' && parent && !parentLoading && !dataLoaded) {
       console.log('[EventRegistration] Pre-filling parent data:', parent);
       
@@ -165,7 +173,7 @@ export default function EventRegistrationPage() {
       
       setDataLoaded(true);
     }
-  }, [registrationType, parent, existingStudents, event, parentLoading, branches, dataLoaded]);
+  }, [liffLoading, registrationType, parent, existingStudents, event, parentLoading, branches, dataLoaded]);
 
   // Update parent forms when contact form changes (for parent counting)
   useEffect(() => {
@@ -400,7 +408,7 @@ export default function EventRegistrationPage() {
     }
   };
 
-  if (loading) {
+  if (loading || liffLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
@@ -478,7 +486,7 @@ export default function EventRegistrationPage() {
         </Card>
 
         {/* Registration Type (if logged in) */}
-        {isLoggedIn && (
+        {isLoggedIn && !liffLoading && (
           <Card>
             <CardHeader>
               <CardTitle className="text-base">วิธีลงทะเบียน</CardTitle>
@@ -755,10 +763,10 @@ export default function EventRegistrationPage() {
                           
                           <div className="space-y-1 col-span-2">
                             <Label className="text-xs">ระดับชั้น</Label>
-                            <Input
+                            <GradeLevelCombobox
                               value={student.gradeLevel}
-                              onChange={(e) => handleUpdateStudent(index, 'gradeLevel', e.target.value)}
-                              placeholder="เช่น ป.3, ม.1"
+                              onChange={(value) => handleUpdateStudent(index, 'gradeLevel', value)}
+                              placeholder="เลือกหรือพิมพ์ระดับชั้น..."
                             />
                           </div>
                         </div>
