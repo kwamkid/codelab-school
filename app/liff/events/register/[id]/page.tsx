@@ -44,6 +44,10 @@ import {
 import { formatDate, formatTime, formatPhoneNumber } from '@/lib/utils';
 import { toast } from 'sonner';
 
+// Prevent parent layout redirects
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 interface StudentFormData {
   name: string;
   nickname: string;
@@ -81,6 +85,7 @@ function EventRegistrationContent() {
   const [event, setEvent] = useState<Event | null>(null);
   const [schedules, setSchedules] = useState<EventSchedule[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
   
   // Form states
   const [selectedSchedule, setSelectedSchedule] = useState<string>('');
@@ -105,6 +110,28 @@ function EventRegistrationContent() {
   const [referralSource, setReferralSource] = useState('');
   const [agreeTerms, setAgreeTerms] = useState(false);
 
+  // Mark initial load complete to prevent redirect
+  useEffect(() => {
+    if (!liffLoading && !parentLoading) {
+      setInitialLoadComplete(true);
+    }
+  }, [liffLoading, parentLoading]);
+
+  // Prevent navigation away during initial load
+  useEffect(() => {
+    // Set a flag to indicate this is event registration page
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.setItem('isEventRegistration', 'true');
+    }
+    
+    return () => {
+      // Clean up when leaving
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.removeItem('isEventRegistration');
+      }
+    };
+  }, []);
+
   // Debug logging
   useEffect(() => {
     console.log('[EventRegistration] Component state:', {
@@ -114,9 +141,10 @@ function EventRegistrationContent() {
       parentLoading,
       hasParent: !!parent,
       parentId: parent?.id,
-      hasStudents: existingStudents?.length || 0
+      hasStudents: existingStudents?.length || 0,
+      initialLoadComplete
     });
-  }, [liffLoading, isLoggedIn, profile, parentLoading, parent, existingStudents]);
+  }, [liffLoading, isLoggedIn, profile, parentLoading, parent, existingStudents, initialLoadComplete]);
 
   useEffect(() => {
     loadData();
