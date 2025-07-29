@@ -299,7 +299,7 @@ export default function EventDetailPage() {
           </TabsTrigger>
           <TabsTrigger value="registrations" className="flex items-center gap-2">
             <Users className="h-4 w-4" />
-            ผู้ลงทะเบียน ({registrations.length})
+            ผู้ลงทะเบียน ({registrations.filter(r => r.status !== 'cancelled').length})
           </TabsTrigger>
           <TabsTrigger value="statistics" className="flex items-center gap-2">
             <BarChart3 className="h-4 w-4" />
