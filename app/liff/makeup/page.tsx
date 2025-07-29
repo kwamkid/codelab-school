@@ -88,11 +88,40 @@ function MakeupContent() {
       for (const student of activeStudents) {
         const makeups = await getMakeupClassesByStudent(student.id)
         
-        // Count self-requested makeups (only count real leave requests, not system-generated)
+        // Count both self-requested makeups AND absences
         const selfRequested = makeups.filter(m => 
           m.type === 'scheduled' && // ลาล่วงหน้า
           (m.requestedBy === 'parent-liff' || m.reason?.includes('ลาผ่านระบบ LIFF'))
         ).length
+        
+        // Count absences from enrollments (need to load attendance data)
+        let totalAbsences = 0
+        try {
+          // Get active enrollment for this student
+          const { getEnrollmentsByStudent } = await import('@/lib/services/enrollments')
+          const enrollments = await getEnrollmentsByStudent(student.id)
+          
+          // For each enrollment, count absences
+          for (const enrollment of enrollments.filter(e => e.status === 'active')) {
+            const { getClassSchedules } = await import('@/lib/services/classes')
+            const schedules = await getClassSchedules(enrollment.classId)
+            
+            schedules.forEach(schedule => {
+              if (schedule.attendance) {
+                const studentAttendance = schedule.attendance.find(
+                  att => att.studentId === student.id && att.status === 'absent'
+                )
+                if (studentAttendance) {
+                  totalAbsences++
+                }
+              }
+            })
+          }
+        } catch (error) {
+          console.error('Error counting absences:', error)
+        }
+        
+        const totalUsed = selfRequested + totalAbsences
 
         // Load additional data for each makeup
         const makeupsWithDetails = await Promise.all(
@@ -158,7 +187,9 @@ function MakeupContent() {
             pending: makeups.filter(m => m.status === 'pending').length,
             scheduled: makeups.filter(m => m.status === 'scheduled').length,
             completed: makeups.filter(m => m.status === 'completed').length,
-            selfRequested: selfRequested
+            selfRequested: selfRequested,
+            absences: totalAbsences,
+            totalUsed: totalUsed
           }
         }
       }
@@ -175,7 +206,7 @@ function MakeupContent() {
   // Get selected student data
   const selectedData = selectedStudentId ? makeupData[selectedStudentId] : null
   const canRequestMore = selectedData ? 
-    selectedData.stats.selfRequested < MAKEUP_QUOTA : true
+    selectedData.stats.totalUsed < MAKEUP_QUOTA : true
 
   if (liffLoading || loading) {
     return <PageLoading />
@@ -227,15 +258,20 @@ function MakeupContent() {
               canRequestMore ? "text-blue-600" : "text-orange-600"
             )} />
             <AlertDescription>
-              <div className="flex items-center justify-between">
-                <span className={canRequestMore ? "text-blue-700" : "text-orange-700"}>
-                  สิทธิ์ลาเรียนผ่านระบบ: ใช้ไป {selectedData.stats.selfRequested} จาก {MAKEUP_QUOTA} ครั้ง
-                </span>
-                {!canRequestMore && (
-                  <Badge variant="secondary" className="bg-orange-100 text-orange-700">
-                    เต็มแล้ว
-                  </Badge>
-                )}
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center justify-between">
+                  <span className={canRequestMore ? "text-blue-700" : "text-orange-700"}>
+                    สิทธิ์ Makeup: ใช้ไป {selectedData.stats.totalUsed} จาก {MAKEUP_QUOTA} ครั้ง
+                  </span>
+                  {!canRequestMore && (
+                    <Badge variant="secondary" className="bg-orange-100 text-orange-700">
+                      เต็มแล้ว
+                    </Badge>
+                  )}
+                </div>
+                <div className="text-xs text-gray-600">
+                  (ลาล่วงหน้า {selectedData.stats.selfRequested} + ขาดเรียน {selectedData.stats.absences} ครั้ง)
+                </div>
               </div>
             </AlertDescription>
           </Alert>

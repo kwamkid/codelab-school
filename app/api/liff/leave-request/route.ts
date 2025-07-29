@@ -78,23 +78,62 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check quota - count only scheduled (parent-requested) makeups
-    const quotaMakeupsSnapshot = await adminDb
-      .collection('makeupClasses')
-      .where('studentId', '==', studentId)
-      .where('originalClassId', '==', classId)
-      .where('type', '==', 'scheduled')
-      .where('requestedBy', 'in', ['parent-liff', 'parent'])
+    // Check quota - count both scheduled makeups AND absences
+    const [quotaMakeupsSnapshot, enrollmentsSnapshot] = await Promise.all([
+      // Count scheduled makeups by parent
+      adminDb
+        .collection('makeupClasses')
+        .where('studentId', '==', studentId)
+        .where('originalClassId', '==', classId)
+        .where('type', '==', 'scheduled')
+        .where('requestedBy', 'in', ['parent-liff', 'parent'])
+        .get(),
+      // Get all enrollments to count absences
+      adminDb
+        .collection('enrollments')
+        .where('studentId', '==', studentId)
+        .where('classId', '==', classId)
+        .where('status', '==', 'active')
+        .get()
+    ]);
+
+    // Count absences from attendance records
+    let totalAbsences = 0;
+    const classSchedulesSnapshot = await adminDb
+      .collection('classes')
+      .doc(classId)
+      .collection('schedules')
       .get();
 
-    const usedQuota = quotaMakeupsSnapshot.size;
+    classSchedulesSnapshot.forEach(doc => {
+      const schedule = doc.data();
+      if (schedule.attendance && Array.isArray(schedule.attendance)) {
+        const studentAttendance = schedule.attendance.find(
+          (att: any) => att.studentId === studentId && att.status === 'absent'
+        );
+        if (studentAttendance) {
+          totalAbsences++;
+        }
+      }
+    });
+
+    const scheduledMakeups = quotaMakeupsSnapshot.size;
+    const totalUsed = scheduledMakeups + totalAbsences;
     const MAKEUP_QUOTA = 4;
 
-    if (usedQuota >= MAKEUP_QUOTA) {
+    console.log(`[LIFF Leave Request] Quota check - Scheduled: ${scheduledMakeups}, Absences: ${totalAbsences}, Total: ${totalUsed}/${MAKEUP_QUOTA}`);
+
+    if (totalUsed >= MAKEUP_QUOTA) {
       return NextResponse.json(
         { 
           success: false, 
-          message: `ใช้สิทธิ์ลาครบ ${MAKEUP_QUOTA} ครั้งแล้ว` 
+          message: `ใช้สิทธิ์ครบ ${MAKEUP_QUOTA} ครั้งแล้ว (ลา ${scheduledMakeups} + ขาด ${totalAbsences})`,
+          quotaDetails: {
+            scheduled: scheduledMakeups,
+            absences: totalAbsences,
+            total: totalUsed,
+            limit: MAKEUP_QUOTA
+          }
         },
         { status: 400 }
       );
@@ -168,14 +207,19 @@ export async function POST(request: NextRequest) {
     }
 
     // Log the request with quota info
-    console.log(`[LIFF Leave Request] Created makeup request ${makeupRef.id} for student ${studentId} (Quota used: ${usedQuota + 1}/${MAKEUP_QUOTA})`);
+    console.log(`[LIFF Leave Request] Created makeup request ${makeupRef.id} for student ${studentId} (Total used: ${totalUsed + 1}/${MAKEUP_QUOTA})`);
 
     return NextResponse.json({
       success: true,
       message: 'บันทึกการลาเรียนเรียบร้อยแล้ว',
       makeupId: makeupRef.id,
-      quotaUsed: usedQuota + 1,
-      quotaLimit: MAKEUP_QUOTA
+      quotaUsed: totalUsed + 1,
+      quotaLimit: MAKEUP_QUOTA,
+      quotaDetails: {
+        scheduled: scheduledMakeups + 1,
+        absences: totalAbsences,
+        total: totalUsed + 1
+      }
     });
 
   } catch (error) {

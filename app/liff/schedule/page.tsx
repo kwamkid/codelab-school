@@ -184,7 +184,11 @@ function ScheduleContent() {
       }
 
       // Show success message with quota info if available
-      if (data.quotaUsed && data.quotaLimit) {
+      if (data.quotaDetails) {
+        toast.success('บันทึกการลาเรียนเรียบร้อยแล้ว', {
+          description: `รอนัดเรียนชดเชย (ใช้สิทธิ์ ${data.quotaDetails.total}/${data.quotaLimit} - ลา ${data.quotaDetails.scheduled} + ขาด ${data.quotaDetails.absences})`
+        })
+      } else if (data.quotaUsed && data.quotaLimit) {
         toast.success('บันทึกการลาเรียนเรียบร้อยแล้ว', {
           description: `รอเจ้าหน้าที่นัดเรียนชดเชย (ใช้สิทธิ์ ${data.quotaUsed}/${data.quotaLimit} ครั้ง)`
         })
