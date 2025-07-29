@@ -7,27 +7,28 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ChevronLeft, Loader2, Calendar, CalendarOff, AlertCircle, CheckCircle, Clock, MapPin, User, Info } from 'lucide-react'
 import { useLiff } from '@/components/liff/liff-provider'
 import { getParentByLineId, getStudentsByParent } from '@/lib/services/parents'
 import { getMakeupClassesByStudent } from '@/lib/services/makeup'
-import { getClass } from '@/lib/services/classes'
+import { getClass, getClassSchedules } from '@/lib/services/classes'
 import { getTeacher } from '@/lib/services/teachers'
 import { getBranch } from '@/lib/services/branches'
 import { getRoom } from '@/lib/services/rooms'
 import { getSubject } from '@/lib/services/subjects'
+import { getEnrollmentsByStudent } from '@/lib/services/enrollments'
 import { toast } from 'sonner'
 import { LiffProvider } from '@/components/liff/liff-provider'
 import { PageLoading } from '@/components/ui/loading'
 import { formatDate, formatTime, getDayName } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 
-interface MakeupData {
-  student: {
-    id: string
-    name: string
-    nickname?: string
-  }
+interface ClassMakeupData {
+  classId: string
+  className: string
+  subjectName: string
+  subjectColor?: string
   makeups: any[]
   stats: {
     total: number
@@ -35,6 +36,24 @@ interface MakeupData {
     scheduled: number
     completed: number
     selfRequested: number // จำนวนที่ลาเอง
+    absences: number // จำนวนขาดเรียน
+    systemGenerated: number // จำนวนที่ระบบสร้างให้
+    totalUsed: number // selfRequested + absences (ไม่รวม system)
+  }
+}
+
+interface StudentMakeupData {
+  student: {
+    id: string
+    name: string
+    nickname?: string
+  }
+  classes: Record<string, ClassMakeupData>
+  overallStats: {
+    totalMakeups: number
+    totalPending: number
+    totalScheduled: number
+    totalCompleted: number
   }
 }
 
@@ -43,11 +62,12 @@ function MakeupContent() {
   const { profile, isLoggedIn, isLoading: liffLoading, liff } = useLiff()
   const [loading, setLoading] = useState(true)
   const [students, setStudents] = useState<any[]>([])
-  const [makeupData, setMakeupData] = useState<Record<string, MakeupData>>({})
+  const [makeupData, setMakeupData] = useState<Record<string, StudentMakeupData>>({})
   const [selectedStudentId, setSelectedStudentId] = useState<string>('')
+  const [selectedClassId, setSelectedClassId] = useState<string>('')
   const [activeTab, setActiveTab] = useState('leave')
 
-  // Makeup quota limit
+  // Makeup quota limit per class
   const MAKEUP_QUOTA = 4
 
   // Load data
@@ -77,124 +97,187 @@ function MakeupContent() {
       const activeStudents = studentsData.filter(s => s.isActive)
       setStudents(activeStudents)
 
-      // Set default selected student
-      if (activeStudents.length === 1) {
-        setSelectedStudentId(activeStudents[0].id)
-      }
-
       // Load makeup data for each student
-      const makeupDataMap: Record<string, MakeupData> = {}
+      const makeupDataMap: Record<string, StudentMakeupData> = {}
+      let firstStudentWithData: string | null = null
+      let firstClassWithData: string | null = null
       
       for (const student of activeStudents) {
         const makeups = await getMakeupClassesByStudent(student.id)
+        const enrollments = await getEnrollmentsByStudent(student.id)
+        const activeEnrollments = enrollments.filter(e => e.status === 'active')
         
-        // Count both self-requested makeups AND absences
-        const selfRequested = makeups.filter(m => 
-          m.type === 'scheduled' && // ลาล่วงหน้า
-          (m.requestedBy === 'parent-liff' || m.reason?.includes('ลาผ่านระบบ LIFF'))
-        ).length
+        // Group makeups by class
+        const classMakeupData: Record<string, ClassMakeupData> = {}
         
-        // Count absences from enrollments (need to load attendance data)
-        let totalAbsences = 0
-        try {
-          // Get active enrollment for this student
-          const { getEnrollmentsByStudent } = await import('@/lib/services/enrollments')
-          const enrollments = await getEnrollmentsByStudent(student.id)
+        // Process each enrollment/class
+        for (const enrollment of activeEnrollments) {
+          const classData = await getClass(enrollment.classId)
+          if (!classData) continue
           
-          // For each enrollment, count absences
-          for (const enrollment of enrollments.filter(e => e.status === 'active')) {
-            const { getClassSchedules } = await import('@/lib/services/classes')
+          const subject = await getSubject(classData.subjectId)
+          
+          // Get makeups for this class
+          const classMakeups = makeups.filter(m => m.originalClassId === enrollment.classId)
+          
+          // Count different types of makeups
+          const selfRequested = classMakeups.filter(m => 
+            m.type === 'scheduled' && 
+            (m.requestedBy === 'parent-liff' || m.reason?.includes('ลาผ่านระบบ LIFF'))
+          ).length
+          
+          const systemGenerated = classMakeups.filter(m => 
+            m.type === 'ad-hoc' && 
+            m.requestedBy !== 'parent-liff'
+          ).length
+          
+          // Count absences from attendance
+          let absences = 0
+          try {
             const schedules = await getClassSchedules(enrollment.classId)
-            
             schedules.forEach(schedule => {
               if (schedule.attendance) {
                 const studentAttendance = schedule.attendance.find(
                   att => att.studentId === student.id && att.status === 'absent'
                 )
                 if (studentAttendance) {
-                  totalAbsences++
+                  // Check if this absence has a makeup request
+                  const hasMakeup = classMakeups.some(m => 
+                    m.originalScheduleId === schedule.id
+                  )
+                  // Only count as absence if no makeup request exists
+                  if (!hasMakeup) {
+                    absences++
+                  }
                 }
               }
             })
+          } catch (error) {
+            console.error('Error counting absences:', error)
           }
-        } catch (error) {
-          console.error('Error counting absences:', error)
+          
+          // Load additional details for each makeup
+          const makeupsWithDetails = await Promise.all(
+            classMakeups.map(async (makeup) => {
+              try {
+                let originalTeacher = null
+                let branch = null
+                let room = null
+                let makeupBranch = null
+                let makeupRoom = null
+                let makeupTeacher = null
+
+                if (classData) {
+                  [originalTeacher, branch, room] = await Promise.all([
+                    getTeacher(classData.teacherId),
+                    getBranch(classData.branchId),
+                    getRoom(classData.branchId, classData.roomId)
+                  ])
+                }
+
+                if (makeup.makeupSchedule) {
+                  [makeupBranch, makeupRoom, makeupTeacher] = await Promise.all([
+                    getBranch(makeup.makeupSchedule.branchId),
+                    getRoom(makeup.makeupSchedule.branchId, makeup.makeupSchedule.roomId),
+                    makeup.makeupSchedule.teacherId ? getTeacher(makeup.makeupSchedule.teacherId) : null
+                  ])
+                }
+
+                return {
+                  ...makeup,
+                  className: classData?.name,
+                  subjectName: subject?.name,
+                  subjectColor: subject?.color,
+                  originalTeacherName: originalTeacher?.nickname || originalTeacher?.name,
+                  branchName: branch?.name,
+                  roomName: room?.name,
+                  makeupBranchName: makeupBranch?.name,
+                  makeupRoomName: makeupRoom?.name,
+                  makeupTeacher
+                }
+              } catch (error) {
+                console.error('Error loading makeup details:', error)
+                return makeup
+              }
+            })
+          )
+          
+          // Sort makeups by date
+          const sortedMakeups = makeupsWithDetails.sort((a, b) => {
+            const dateA = a.originalSessionDate?.toDate ? 
+              a.originalSessionDate.toDate() : new Date(a.originalSessionDate)
+            const dateB = b.originalSessionDate?.toDate ? 
+              b.originalSessionDate.toDate() : new Date(b.originalSessionDate)
+            return dateA.getTime() - dateB.getTime()
+          })
+          
+          classMakeupData[enrollment.classId] = {
+            classId: enrollment.classId,
+            className: classData.name,
+            subjectName: subject?.name || '',
+            subjectColor: subject?.color,
+            makeups: sortedMakeups,
+            stats: {
+              total: classMakeups.length,
+              pending: classMakeups.filter(m => m.status === 'pending').length,
+              scheduled: classMakeups.filter(m => m.status === 'scheduled').length,
+              completed: classMakeups.filter(m => m.status === 'completed').length,
+              selfRequested,
+              absences,
+              systemGenerated,
+              totalUsed: selfRequested + absences // Only count parent actions
+            }
+          }
+          
+          // Track first class with data
+          if (!firstClassWithData && classMakeups.length > 0) {
+            firstClassWithData = enrollment.classId
+          }
         }
         
-        const totalUsed = selfRequested + totalAbsences
-
-        // Load additional data for each makeup
-        const makeupsWithDetails = await Promise.all(
-          makeups.map(async (makeup) => {
-            try {
-              const [classData, originalClass] = await Promise.all([
-                getClass(makeup.originalClassId),
-                makeup.makeupSchedule?.teacherId ? getTeacher(makeup.makeupSchedule.teacherId) : null,
-              ])
-
-              let subject = null
-              let originalTeacher = null
-              let branch = null
-              let room = null
-              let makeupBranch = null
-              let makeupRoom = null
-
-              if (classData) {
-                [subject, originalTeacher, branch, room] = await Promise.all([
-                  getSubject(classData.subjectId),
-                  getTeacher(classData.teacherId),
-                  getBranch(classData.branchId),
-                  getRoom(classData.branchId, classData.roomId)
-                ])
-              }
-
-              if (makeup.makeupSchedule) {
-                [makeupBranch, makeupRoom] = await Promise.all([
-                  getBranch(makeup.makeupSchedule.branchId),
-                  getRoom(makeup.makeupSchedule.branchId, makeup.makeupSchedule.roomId)
-                ])
-              }
-
-              return {
-                ...makeup,
-                className: classData?.name,
-                subjectName: subject?.name,
-                subjectColor: subject?.color,
-                originalTeacherName: originalTeacher?.nickname || originalTeacher?.name,
-                branchName: branch?.name,
-                roomName: room?.name,
-                makeupBranchName: makeupBranch?.name,
-                makeupRoomName: makeupRoom?.name,
-                makeupTeacher: makeup.makeupSchedule?.teacherId ? 
-                  await getTeacher(makeup.makeupSchedule.teacherId) : null
-              }
-            } catch (error) {
-              console.error('Error loading makeup details:', error)
-              return makeup
-            }
-          })
-        )
-
+        // Calculate overall stats
+        const overallStats = {
+          totalMakeups: Object.values(classMakeupData).reduce((sum, c) => sum + c.stats.total, 0),
+          totalPending: Object.values(classMakeupData).reduce((sum, c) => sum + c.stats.pending, 0),
+          totalScheduled: Object.values(classMakeupData).reduce((sum, c) => sum + c.stats.scheduled, 0),
+          totalCompleted: Object.values(classMakeupData).reduce((sum, c) => sum + c.stats.completed, 0)
+        }
+        
         makeupDataMap[student.id] = {
           student: {
             id: student.id,
             name: student.name,
             nickname: student.nickname
           },
-          makeups: makeupsWithDetails,
-          stats: {
-            total: makeups.length,
-            pending: makeups.filter(m => m.status === 'pending').length,
-            scheduled: makeups.filter(m => m.status === 'scheduled').length,
-            completed: makeups.filter(m => m.status === 'completed').length,
-            selfRequested: selfRequested,
-            absences: totalAbsences,
-            totalUsed: totalUsed
-          }
+          classes: classMakeupData,
+          overallStats
+        }
+        
+        // Set first student with data
+        if (!firstStudentWithData && overallStats.totalMakeups > 0) {
+          firstStudentWithData = student.id
         }
       }
 
       setMakeupData(makeupDataMap)
+      
+      // Set default selections
+      if (activeStudents.length === 1) {
+        setSelectedStudentId(activeStudents[0].id)
+        // Set first class with data for this student
+        const studentData = makeupDataMap[activeStudents[0].id]
+        if (studentData) {
+          const classIds = Object.keys(studentData.classes)
+          if (classIds.length > 0) {
+            setSelectedClassId(classIds[0])
+          }
+        }
+      } else if (firstStudentWithData) {
+        setSelectedStudentId(firstStudentWithData)
+        setSelectedClassId(firstClassWithData || '')
+      } else if (activeStudents.length > 0) {
+        setSelectedStudentId(activeStudents[0].id)
+      }
     } catch (error) {
       console.error('Error loading data:', error)
       toast.error('ไม่สามารถโหลดข้อมูลได้')
@@ -203,10 +286,28 @@ function MakeupContent() {
     }
   }
 
-  // Get selected student data
-  const selectedData = selectedStudentId ? makeupData[selectedStudentId] : null
-  const canRequestMore = selectedData ? 
-    selectedData.stats.totalUsed < MAKEUP_QUOTA : true
+  // Handle student selection change
+  const handleStudentChange = (studentId: string) => {
+    setSelectedStudentId(studentId)
+    // Reset class selection
+    const studentData = makeupData[studentId]
+    if (studentData) {
+      const classIds = Object.keys(studentData.classes)
+      if (classIds.length > 0) {
+        setSelectedClassId(classIds[0])
+      } else {
+        setSelectedClassId('')
+      }
+    }
+  }
+
+  // Get selected data
+  const selectedStudentData = selectedStudentId ? makeupData[selectedStudentId] : null
+  const selectedClassData = selectedStudentData && selectedClassId ? 
+    selectedStudentData.classes[selectedClassId] : null
+  
+  const canRequestMore = selectedClassData ? 
+    selectedClassData.stats.totalUsed < MAKEUP_QUOTA : true
 
   if (liffLoading || loading) {
     return <PageLoading />
@@ -238,7 +339,7 @@ function MakeupContent() {
                 key={student.id}
                 variant={selectedStudentId === student.id ? "default" : "outline"}
                 size="sm"
-                onClick={() => setSelectedStudentId(student.id)}
+                onClick={() => handleStudentChange(student.id)}
                 className="whitespace-nowrap"
               >
                 {student.nickname || student.name}
@@ -247,8 +348,35 @@ function MakeupContent() {
           </div>
         )}
 
+        {/* Class Selector */}
+        {selectedStudentData && Object.keys(selectedStudentData.classes).length > 1 && (
+          <Select value={selectedClassId} onValueChange={setSelectedClassId}>
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="เลือกคลาส" />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.values(selectedStudentData.classes).map((classData) => (
+                <SelectItem key={classData.classId} value={classData.classId}>
+                  <div className="flex items-center gap-2">
+                    {classData.subjectColor && (
+                      <div 
+                        className="w-3 h-3 rounded-full" 
+                        style={{ backgroundColor: classData.subjectColor }}
+                      />
+                    )}
+                    <span>{classData.className}</span>
+                    <span className="text-xs text-muted-foreground">
+                      ({classData.stats.total} ครั้ง)
+                    </span>
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
         {/* Quota Info */}
-        {selectedData && (
+        {selectedClassData && (
           <Alert className={cn(
             "border",
             canRequestMore ? "border-blue-200 bg-blue-50" : "border-orange-200 bg-orange-50"
@@ -261,7 +389,7 @@ function MakeupContent() {
               <div className="flex flex-col gap-1">
                 <div className="flex items-center justify-between">
                   <span className={canRequestMore ? "text-blue-700" : "text-orange-700"}>
-                    สิทธิ์ Makeup: ใช้ไป {selectedData.stats.totalUsed} จาก {MAKEUP_QUOTA} ครั้ง
+                    สิทธิ์ Makeup คลาส {selectedClassData.className}: ใช้ไป {selectedClassData.stats.totalUsed} จาก {MAKEUP_QUOTA} ครั้ง
                   </span>
                   {!canRequestMore && (
                     <Badge variant="secondary" className="bg-orange-100 text-orange-700">
@@ -270,7 +398,12 @@ function MakeupContent() {
                   )}
                 </div>
                 <div className="text-xs text-gray-600">
-                  (ลาล่วงหน้า {selectedData.stats.selfRequested} + ขาดเรียน {selectedData.stats.absences} ครั้ง)
+                  (ลาล่วงหน้า {selectedClassData.stats.selfRequested} + ขาดเรียน {selectedClassData.stats.absences} ครั้ง)
+                  {selectedClassData.stats.systemGenerated > 0 && (
+                    <span className="text-gray-500">
+                      {' '}• Makeup จากระบบ {selectedClassData.stats.systemGenerated} ครั้ง (ไม่นับใน quota)
+                    </span>
+                  )}
                 </div>
               </div>
             </AlertDescription>
@@ -290,12 +423,12 @@ function MakeupContent() {
               </div>
             </CardContent>
           </Card>
-        ) : !selectedData || selectedData.makeups.length === 0 ? (
+        ) : !selectedClassData || selectedClassData.makeups.length === 0 ? (
           <Card>
             <CardContent className="pt-6">
               <div className="text-center py-8">
                 <CalendarOff className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <p className="text-muted-foreground">ไม่มีประวัติการลาเรียน</p>
+                <p className="text-muted-foreground">ไม่มีประวัติการลาเรียนในคลาสนี้</p>
               </div>
             </CardContent>
           </Card>
@@ -305,25 +438,25 @@ function MakeupContent() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <Card>
                 <CardContent className="p-3 text-center">
-                  <p className="text-2xl font-bold text-primary">{selectedData.stats.total}</p>
+                  <p className="text-2xl font-bold text-primary">{selectedClassData.stats.total}</p>
                   <p className="text-xs text-muted-foreground">ลาทั้งหมด</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="p-3 text-center">
-                  <p className="text-2xl font-bold text-orange-600">{selectedData.stats.pending}</p>
+                  <p className="text-2xl font-bold text-orange-600">{selectedClassData.stats.pending}</p>
                   <p className="text-xs text-muted-foreground">รอนัด</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="p-3 text-center">
-                  <p className="text-2xl font-bold text-blue-600">{selectedData.stats.scheduled}</p>
+                  <p className="text-2xl font-bold text-blue-600">{selectedClassData.stats.scheduled}</p>
                   <p className="text-xs text-muted-foreground">นัดแล้ว</p>
                 </CardContent>
               </Card>
               <Card>
                 <CardContent className="p-3 text-center">
-                  <p className="text-2xl font-bold text-green-600">{selectedData.stats.completed}</p>
+                  <p className="text-2xl font-bold text-green-600">{selectedClassData.stats.completed}</p>
                   <p className="text-xs text-muted-foreground">เรียนแล้ว</p>
                 </CardContent>
               </Card>
@@ -338,19 +471,19 @@ function MakeupContent() {
 
               {/* Leave History Tab */}
               <TabsContent value="leave" className="space-y-3">
-                {selectedData.makeups.map((makeup) => (
+                {selectedClassData.makeups.map((makeup) => (
                   <Card key={makeup.id}>
                     <CardContent className="p-4">
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex items-center gap-2">
-                          {makeup.subjectColor && (
+                          {selectedClassData.subjectColor && (
                             <div 
                               className="w-4 h-4 rounded-full" 
-                              style={{ backgroundColor: makeup.subjectColor }}
+                              style={{ backgroundColor: selectedClassData.subjectColor }}
                             />
                           )}
                           <div>
-                            <p className="font-medium">{makeup.className}</p>
+                            <p className="font-medium">{selectedClassData.className}</p>
                             <p className="text-sm text-muted-foreground">
                               ครั้งที่ {makeup.originalSessionNumber}
                             </p>
@@ -413,10 +546,9 @@ function MakeupContent() {
 
               {/* Makeup Schedule Tab */}
               <TabsContent value="makeup" className="space-y-3">
-                {selectedData.makeups
+                {selectedClassData.makeups
                   .filter(m => m.status === 'scheduled' || m.status === 'completed')
                   .sort((a, b) => {
-                    // Sort by makeup date
                     const dateA = a.makeupSchedule?.date?.toDate ? 
                       a.makeupSchedule.date.toDate() : new Date(a.makeupSchedule?.date)
                     const dateB = b.makeupSchedule?.date?.toDate ? 
@@ -433,7 +565,7 @@ function MakeupContent() {
                         <CardContent className="p-4">
                           <div className="flex items-start justify-between mb-3">
                             <div>
-                              <p className="font-medium">{makeup.className}</p>
+                              <p className="font-medium">{selectedClassData.className}</p>
                               <p className="text-sm text-muted-foreground">
                                 แทนครั้งที่ {makeup.originalSessionNumber}
                               </p>
@@ -496,7 +628,7 @@ function MakeupContent() {
                     )
                   })}
                   
-                {selectedData.makeups.filter(m => m.status === 'scheduled' || m.status === 'completed').length === 0 && (
+                {selectedClassData.makeups.filter(m => m.status === 'scheduled' || m.status === 'completed').length === 0 && (
                   <Card>
                     <CardContent className="pt-6">
                       <div className="text-center py-8">
