@@ -88,10 +88,10 @@ function MakeupContent() {
       for (const student of activeStudents) {
         const makeups = await getMakeupClassesByStudent(student.id)
         
-        // Count self-requested makeups
+        // Count self-requested makeups (only count real leave requests, not system-generated)
         const selfRequested = makeups.filter(m => 
-          m.requestedBy === 'parent-liff' || 
-          m.reason?.includes('ลาผ่านระบบ LIFF')
+          m.type === 'scheduled' && // ลาล่วงหน้า
+          (m.requestedBy === 'parent-liff' || m.reason?.includes('ลาผ่านระบบ LIFF'))
         ).length
 
         // Load additional data for each makeup
@@ -346,10 +346,17 @@ function MakeupContent() {
                           <span>เหตุผล: {makeup.reason}</span>
                         </div>
 
-                        {makeup.requestedBy === 'parent-liff' && (
+                        {makeup.requestedBy === 'parent-liff' && makeup.type === 'scheduled' && (
                           <div className="flex items-center gap-2 text-blue-600">
                             <Info className="h-4 w-4" />
-                            <span className="text-xs">ลาผ่านระบบ</span>
+                            <span className="text-xs">ลาผ่านระบบ (นับใน quota)</span>
+                          </div>
+                        )}
+                        
+                        {makeup.type === 'ad-hoc' && (
+                          <div className="flex items-center gap-2 text-gray-500">
+                            <Info className="h-4 w-4" />
+                            <span className="text-xs">Makeup จากระบบ (ไม่นับใน quota)</span>
                           </div>
                         )}
 

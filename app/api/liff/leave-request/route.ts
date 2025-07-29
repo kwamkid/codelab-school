@@ -78,6 +78,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Check quota - count only scheduled (parent-requested) makeups
+    const quotaMakeupsSnapshot = await adminDb
+      .collection('makeupClasses')
+      .where('studentId', '==', studentId)
+      .where('originalClassId', '==', classId)
+      .where('type', '==', 'scheduled')
+      .where('requestedBy', 'in', ['parent-liff', 'parent'])
+      .get();
+
+    const usedQuota = quotaMakeupsSnapshot.size;
+    const MAKEUP_QUOTA = 4;
+
+    if (usedQuota >= MAKEUP_QUOTA) {
+      return NextResponse.json(
+        { 
+          success: false, 
+          message: `ใช้สิทธิ์ลาครบ ${MAKEUP_QUOTA} ครั้งแล้ว` 
+        },
+        { status: 400 }
+      );
+    }
+
     // Create makeup request
     const makeupData = {
       type: type || 'scheduled',
@@ -145,13 +167,15 @@ export async function POST(request: NextRequest) {
       // Continue even if attendance update fails
     }
 
-    // Log the request
-    console.log(`[LIFF Leave Request] Created makeup request ${makeupRef.id} for student ${studentId}`);
+    // Log the request with quota info
+    console.log(`[LIFF Leave Request] Created makeup request ${makeupRef.id} for student ${studentId} (Quota used: ${usedQuota + 1}/${MAKEUP_QUOTA})`);
 
     return NextResponse.json({
       success: true,
       message: 'บันทึกการลาเรียนเรียบร้อยแล้ว',
-      makeupId: makeupRef.id
+      makeupId: makeupRef.id,
+      quotaUsed: usedQuota + 1,
+      quotaLimit: MAKEUP_QUOTA
     });
 
   } catch (error) {

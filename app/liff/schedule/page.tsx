@@ -183,9 +183,16 @@ function ScheduleContent() {
         throw new Error(data.message || 'เกิดข้อผิดพลาด')
       }
 
-      toast.success('บันทึกการลาเรียนเรียบร้อยแล้ว', {
-        description: 'รอเจ้าหน้าที่นัดหมายวันเรียนชดเชยใหม่'
-      })
+      // Show success message with quota info if available
+      if (data.quotaUsed && data.quotaLimit) {
+        toast.success('บันทึกการลาเรียนเรียบร้อยแล้ว', {
+          description: `รอเจ้าหน้าที่นัดเรียนชดเชย (ใช้สิทธิ์ ${data.quotaUsed}/${data.quotaLimit} ครั้ง)`
+        })
+      } else {
+        toast.success('บันทึกการลาเรียนเรียบร้อยแล้ว', {
+          description: 'รอเจ้าหน้าที่นัดหมายวันเรียนชดเชยใหม่'
+        })
+      }
       
       setDialogOpen(false)
       setConfirmLeaveOpen(false)
