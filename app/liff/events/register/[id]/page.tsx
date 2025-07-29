@@ -5,7 +5,6 @@ import { useParams, useRouter } from 'next/navigation';
 import { Event, EventSchedule, Branch } from '@/types/models';
 import { getEvent, getEventSchedules, createEventRegistration } from '@/lib/services/events';
 import { getActiveBranches } from '@/lib/services/branches';
-import { getParentByLineId, getStudentsByParent } from '@/lib/services/parents';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,6 +20,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { GradeLevelCombobox } from '@/components/ui/grade-level-combobox';
+import { LiffProvider } from '@/components/liff/liff-provider';
+import { useLiff } from '@/components/liff/liff-provider';
+import { useLiffParent } from '@/hooks/useLiffParent';
 import { 
   Calendar, 
   MapPin, 
@@ -54,22 +56,19 @@ interface ParentFormData {
   isMainContact: boolean;
 }
 
-export default function EventRegistrationPage() {
+function EventRegistrationContent() {
   const params = useParams();
   const router = useRouter();
   const eventId = params.id as string;
   
-  // Basic states
+  const { profile, isLoggedIn } = useLiff();
+  const { parent, students: existingStudents, loading: parentLoading } = useLiffParent();
+  
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [event, setEvent] = useState<Event | null>(null);
   const [schedules, setSchedules] = useState<EventSchedule[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
-  
-  // LINE Login info (optional)
-  const [lineProfile, setLineProfile] = useState<any>(null);
-  const [parentData, setParentData] = useState<any>(null);
-  const [existingStudents, setExistingStudents] = useState<any[]>([]);
   
   // Form states
   const [selectedSchedule, setSelectedSchedule] = useState<string>('');
@@ -94,51 +93,8 @@ export default function EventRegistrationPage() {
   const [referralSource, setReferralSource] = useState('');
   const [agreeTerms, setAgreeTerms] = useState(false);
 
-  // Initialize - check LINE login but don't require it
   useEffect(() => {
-    const init = async () => {
-      try {
-        // Load event data first
-        await loadData();
-        
-        // Then check LIFF
-        if (typeof window !== 'undefined') {
-          const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
-          if (!liffId) {
-            console.log('[EventRegistration] No LIFF ID configured');
-            return;
-          }
-          
-          const { default: liffModule } = await import('@line/liff');
-          await liffModule.init({ liffId });
-          console.log('[EventRegistration] LIFF initialized, isLoggedIn:', liffModule.isLoggedIn());
-          
-          if (liffModule.isLoggedIn()) {
-            try {
-              const profile = await liffModule.getProfile();
-              console.log('[EventRegistration] Got LINE profile:', profile);
-              setLineProfile(profile);
-              
-              // Try to get parent data if logged in
-              const parent = await getParentByLineId(profile.userId);
-              console.log('[EventRegistration] Parent data:', parent);
-              if (parent) {
-                setParentData(parent);
-                const students = await getStudentsByParent(parent.id);
-                setExistingStudents(students.filter(s => s.isActive));
-                console.log('[EventRegistration] Found students:', students.length);
-              }
-            } catch (error) {
-              console.log('[EventRegistration] Error getting profile/parent:', error);
-            }
-          }
-        }
-      } catch (error) {
-        console.log('[EventRegistration] Error during initialization:', error);
-      }
-    };
-    
-    init();
+    loadData();
   }, [eventId]);
 
   const loadData = async () => {
@@ -184,20 +140,20 @@ export default function EventRegistrationPage() {
   };
 
   const handleUseMyData = () => {
-    if (!parentData) return;
+    if (!parent) return;
     
     setContactForm({
-      name: parentData.displayName,
-      phone: parentData.phone,
-      email: parentData.email || '',
-      address: parentData.address ? 
-        `${parentData.address.houseNumber} ${parentData.address.street || ''} ${parentData.address.subDistrict} ${parentData.address.district} ${parentData.address.province} ${parentData.address.postalCode}`.trim() 
+      name: parent.displayName,
+      phone: parent.phone,
+      email: parent.email || '',
+      address: parent.address ? 
+        `${parent.address.houseNumber} ${parent.address.street || ''} ${parent.address.subDistrict} ${parent.address.district} ${parent.address.province} ${parent.address.postalCode}`.trim() 
         : ''
     });
     
     // Set preferred branch
-    if (parentData.preferredBranchId && branches.some(b => b.id === parentData.preferredBranchId)) {
-      setSelectedBranch(parentData.preferredBranchId);
+    if (parent.preferredBranchId && branches.some(b => b.id === parent.preferredBranchId)) {
+      setSelectedBranch(parent.preferredBranchId);
     }
     
     // Pre-fill students if counting by students
@@ -332,8 +288,8 @@ export default function EventRegistrationPage() {
         branchId: selectedBranch,
         
         // Guest or member
-        isGuest: !lineProfile || !parentData,
-        parentId: parentData?.id || null,
+        isGuest: !isLoggedIn || !parent,
+        parentId: parent?.id || null,
         
         // Contact info
         parentName: contactForm.name,
@@ -369,10 +325,10 @@ export default function EventRegistrationPage() {
       };
       
       // Add optional fields
-      if (lineProfile) {
-        registrationData.lineUserId = lineProfile.userId;
-        registrationData.lineDisplayName = lineProfile.displayName;
-        registrationData.linePictureUrl = lineProfile.pictureUrl;
+      if (isLoggedIn && profile?.userId) {
+        registrationData.lineUserId = profile.userId;
+        registrationData.lineDisplayName = profile.displayName;
+        registrationData.linePictureUrl = profile.pictureUrl;
       }
       if (contactForm.email) {
         registrationData.parentEmail = contactForm.email;
@@ -414,7 +370,7 @@ export default function EventRegistrationPage() {
     }
   }, [event?.countingMethod, contactForm, parentForms.length]);
 
-  if (loading) {
+  if (loading || parentLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
@@ -559,7 +515,7 @@ export default function EventRegistrationPage() {
               <CardTitle className="text-base">
                 {event?.countingMethod === 'parents' ? 'ผู้ร่วมงานหลัก' : 'ข้อมูลติดต่อ'}
               </CardTitle>
-              {parentData && (
+              {isLoggedIn && parent && (
                 <div className="flex gap-2">
                   <Button
                     type="button"
@@ -580,14 +536,15 @@ export default function EventRegistrationPage() {
                   </Button>
                 </div>
               )}
-              {lineProfile && !parentData && (
-                <div className="text-xs text-gray-500">
-                  (Login แล้วแต่ยังไม่ได้ลงทะเบียนในระบบ)
-                </div>
-              )}
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
+            {isLoggedIn && !parent && (
+              <div className="text-sm text-amber-600 bg-amber-50 p-3 rounded-lg mb-4">
+                <AlertCircle className="h-4 w-4 inline mr-1" />
+                Login แล้วแต่ยังไม่ได้ลงทะเบียนในระบบ
+              </div>
+            )}
             <div className="grid grid-cols-1 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="contactName">ชื่อ-นามสกุล *</Label>
@@ -649,7 +606,7 @@ export default function EventRegistrationPage() {
               ) : (
                 studentForms.map((student, index) => (
                   <div key={index} className="p-4 border rounded-lg space-y-3">
-                    {parentData && existingStudents.length > 0 && index < existingStudents.length ? (
+                    {isLoggedIn && parent && existingStudents.length > 0 && index < existingStudents.length ? (
                       // Show as checkbox for existing students
                       <div className="flex items-start gap-3">
                         <Checkbox
@@ -970,5 +927,13 @@ export default function EventRegistrationPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+export default function EventRegistrationPage() {
+  return (
+    <LiffProvider requireLogin={false}>
+      <EventRegistrationContent />
+    </LiffProvider>
   );
 }
