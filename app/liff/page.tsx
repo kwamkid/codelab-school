@@ -210,14 +210,14 @@ function LiffHome() {
       requireAuth: true
     },
     {
-      title: 'Leave',
-      titleTh: 'ลาเรียน',
-      icon: CalendarOff,
-      path: '/liff/makeup',
-      description: 'ขอลาเรียนและดูตารางเรียนชดเชย',
-      color: 'bg-orange-500',
-      requireAuth: true
-    }
+        title: 'Leave',
+        titleTh: 'ข้อมูลการลา',
+        icon: CalendarOff,
+        path: '/liff/makeup',
+        description: 'ดูประวัติการลาและตารางเรียนชดเชย',
+        color: 'bg-orange-500',
+        requireAuth: true
+      }
   ]
 
   // Loading state with menu info

@@ -5,139 +5,165 @@ import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { 
-  ChevronLeft, 
-  Calendar, 
-  Clock, 
-  MapPin, 
-  User,
-  Users,
-  CalendarOff,
-  ChevronRight,
-  AlertCircle,
-  CheckCircle,
-  XCircle,
-  Loader2
-} from 'lucide-react'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { ChevronLeft, Loader2, Calendar, CalendarOff, AlertCircle, CheckCircle, Clock, MapPin, User, Info } from 'lucide-react'
 import { useLiff } from '@/components/liff/liff-provider'
 import { getParentByLineId, getStudentsByParent } from '@/lib/services/parents'
 import { getMakeupClassesByStudent } from '@/lib/services/makeup'
 import { getClass } from '@/lib/services/classes'
-import { getSubject } from '@/lib/services/subjects'
 import { getTeacher } from '@/lib/services/teachers'
 import { getBranch } from '@/lib/services/branches'
+import { getRoom } from '@/lib/services/rooms'
+import { getSubject } from '@/lib/services/subjects'
 import { toast } from 'sonner'
-import { format } from 'date-fns'
-import { th } from 'date-fns/locale'
-import TechLoadingAnimation from '@/components/liff/tech-loading-animation'
 import { LiffProvider } from '@/components/liff/liff-provider'
+import { PageLoading } from '@/components/ui/loading'
+import { formatDate, formatTime, getDayName } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 
 interface MakeupData {
-  makeup: any
-  originalClass: any
-  subject: any
-  originalTeacher: any
-  makeupTeacher?: any
-  branch?: any
+  student: {
+    id: string
+    name: string
+    nickname?: string
+  }
+  makeups: any[]
+  stats: {
+    total: number
+    pending: number
+    scheduled: number
+    completed: number
+    selfRequested: number // จำนวนที่ลาเอง
+  }
 }
 
 function MakeupContent() {
   const router = useRouter()
   const { profile, isLoggedIn, isLoading: liffLoading, liff } = useLiff()
-  const [students, setStudents] = useState<any[]>([])
-  const [selectedStudentId, setSelectedStudentId] = useState<string>('')
-  const [makeupData, setMakeupData] = useState<Record<string, MakeupData[]>>({})
   const [loading, setLoading] = useState(true)
-  const [authChecked, setAuthChecked] = useState(false)
+  const [students, setStudents] = useState<any[]>([])
+  const [makeupData, setMakeupData] = useState<Record<string, MakeupData>>({})
+  const [selectedStudentId, setSelectedStudentId] = useState<string>('')
+  const [activeTab, setActiveTab] = useState('leave')
 
-  // Check authentication
+  // Makeup quota limit
+  const MAKEUP_QUOTA = 4
+
+  // Load data
   useEffect(() => {
-    if (!liffLoading) {
-      if (!isLoggedIn && liff) {
-        console.log('[MakeupContent] Not logged in, redirecting...')
-        liff.login()
-      } else if (isLoggedIn) {
-        setAuthChecked(true)
-      }
+    if (!liffLoading && isLoggedIn && profile?.userId) {
+      loadData()
+    } else if (!liffLoading && !isLoggedIn && liff) {
+      liff.login()
     }
-  }, [liffLoading, isLoggedIn, liff])
+  }, [liffLoading, isLoggedIn, profile, liff])
 
-  useEffect(() => {
-    if (profile?.userId && authChecked) {
-      loadData(profile.userId)
-    }
-  }, [profile, authChecked])
+  const loadData = async () => {
+    if (!profile?.userId) return
 
-  const loadData = async (lineUserId: string) => {
     try {
       setLoading(true)
-      
-      // Get parent and students
-      const parent = await getParentByLineId(lineUserId)
+
+      // Get parent
+      const parent = await getParentByLineId(profile.userId)
       if (!parent) {
         toast.error('ไม่พบข้อมูลผู้ปกครอง')
         return
       }
 
-      const studentsList = await getStudentsByParent(parent.id)
-      const activeStudents = studentsList.filter(s => s.isActive)
+      // Get students
+      const studentsData = await getStudentsByParent(parent.id)
+      const activeStudents = studentsData.filter(s => s.isActive)
       setStudents(activeStudents)
-      
-      if (activeStudents.length > 0) {
+
+      // Set default selected student
+      if (activeStudents.length === 1) {
         setSelectedStudentId(activeStudents[0].id)
+      }
+
+      // Load makeup data for each student
+      const makeupDataMap: Record<string, MakeupData> = {}
+      
+      for (const student of activeStudents) {
+        const makeups = await getMakeupClassesByStudent(student.id)
         
-        // Load makeup data for all students
-        const allMakeupData: Record<string, MakeupData[]> = {}
-        
-        for (const student of activeStudents) {
-          const makeups = await getMakeupClassesByStudent(student.id)
-          
-          // Load additional data for each makeup
-          const makeupWithData: MakeupData[] = []
-          
-          for (const makeup of makeups) {
+        // Count self-requested makeups
+        const selfRequested = makeups.filter(m => 
+          m.requestedBy === 'parent-liff' || 
+          m.reason?.includes('ลาผ่านระบบ LIFF')
+        ).length
+
+        // Load additional data for each makeup
+        const makeupsWithDetails = await Promise.all(
+          makeups.map(async (makeup) => {
             try {
-              const [originalClass, originalTeacher] = await Promise.all([
+              const [classData, originalClass] = await Promise.all([
                 getClass(makeup.originalClassId),
-                getTeacher(makeup.requestedBy) // This might be wrong field, adjust as needed
+                makeup.makeupSchedule?.teacherId ? getTeacher(makeup.makeupSchedule.teacherId) : null,
               ])
-              
-              if (!originalClass) continue
-              
-              const subject = await getSubject(originalClass.subjectId)
-              
-              let makeupTeacher, branch
-              if (makeup.makeupSchedule) {
-                [makeupTeacher, branch] = await Promise.all([
-                  getTeacher(makeup.makeupSchedule.teacherId),
-                  getBranch(makeup.makeupSchedule.branchId)
+
+              let subject = null
+              let originalTeacher = null
+              let branch = null
+              let room = null
+              let makeupBranch = null
+              let makeupRoom = null
+
+              if (classData) {
+                [subject, originalTeacher, branch, room] = await Promise.all([
+                  getSubject(classData.subjectId),
+                  getTeacher(classData.teacherId),
+                  getBranch(classData.branchId),
+                  getRoom(classData.branchId, classData.roomId)
                 ])
               }
-              
-              makeupWithData.push({
-                makeup,
-                originalClass,
-                subject,
-                originalTeacher,
-                makeupTeacher,
-                branch
-              })
+
+              if (makeup.makeupSchedule) {
+                [makeupBranch, makeupRoom] = await Promise.all([
+                  getBranch(makeup.makeupSchedule.branchId),
+                  getRoom(makeup.makeupSchedule.branchId, makeup.makeupSchedule.roomId)
+                ])
+              }
+
+              return {
+                ...makeup,
+                className: classData?.name,
+                subjectName: subject?.name,
+                subjectColor: subject?.color,
+                originalTeacherName: originalTeacher?.nickname || originalTeacher?.name,
+                branchName: branch?.name,
+                roomName: room?.name,
+                makeupBranchName: makeupBranch?.name,
+                makeupRoomName: makeupRoom?.name,
+                makeupTeacher: makeup.makeupSchedule?.teacherId ? 
+                  await getTeacher(makeup.makeupSchedule.teacherId) : null
+              }
             } catch (error) {
-              console.error('Error loading makeup data:', error)
+              console.error('Error loading makeup details:', error)
+              return makeup
             }
+          })
+        )
+
+        makeupDataMap[student.id] = {
+          student: {
+            id: student.id,
+            name: student.name,
+            nickname: student.nickname
+          },
+          makeups: makeupsWithDetails,
+          stats: {
+            total: makeups.length,
+            pending: makeups.filter(m => m.status === 'pending').length,
+            scheduled: makeups.filter(m => m.status === 'scheduled').length,
+            completed: makeups.filter(m => m.status === 'completed').length,
+            selfRequested: selfRequested
           }
-          
-          // Sort by request date (newest first)
-          makeupWithData.sort((a, b) => 
-            b.makeup.requestDate.getTime() - a.makeup.requestDate.getTime()
-          )
-          
-          allMakeupData[student.id] = makeupWithData
         }
-        
-        setMakeupData(allMakeupData)
       }
+
+      setMakeupData(makeupDataMap)
     } catch (error) {
       console.error('Error loading data:', error)
       toast.error('ไม่สามารถโหลดข้อมูลได้')
@@ -146,50 +172,13 @@ function MakeupContent() {
     }
   }
 
-  const formatThaiDate = (date: Date) => {
-    return format(date, 'EEEE dd MMMM yyyy', { locale: th })
-  }
+  // Get selected student data
+  const selectedData = selectedStudentId ? makeupData[selectedStudentId] : null
+  const canRequestMore = selectedData ? 
+    selectedData.stats.selfRequested < MAKEUP_QUOTA : true
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'pending':
-        return (
-          <Badge variant="secondary" className="bg-yellow-100 text-yellow-700">
-            <Clock className="h-3 w-3 mr-1" />
-            รอจัดตารางเรียนชดเชย
-          </Badge>
-        )
-      case 'scheduled':
-        return (
-          <Badge variant="secondary" className="bg-blue-100 text-blue-700">
-            <Calendar className="h-3 w-3 mr-1" />
-            นัดเรียนชดเชยแล้ว
-          </Badge>
-        )
-      case 'completed':
-        return (
-          <Badge variant="secondary" className="bg-green-100 text-green-700">
-            <CheckCircle className="h-3 w-3 mr-1" />
-            เรียนชดเชยแล้ว
-          </Badge>
-        )
-      case 'cancelled':
-        return (
-          <Badge variant="secondary" className="bg-red-100 text-red-700">
-            <XCircle className="h-3 w-3 mr-1" />
-            ยกเลิก
-          </Badge>
-        )
-      default:
-        return null
-    }
-  }
-
-  const selectedStudentMakeups = selectedStudentId ? (makeupData[selectedStudentId] || []) : []
-
-  // Show loading while checking auth or loading data
-  if (liffLoading || !authChecked || loading) {
-    return <TechLoadingAnimation />
+  if (liffLoading || loading) {
+    return <PageLoading />
   }
 
   return (
@@ -205,163 +194,277 @@ function MakeupContent() {
           >
             <ChevronLeft className="h-5 w-5" />
           </Button>
-          <h1 className="text-xl font-bold">ลาเรียนและเรียนชดเชย</h1>
+          <h1 className="text-xl font-bold">ข้อมูลการลาและเรียนชดเชย</h1>
         </div>
       </div>
 
       <div className="p-4 space-y-4">
+        {/* Student Selector */}
+        {students.length > 1 && (
+          <div className="flex gap-2 overflow-x-auto pb-2">
+            {students.map((student) => (
+              <Button
+                key={student.id}
+                variant={selectedStudentId === student.id ? "default" : "outline"}
+                size="sm"
+                onClick={() => setSelectedStudentId(student.id)}
+                className="whitespace-nowrap"
+              >
+                {student.nickname || student.name}
+              </Button>
+            ))}
+          </div>
+        )}
+
+        {/* Quota Info */}
+        {selectedData && (
+          <Alert className={cn(
+            "border",
+            canRequestMore ? "border-blue-200 bg-blue-50" : "border-orange-200 bg-orange-50"
+          )}>
+            <Info className={cn(
+              "h-4 w-4",
+              canRequestMore ? "text-blue-600" : "text-orange-600"
+            )} />
+            <AlertDescription>
+              <div className="flex items-center justify-between">
+                <span className={canRequestMore ? "text-blue-700" : "text-orange-700"}>
+                  สิทธิ์ลาเรียนผ่านระบบ: ใช้ไป {selectedData.stats.selfRequested} จาก {MAKEUP_QUOTA} ครั้ง
+                </span>
+                {!canRequestMore && (
+                  <Badge variant="secondary" className="bg-orange-100 text-orange-700">
+                    เต็มแล้ว
+                  </Badge>
+                )}
+              </div>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* No data */}
         {students.length === 0 ? (
           <Card>
             <CardContent className="pt-6">
               <div className="text-center py-8">
-                <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <CalendarOff className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                 <p className="text-muted-foreground mb-4">ไม่พบข้อมูลนักเรียน</p>
-                <Button onClick={() => router.push('/liff/profile')}>
-                  กลับไปหน้าโปรไฟล์
+                <Button onClick={() => router.push('/liff')}>
+                  กลับหน้าหลัก
                 </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ) : !selectedData || selectedData.makeups.length === 0 ? (
+          <Card>
+            <CardContent className="pt-6">
+              <div className="text-center py-8">
+                <CalendarOff className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground">ไม่มีประวัติการลาเรียน</p>
               </div>
             </CardContent>
           </Card>
         ) : (
           <>
-            {/* Student Selector */}
-            {students.length > 1 && (
+            {/* Statistics */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base">เลือกนักเรียน</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex gap-2 overflow-x-auto pb-2">
-                    {students.map((student) => (
-                      <Button
-                        key={student.id}
-                        variant={selectedStudentId === student.id ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => setSelectedStudentId(student.id)}
-                        className="flex items-center gap-2 whitespace-nowrap"
-                      >
-                        <Avatar className="h-6 w-6">
-                          <AvatarImage src={student.profileImage} />
-                          <AvatarFallback className="text-xs">
-                            {student.nickname?.charAt(0) || student.name.charAt(0)}
-                          </AvatarFallback>
-                        </Avatar>
-                        {student.nickname || student.name}
-                      </Button>
-                    ))}
-                  </div>
+                <CardContent className="p-3 text-center">
+                  <p className="text-2xl font-bold text-primary">{selectedData.stats.total}</p>
+                  <p className="text-xs text-muted-foreground">ลาทั้งหมด</p>
                 </CardContent>
               </Card>
-            )}
-
-            {/* Makeup List */}
-            {selectedStudentMakeups.length === 0 ? (
               <Card>
-                <CardContent className="pt-6">
-                  <div className="text-center py-8">
-                    <CalendarOff className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                    <p className="text-muted-foreground">ไม่มีประวัติการลาเรียน</p>
-                  </div>
+                <CardContent className="p-3 text-center">
+                  <p className="text-2xl font-bold text-orange-600">{selectedData.stats.pending}</p>
+                  <p className="text-xs text-muted-foreground">รอนัด</p>
                 </CardContent>
               </Card>
-            ) : (
-              <div className="space-y-4">
-                {selectedStudentMakeups.map((data) => (
-                  <Card key={data.makeup.id}>
-                    <CardHeader>
-                      <div className="flex items-start justify-between">
-                        <div className="space-y-1">
-                          <CardTitle className="text-lg">
-                            {data.subject?.name || 'ไม่ระบุวิชา'}
-                          </CardTitle>
-                          <p className="text-sm text-muted-foreground">
-                            {data.originalClass?.name || 'ไม่ระบุคลาส'}
-                          </p>
-                        </div>
-                        {getStatusBadge(data.makeup.status)}
-                      </div>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      {/* Original Schedule */}
-                      <div className="bg-red-50 p-3 rounded-lg space-y-2">
-                        <div className="flex items-center gap-2 text-sm font-medium text-red-700">
-                          <CalendarOff className="h-4 w-4" />
-                          ลาเรียน
-                        </div>
-                        <div className="text-sm space-y-1">
-                          <p>
-                            คลาส: {data.originalClass?.name} ครั้งที่ {data.makeup.originalScheduleId}
-                          </p>
-                          <p>
-                            วันที่: {formatThaiDate(data.makeup.requestDate)}
-                          </p>
-                          <p>
-                            เวลา: {data.originalClass?.startTime} - {data.originalClass?.endTime}
-                          </p>
-                        </div>
-                      </div>
+              <Card>
+                <CardContent className="p-3 text-center">
+                  <p className="text-2xl font-bold text-blue-600">{selectedData.stats.scheduled}</p>
+                  <p className="text-xs text-muted-foreground">นัดแล้ว</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-3 text-center">
+                  <p className="text-2xl font-bold text-green-600">{selectedData.stats.completed}</p>
+                  <p className="text-xs text-muted-foreground">เรียนแล้ว</p>
+                </CardContent>
+              </Card>
+            </div>
 
-                      {/* Makeup Schedule */}
-                      {data.makeup.makeupSchedule && (
-                        <div className="bg-green-50 p-3 rounded-lg space-y-2">
-                          <div className="flex items-center gap-2 text-sm font-medium text-green-700">
-                            <Calendar className="h-4 w-4" />
-                            เรียนชดเชย
-                          </div>
-                          <div className="text-sm space-y-1">
-                            <p>
-                              วันที่: {formatThaiDate(new Date(data.makeup.makeupSchedule.date))}
+            {/* Tabs */}
+            <Tabs value={activeTab} onValueChange={setActiveTab}>
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="leave">วันที่ลา</TabsTrigger>
+                <TabsTrigger value="makeup">ตารางเรียนชดเชย</TabsTrigger>
+              </TabsList>
+
+              {/* Leave History Tab */}
+              <TabsContent value="leave" className="space-y-3">
+                {selectedData.makeups.map((makeup) => (
+                  <Card key={makeup.id}>
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          {makeup.subjectColor && (
+                            <div 
+                              className="w-4 h-4 rounded-full" 
+                              style={{ backgroundColor: makeup.subjectColor }}
+                            />
+                          )}
+                          <div>
+                            <p className="font-medium">{makeup.className}</p>
+                            <p className="text-sm text-muted-foreground">
+                              ครั้งที่ {makeup.originalSessionNumber}
                             </p>
-                            <p>
-                              เวลา: {data.makeup.makeupSchedule.startTime} - {data.makeup.makeupSchedule.endTime}
-                            </p>
-                            {data.makeupTeacher && (
-                              <p className="flex items-center gap-1">
-                                <User className="h-3 w-3" />
-                                ครู{data.makeupTeacher.nickname || data.makeupTeacher.name}
-                              </p>
-                            )}
-                            {data.branch && (
-                              <p className="flex items-center gap-1">
-                                <MapPin className="h-3 w-3" />
-                                {data.branch.name}
-                              </p>
-                            )}
                           </div>
                         </div>
-                      )}
+                        <Badge 
+                          variant={
+                            makeup.status === 'completed' ? 'default' :
+                            makeup.status === 'scheduled' ? 'secondary' :
+                            makeup.status === 'cancelled' ? 'destructive' : 'outline'
+                          }
+                          className="text-xs"
+                        >
+                          {makeup.status === 'pending' ? 'รอนัด' :
+                           makeup.status === 'scheduled' ? 'นัดแล้ว' :
+                           makeup.status === 'completed' ? 'เรียนแล้ว' : 
+                           'ยกเลิก'}
+                        </Badge>
+                      </div>
 
-                      {/* Reason */}
-                      {data.makeup.reason && (
-                        <div className="text-sm">
-                          <p className="text-muted-foreground">เหตุผล:</p>
-                          <p>{data.makeup.reason}</p>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <Calendar className="h-4 w-4" />
+                          <span>วันที่ลา: {formatDate(makeup.originalSessionDate, 'long')}</span>
                         </div>
-                      )}
+                        
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <AlertCircle className="h-4 w-4" />
+                          <span>เหตุผล: {makeup.reason}</span>
+                        </div>
 
-                      {/* Request Info */}
-                      <div className="text-xs text-muted-foreground pt-2 border-t">
-                        <p>ขอลาเมื่อ: {format(data.makeup.requestDate, 'dd/MM/yyyy HH:mm')}</p>
+                        {makeup.requestedBy === 'parent-liff' && (
+                          <div className="flex items-center gap-2 text-blue-600">
+                            <Info className="h-4 w-4" />
+                            <span className="text-xs">ลาผ่านระบบ</span>
+                          </div>
+                        )}
+
+                        {makeup.status === 'scheduled' && makeup.makeupSchedule && (
+                          <div className="mt-3 pt-3 border-t">
+                            <p className="font-medium text-green-600 mb-1">นัดเรียนชดเชย:</p>
+                            <p className="text-muted-foreground">
+                              {formatDate(makeup.makeupSchedule.date, 'long')} 
+                              {' '}เวลา {formatTime(makeup.makeupSchedule.startTime)} - {formatTime(makeup.makeupSchedule.endTime)}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
                 ))}
-              </div>
-            )}
+              </TabsContent>
 
-            {/* Info Card */}
-            <Card className="bg-blue-50 border-blue-200">
-              <CardContent className="pt-6">
-                <div className="flex gap-3">
-                  <AlertCircle className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
-                  <div className="text-sm text-blue-800 space-y-1">
-                    <p className="font-medium">การขอลาเรียน</p>
-                    <p>กรุณาติดต่อเจ้าหน้าที่เพื่อขอลาเรียนล่วงหน้าอย่างน้อย 24 ชั่วโมง</p>
-                    <p>สิทธิ์การเรียนชดเชย: 4 ครั้ง/คอร์ส</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+              {/* Makeup Schedule Tab */}
+              <TabsContent value="makeup" className="space-y-3">
+                {selectedData.makeups
+                  .filter(m => m.status === 'scheduled' || m.status === 'completed')
+                  .sort((a, b) => {
+                    // Sort by makeup date
+                    const dateA = a.makeupSchedule?.date?.toDate ? 
+                      a.makeupSchedule.date.toDate() : new Date(a.makeupSchedule?.date)
+                    const dateB = b.makeupSchedule?.date?.toDate ? 
+                      b.makeupSchedule.date.toDate() : new Date(b.makeupSchedule?.date)
+                    return dateA - dateB
+                  })
+                  .map((makeup) => {
+                    const makeupDate = makeup.makeupSchedule?.date?.toDate ? 
+                      makeup.makeupSchedule.date.toDate() : new Date(makeup.makeupSchedule?.date)
+                    const isPast = makeupDate < new Date()
+                    
+                    return (
+                      <Card key={makeup.id} className={isPast ? 'opacity-75' : ''}>
+                        <CardContent className="p-4">
+                          <div className="flex items-start justify-between mb-3">
+                            <div>
+                              <p className="font-medium">{makeup.className}</p>
+                              <p className="text-sm text-muted-foreground">
+                                แทนครั้งที่ {makeup.originalSessionNumber}
+                              </p>
+                            </div>
+                            <Badge 
+                              variant={makeup.status === 'completed' ? 'default' : 'secondary'}
+                              className="text-xs"
+                            >
+                              {makeup.status === 'completed' ? 'เรียนแล้ว' : 'นัดแล้ว'}
+                            </Badge>
+                          </div>
+
+                          <div className="space-y-2 text-sm">
+                            <div className="flex items-center gap-2">
+                              <Calendar className="h-4 w-4 text-primary" />
+                              <span className="font-medium">
+                                {getDayName(makeupDate.getDay())}, {formatDate(makeupDate, 'long')}
+                              </span>
+                            </div>
+                            
+                            <div className="flex items-center gap-2 text-muted-foreground">
+                              <Clock className="h-4 w-4" />
+                              <span>
+                                {formatTime(makeup.makeupSchedule.startTime)} - {formatTime(makeup.makeupSchedule.endTime)}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-2 text-muted-foreground">
+                              <MapPin className="h-4 w-4" />
+                              <span>
+                                {makeup.makeupBranchName} - ห้อง {makeup.makeupRoomName}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-2 text-muted-foreground">
+                              <User className="h-4 w-4" />
+                              <span>
+                                ครู{makeup.makeupTeacher?.nickname || makeup.makeupTeacher?.name}
+                              </span>
+                            </div>
+
+                            {makeup.attendance && (
+                              <div className="mt-3 pt-3 border-t">
+                                {makeup.attendance.status === 'present' ? (
+                                  <div className="flex items-center gap-2 text-green-600">
+                                    <CheckCircle className="h-4 w-4" />
+                                    <span>เข้าเรียนแล้ว</span>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-2 text-red-600">
+                                    <AlertCircle className="h-4 w-4" />
+                                    <span>ขาดเรียน</span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
+                  
+                {selectedData.makeups.filter(m => m.status === 'scheduled' || m.status === 'completed').length === 0 && (
+                  <Card>
+                    <CardContent className="pt-6">
+                      <div className="text-center py-8">
+                        <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                        <p className="text-muted-foreground">ยังไม่มีตารางเรียนชดเชย</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </TabsContent>
+            </Tabs>
           </>
         )}
       </div>
@@ -374,5 +477,5 @@ export default function MakeupPage() {
     <LiffProvider requireLogin={true}>
       <MakeupContent />
     </LiffProvider>
-  );
+  )
 }
