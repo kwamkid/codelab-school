@@ -1,12 +1,7 @@
 // app/api/liff/leave-request/route.ts
-
 import { NextRequest, NextResponse } from 'next/server';
-import { createMakeupRequest, checkMakeupExists } from '@/lib/services/makeup';
-import { getClass } from '@/lib/services/classes';
-import { getStudentWithParent } from '@/lib/services/parents';
-
-// Force dynamic rendering
-export const dynamic = 'force-dynamic';
+import { adminDb } from '@/lib/firebase/admin';
+import { FieldValue } from 'firebase-admin/firestore';
 
 export async function POST(request: NextRequest) {
   try {
@@ -16,64 +11,131 @@ export async function POST(request: NextRequest) {
     // Validate required fields
     if (!studentId || !classId || !scheduleId) {
       return NextResponse.json(
-        { message: 'ข้อมูลไม่ครบถ้วน' },
+        { success: false, message: 'ข้อมูลไม่ครบถ้วน' },
+        { status: 400 }
+      );
+    }
+
+    // Get enrollment to find parentId
+    const enrollmentsSnapshot = await adminDb
+      .collection('enrollments')
+      .where('studentId', '==', studentId)
+      .where('classId', '==', classId)
+      .where('status', '==', 'active')
+      .get();
+
+    if (enrollmentsSnapshot.empty) {
+      return NextResponse.json(
+        { success: false, message: 'ไม่พบข้อมูลการลงทะเบียน' },
+        { status: 404 }
+      );
+    }
+
+    const enrollment = enrollmentsSnapshot.docs[0].data();
+    const parentId = enrollment.parentId;
+
+    // Get class schedule details
+    const scheduleDoc = await adminDb
+      .collection('classes')
+      .doc(classId)
+      .collection('schedules')
+      .doc(scheduleId)
+      .get();
+
+    if (!scheduleDoc.exists) {
+      return NextResponse.json(
+        { success: false, message: 'ไม่พบข้อมูลคาบเรียน' },
+        { status: 404 }
+      );
+    }
+
+    const schedule = scheduleDoc.data();
+
+    // Check if schedule is in the future
+    const now = new Date();
+    const scheduleDate = schedule?.sessionDate?.toDate() || new Date();
+    
+    if (scheduleDate < now) {
+      return NextResponse.json(
+        { success: false, message: 'ไม่สามารถลาย้อนหลังได้' },
         { status: 400 }
       );
     }
 
     // Check if makeup already exists
-    const existingMakeup = await checkMakeupExists(studentId, classId, scheduleId);
-    if (existingMakeup) {
+    const existingMakeupSnapshot = await adminDb
+      .collection('makeupClasses')
+      .where('studentId', '==', studentId)
+      .where('originalClassId', '==', classId)
+      .where('originalScheduleId', '==', scheduleId)
+      .where('status', 'in', ['pending', 'scheduled'])
+      .get();
+
+    if (!existingMakeupSnapshot.empty) {
       return NextResponse.json(
-        { message: 'มีการขอลาสำหรับคลาสนี้แล้ว' },
+        { success: false, message: 'มีการขอลาในคาบนี้แล้ว' },
         { status: 400 }
       );
     }
 
-    // Get class info to validate
-    const classData = await getClass(classId);
-    if (!classData) {
-      return NextResponse.json(
-        { message: 'ไม่พบข้อมูลคลาส' },
-        { status: 404 }
-      );
-    }
-
-    // Get student with parent info
-    const studentWithParent = await getStudentWithParent(studentId);
-    if (!studentWithParent) {
-      return NextResponse.json(
-        { message: 'ไม่พบข้อมูลนักเรียน' },
-        { status: 404 }
-      );
-    }
-
     // Create makeup request
-    const makeupId = await createMakeupRequest({
+    const makeupData = {
       type: type || 'scheduled',
       originalClassId: classId,
       originalScheduleId: scheduleId,
       studentId: studentId,
-      parentId: studentWithParent.parentId,
-      requestDate: new Date(),
+      parentId: parentId,
+      requestDate: FieldValue.serverTimestamp(),
       requestedBy: 'parent-liff', // Indicate it's from LIFF
       reason: reason || 'ลาผ่านระบบ LIFF',
-      status: 'pending'
-    });
+      status: 'pending',
+      originalSessionNumber: schedule?.sessionNumber || 0,
+      originalSessionDate: schedule?.sessionDate || null,
+      createdAt: FieldValue.serverTimestamp()
+    };
+
+    const makeupRef = await adminDb.collection('makeupClasses').add(makeupData);
+
+    // Update the schedule attendance (mark as absent)
+    const attendanceUpdate = {
+      attendance: FieldValue.arrayUnion({
+        studentId: studentId,
+        status: 'absent',
+        note: 'ลาผ่านระบบ LIFF',
+        checkedAt: FieldValue.serverTimestamp(),
+        checkedBy: 'parent-liff'
+      })
+    };
+
+    await adminDb
+      .collection('classes')
+      .doc(classId)
+      .collection('schedules')
+      .doc(scheduleId)
+      .update(attendanceUpdate);
+
+    // Log the request
+    console.log(`[LIFF Leave Request] Created makeup request ${makeupRef.id} for student ${studentId}`);
 
     return NextResponse.json({
       success: true,
-      makeupId,
-      message: 'บันทึกการลาเรียนเรียบร้อยแล้ว'
+      message: 'บันทึกการลาเรียนเรียบร้อยแล้ว',
+      makeupId: makeupRef.id
     });
 
   } catch (error) {
-    console.error('Error creating leave request:', error);
+    console.error('[LIFF Leave Request] Error:', error);
+    
+    // Check if it's a permission error
+    if (error instanceof Error && error.message.includes('permission')) {
+      return NextResponse.json(
+        { success: false, message: 'ไม่มีสิทธิ์ในการดำเนินการ' },
+        { status: 403 }
+      );
+    }
+    
     return NextResponse.json(
-      { 
-        message: error instanceof Error ? error.message : 'เกิดข้อผิดพลาดในการบันทึกการลา',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      },
+      { success: false, message: 'เกิดข้อผิดพลาดในระบบ' },
       { status: 500 }
     );
   }
