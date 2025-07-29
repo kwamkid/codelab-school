@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check quota - count both scheduled makeups AND absences
-    const [quotaMakeupsSnapshot, enrollmentsSnapshot] = await Promise.all([
+    const [quotaMakeupsSnapshot, allEnrollmentsSnapshot] = await Promise.all([
       // Count scheduled makeups by parent
       adminDb
         .collection('makeupClasses')
