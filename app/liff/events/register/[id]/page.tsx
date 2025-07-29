@@ -12,8 +12,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   Select,
@@ -35,7 +35,9 @@ import {
   Mail,
   Building2,
   Sparkles,
-  Loader2
+  Loader2,
+  UserCheck,
+  RefreshCw
 } from 'lucide-react';
 import { formatDate, formatTime, formatPhoneNumber } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -62,7 +64,7 @@ export default function EventRegistrationPage() {
   const eventId = params.id as string;
   
   const { liff, profile, isLoggedIn } = useLiff();
-  const { parent, students: existingStudents, loading: parentLoading } = useLiffParent();
+  const { parent, students: existingStudents, loading: parentLoading, refetch: refetchParent } = useLiffParent();
   
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -73,7 +75,8 @@ export default function EventRegistrationPage() {
   // Form states
   const [selectedSchedule, setSelectedSchedule] = useState<string>('');
   const [selectedBranch, setSelectedBranch] = useState<string>('');
-  const [registrationType, setRegistrationType] = useState<'member' | 'guest'>(isLoggedIn ? 'member' : 'guest');
+  const [registrationType, setRegistrationType] = useState<'member' | 'guest'>('guest');
+  const [dataLoaded, setDataLoaded] = useState(false);
   
   // Contact info
   const [contactForm, setContactForm] = useState({
@@ -101,17 +104,25 @@ export default function EventRegistrationPage() {
       parentLoading,
       hasParent: !!parent,
       hasStudents: existingStudents?.length || 0,
-      registrationType
+      registrationType,
+      dataLoaded
     });
-  }, [isLoggedIn, parentLoading, parent, existingStudents, registrationType]);
+  }, [isLoggedIn, parentLoading, parent, existingStudents, registrationType, dataLoaded]);
+
+  // Auto-detect registration type based on login status
+  useEffect(() => {
+    if (!parentLoading && isLoggedIn && parent) {
+      setRegistrationType('member');
+    }
+  }, [isLoggedIn, parent, parentLoading]);
 
   useEffect(() => {
     loadData();
-  }, [eventId, isLoggedIn]);
+  }, [eventId]);
 
+  // Pre-fill data when parent data is available and member type is selected
   useEffect(() => {
-    // Pre-fill data if logged in and parent data is loaded
-    if (isLoggedIn && parent && !parentLoading && registrationType === 'member') {
+    if (registrationType === 'member' && parent && !parentLoading && !dataLoaded) {
       console.log('[EventRegistration] Pre-filling parent data:', parent);
       
       setContactForm({
@@ -124,7 +135,6 @@ export default function EventRegistrationPage() {
       });
       
       // Pre-fill parent info for parent counting
-      // ผู้ติดต่อหลักจะเป็นผู้ร่วมงานคนแรกเสมอ
       setParentForms([{
         name: parent.displayName,
         phone: parent.phone,
@@ -147,10 +157,19 @@ export default function EventRegistrationPage() {
           selected: true
         })));
       }
+      
+      // Set preferred branch
+      if (parent.preferredBranchId && branches.some(b => b.id === parent.preferredBranchId)) {
+        setSelectedBranch(parent.preferredBranchId);
+      }
+      
+      setDataLoaded(true);
     }
-    
-    // Sync contact form to first parent when counting by parents
-    if (event?.countingMethod === 'parents' && contactForm.name && contactForm.phone) {
+  }, [registrationType, parent, existingStudents, event, parentLoading, branches, dataLoaded]);
+
+  // Update parent forms when contact form changes (for parent counting)
+  useEffect(() => {
+    if (event?.countingMethod === 'parents' && registrationType === 'member' && contactForm.name && contactForm.phone) {
       const updatedParentForms = [...parentForms];
       updatedParentForms[0] = {
         name: contactForm.name,
@@ -160,7 +179,7 @@ export default function EventRegistrationPage() {
       };
       setParentForms(updatedParentForms);
     }
-  }, [isLoggedIn, parent, existingStudents, event, parentLoading, registrationType, contactForm.name, contactForm.phone, contactForm.email]);
+  }, [event?.countingMethod, registrationType, contactForm, parentForms.length]);
 
   const loadData = async () => {
     try {
@@ -192,7 +211,7 @@ export default function EventRegistrationPage() {
       if (availableSchedules.length > 0) {
         setSelectedSchedule(availableSchedules[0].id);
       }
-      if (eventBranches.length > 0) {
+      if (eventBranches.length > 0 && !selectedBranch) {
         setSelectedBranch(eventBranches[0].id);
       }
       
@@ -201,6 +220,16 @@ export default function EventRegistrationPage() {
       toast.error('ไม่สามารถโหลดข้อมูลได้');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRefreshData = async () => {
+    try {
+      await refetchParent();
+      setDataLoaded(false); // Force re-fill data
+      toast.success('โหลดข้อมูลใหม่เรียบร้อย');
+    } catch (error) {
+      toast.error('ไม่สามารถโหลดข้อมูลได้');
     }
   };
 
@@ -453,22 +482,68 @@ export default function EventRegistrationPage() {
           <Card>
             <CardHeader>
               <CardTitle className="text-base">วิธีลงทะเบียน</CardTitle>
+              {parent && (
+                <div className="text-sm text-gray-500 mt-1">
+                  {parent.displayName} • {formatPhoneNumber(parent.phone)}
+                </div>
+              )}
             </CardHeader>
             <CardContent>
-              <RadioGroup value={registrationType} onValueChange={(v) => setRegistrationType(v as any)}>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="member" id="member" />
-                  <Label htmlFor="member" className="font-normal">
-                    ใช้ข้อมูลจากบัญชีของฉัน
-                  </Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="guest" id="guest" />
-                  <Label htmlFor="guest" className="font-normal">
-                    กรอกข้อมูลใหม่ (Guest)
-                  </Label>
-                </div>
+              <RadioGroup value={registrationType} onValueChange={(v) => {
+                setRegistrationType(v as any);
+                setDataLoaded(false); // Reset data loaded flag
+              }}>
+                {parent ? (
+                  <>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="member" id="member" />
+                      <Label htmlFor="member" className="font-normal flex-1">
+                        <div className="flex items-center justify-between">
+                          <span>ใช้ข้อมูลจากบัญชีของฉัน</span>
+                          <Badge className="bg-green-100 text-green-700">
+                            <UserCheck className="h-3 w-3 mr-1" />
+                            แนะนำ
+                          </Badge>
+                        </div>
+                        {existingStudents && existingStudents.length > 0 && (
+                          <span className="text-xs text-gray-500">
+                            มีข้อมูลนักเรียน {existingStudents.length} คน
+                          </span>
+                        )}
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="guest" id="guest" />
+                      <Label htmlFor="guest" className="font-normal">
+                        กรอกข้อมูลใหม่ (Guest)
+                      </Label>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-sm text-gray-600 bg-amber-50 p-3 rounded-lg">
+                    <AlertCircle className="h-4 w-4 text-amber-600 inline mr-1" />
+                    ไม่พบข้อมูลบัญชี กรุณากรอกข้อมูลใหม่
+                  </div>
+                )}
               </RadioGroup>
+              
+              {registrationType === 'member' && parent && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRefreshData}
+                  className="mt-3 w-full"
+                  disabled={parentLoading}
+                >
+                  {parentLoading ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                  )}
+                  โหลดข้อมูลใหม่
+                </Button>
+              )}
             </CardContent>
           </Card>
         )}
@@ -693,7 +768,8 @@ export default function EventRegistrationPage() {
                 ))
               )}
               
-              {(registrationType === 'guest' || !isLoggedIn || !existingStudents || existingStudents.length === 0) && (
+              {(registrationType === 'guest' || !existingStudents || existingStudents.length === 0 || 
+                studentForms.length > existingStudents.length) && (
                 <Button
                   type="button"
                   variant="outline"
