@@ -124,6 +124,7 @@ export default function EventRegistrationPage() {
       });
       
       // Pre-fill parent info for parent counting
+      // ผู้ติดต่อหลักจะเป็นผู้ร่วมงานคนแรกเสมอ
       setParentForms([{
         name: parent.displayName,
         phone: parent.phone,
@@ -147,7 +148,19 @@ export default function EventRegistrationPage() {
         })));
       }
     }
-  }, [isLoggedIn, parent, existingStudents, event, parentLoading, registrationType]);
+    
+    // Sync contact form to first parent when counting by parents
+    if (event?.countingMethod === 'parents' && contactForm.name && contactForm.phone) {
+      const updatedParentForms = [...parentForms];
+      updatedParentForms[0] = {
+        name: contactForm.name,
+        phone: contactForm.phone,
+        email: contactForm.email || '',
+        isMainContact: true
+      };
+      setParentForms(updatedParentForms);
+    }
+  }, [isLoggedIn, parent, existingStudents, event, parentLoading, registrationType, contactForm.name, contactForm.phone, contactForm.email]);
 
   const loadData = async () => {
     try {
@@ -699,28 +712,54 @@ export default function EventRegistrationPage() {
         {event.countingMethod === 'parents' && (
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">ข้อมูลผู้ปกครอง</CardTitle>
+              <CardTitle className="text-base">ผู้ร่วมงานเพิ่มเติม</CardTitle>
+              <p className="text-sm text-gray-500">
+                ผู้ติดต่อหลักถือเป็นผู้ร่วมงานคนแรกโดยอัตโนมัติ
+              </p>
             </CardHeader>
             <CardContent className="space-y-4">
-              {parentForms.map((parent, index) => (
-                <div key={index} className="p-4 border rounded-lg space-y-3">
+              {/* แสดงข้อมูลผู้ติดต่อหลักเป็นผู้ร่วมงานคนแรก (อ่านอย่างเดียว) */}
+              <div className="p-4 border rounded-lg bg-gray-50 space-y-3">
+                <div className="flex justify-between items-center mb-2">
+                  <h4 className="font-medium flex items-center gap-2">
+                    ผู้ร่วมงานคนที่ 1
+                    <Badge className="bg-green-100 text-green-700 text-xs">ผู้ติดต่อหลัก</Badge>
+                  </h4>
+                </div>
+                
+                <div className="space-y-2 text-sm">
+                  <div>
+                    <span className="text-gray-600">ชื่อ-นามสกุล:</span>
+                    <span className="ml-2 font-medium">{contactForm.name || '-'}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">เบอร์โทร:</span>
+                    <span className="ml-2 font-medium">{contactForm.phone || '-'}</span>
+                  </div>
+                  {contactForm.email && (
+                    <div>
+                      <span className="text-gray-600">อีเมล:</span>
+                      <span className="ml-2">{contactForm.email}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* ผู้ร่วมงานเพิ่มเติม */}
+              {parentForms.slice(1).map((parent, index) => (
+                <div key={index + 1} className="p-4 border rounded-lg space-y-3">
                   <div className="flex justify-between items-center mb-2">
-                    <h4 className="font-medium flex items-center gap-2">
-                      ผู้ปกครองคนที่ {index + 1}
-                      {parent.isMainContact && (
-                        <Badge variant="secondary" className="text-xs">ผู้ติดต่อหลัก</Badge>
-                      )}
+                    <h4 className="font-medium">
+                      ผู้ร่วมงานคนที่ {index + 2}
                     </h4>
-                    {!parent.isMainContact && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleRemoveParent(index)}
-                      >
-                        ลบ
-                      </Button>
-                    )}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleRemoveParent(index + 1)}
+                    >
+                      ลบ
+                    </Button>
                   </div>
                   
                   <div className="space-y-3">
@@ -728,9 +767,8 @@ export default function EventRegistrationPage() {
                       <Label className="text-xs">ชื่อ-นามสกุล *</Label>
                       <Input
                         value={parent.name}
-                        onChange={(e) => handleUpdateParent(index, 'name', e.target.value)}
+                        onChange={(e) => handleUpdateParent(index + 1, 'name', e.target.value)}
                         placeholder="ชื่อ-นามสกุล"
-                        disabled={index === 0 && registrationType === 'member' && isLoggedIn}
                       />
                     </div>
                     
@@ -739,9 +777,8 @@ export default function EventRegistrationPage() {
                       <Input
                         type="tel"
                         value={parent.phone}
-                        onChange={(e) => handleUpdateParent(index, 'phone', e.target.value)}
+                        onChange={(e) => handleUpdateParent(index + 1, 'phone', e.target.value)}
                         placeholder="0812345678"
-                        disabled={index === 0 && registrationType === 'member' && isLoggedIn}
                       />
                     </div>
                     
@@ -750,25 +787,10 @@ export default function EventRegistrationPage() {
                       <Input
                         type="email"
                         value={parent.email}
-                        onChange={(e) => handleUpdateParent(index, 'email', e.target.value)}
+                        onChange={(e) => handleUpdateParent(index + 1, 'email', e.target.value)}
                         placeholder="email@example.com"
-                        disabled={index === 0 && registrationType === 'member' && isLoggedIn}
                       />
                     </div>
-                    
-                    {parentForms.length > 1 && (
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          checked={parent.isMainContact}
-                          onCheckedChange={(checked) => 
-                            handleUpdateParent(index, 'isMainContact', checked)
-                          }
-                        />
-                        <Label className="text-sm font-normal">
-                          ตั้งเป็นผู้ติดต่อหลัก
-                        </Label>
-                      </div>
-                    )}
                   </div>
                 </div>
               ))}
@@ -780,8 +802,12 @@ export default function EventRegistrationPage() {
                 className="w-full"
               >
                 <User className="h-4 w-4 mr-2" />
-                เพิ่มผู้ปกครอง
+                เพิ่มผู้ร่วมงาน
               </Button>
+              
+              <p className="text-xs text-gray-500 text-center">
+                จำนวนผู้ร่วมงานทั้งหมด: {parentForms.filter(p => p.name && p.phone).length} คน
+              </p>
             </CardContent>
           </Card>
         )}
