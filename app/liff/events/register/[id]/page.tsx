@@ -2,11 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Event, EventSchedule, Branch, Student } from '@/types/models';
+import { Event, EventSchedule, Branch } from '@/types/models';
 import { getEvent, getEventSchedules, createEventRegistration } from '@/lib/services/events';
 import { getActiveBranches } from '@/lib/services/branches';
-import { useLiff } from '@/components/liff/liff-provider';
-import { useLiffParent } from '@/hooks/useLiffParent';
+import { getParentByLineId, getStudentsByParent } from '@/lib/services/parents';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,7 +13,6 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   Select,
   SelectContent,
@@ -23,30 +21,23 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { GradeLevelCombobox } from '@/components/ui/grade-level-combobox';
-import { LiffProvider } from '@/components/liff/liff-provider';
 import { 
   Calendar, 
   MapPin, 
   Users, 
-  Clock,
   ChevronLeft,
   AlertCircle,
   CheckCircle,
   User,
-  Phone,
-  Mail,
   Building2,
   Sparkles,
   Loader2,
   UserCheck,
   RefreshCw
 } from 'lucide-react';
-import { formatDate, formatTime, formatPhoneNumber } from '@/lib/utils';
+import { formatDate, formatPhoneNumber } from '@/lib/utils';
 import { toast } from 'sonner';
-
-// Prevent parent layout redirects
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
+import liff from '@line/liff';
 
 interface StudentFormData {
   name: string;
@@ -65,27 +56,21 @@ interface ParentFormData {
 }
 
 export default function EventRegistrationPage() {
-  return (
-    <LiffProvider requireLogin={false}>
-      <EventRegistrationContent />
-    </LiffProvider>
-  );
-}
-
-function EventRegistrationContent() {
   const params = useParams();
   const router = useRouter();
   const eventId = params.id as string;
   
-  const { liff, profile, isLoggedIn, isLoading: liffLoading } = useLiff();
-  const { parent, students: existingStudents, loading: parentLoading, refetch: refetchParent } = useLiffParent();
-  
+  // Basic states
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [event, setEvent] = useState<Event | null>(null);
   const [schedules, setSchedules] = useState<EventSchedule[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
-  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+  
+  // LINE Login info (optional)
+  const [lineProfile, setLineProfile] = useState<any>(null);
+  const [parentData, setParentData] = useState<any>(null);
+  const [existingStudents, setExistingStudents] = useState<any[]>([]);
   
   // Form states
   const [selectedSchedule, setSelectedSchedule] = useState<string>('');
@@ -110,59 +95,41 @@ function EventRegistrationContent() {
   const [referralSource, setReferralSource] = useState('');
   const [agreeTerms, setAgreeTerms] = useState(false);
 
-  // Mark initial load complete to prevent redirect
+  // Initialize - check LINE login but don't require it
   useEffect(() => {
-    if (!liffLoading && !parentLoading) {
-      setInitialLoadComplete(true);
-    }
-  }, [liffLoading, parentLoading]);
-
-  // Prevent navigation away during initial load
-  useEffect(() => {
-    // Set a flag to indicate this is event registration page
-    if (typeof window !== 'undefined') {
-      window.sessionStorage.setItem('isEventRegistration', 'true');
-    }
-    
-    return () => {
-      // Clean up when leaving
-      if (typeof window !== 'undefined') {
-        window.sessionStorage.removeItem('isEventRegistration');
+    const init = async () => {
+      try {
+        // Check if LIFF is available
+        if (typeof window !== 'undefined' && liff) {
+          await liff.init({ liffId: process.env.NEXT_PUBLIC_LIFF_ID! });
+          
+          if (liff.isLoggedIn()) {
+            try {
+              const profile = await liff.getProfile();
+              setLineProfile(profile);
+              
+              // Try to get parent data if logged in
+              const parent = await getParentByLineId(profile.userId);
+              if (parent) {
+                setParentData(parent);
+                const students = await getStudentsByParent(parent.id);
+                setExistingStudents(students.filter(s => s.isActive));
+              }
+            } catch (error) {
+              console.log('No parent data found, continue as guest');
+            }
+          }
+        }
+      } catch (error) {
+        console.log('LIFF not available or error, continue without LIFF');
       }
+      
+      // Load event data regardless of login status
+      await loadData();
     };
-  }, []);
-
-  // Debug logging
-  useEffect(() => {
-    console.log('[EventRegistration] Component state:', {
-      liffLoading,
-      isLoggedIn,
-      profileUserId: profile?.userId,
-      parentLoading,
-      hasParent: !!parent,
-      parentId: parent?.id,
-      hasStudents: existingStudents?.length || 0,
-      initialLoadComplete
-    });
-  }, [liffLoading, isLoggedIn, profile, parentLoading, parent, existingStudents, initialLoadComplete]);
-
-  useEffect(() => {
-    loadData();
+    
+    init();
   }, [eventId]);
-
-  // Update parent forms when contact form changes (for parent counting)
-  useEffect(() => {
-    if (event?.countingMethod === 'parents' && contactForm.name && contactForm.phone) {
-      const updatedParentForms = [...parentForms];
-      updatedParentForms[0] = {
-        name: contactForm.name,
-        phone: contactForm.phone,
-        email: contactForm.email || '',
-        isMainContact: true
-      };
-      setParentForms(updatedParentForms);
-    }
-  }, [event?.countingMethod, contactForm, parentForms.length]);
 
   const loadData = async () => {
     try {
@@ -194,7 +161,7 @@ function EventRegistrationContent() {
       if (availableSchedules.length > 0) {
         setSelectedSchedule(availableSchedules[0].id);
       }
-      if (eventBranches.length > 0 && !selectedBranch) {
+      if (eventBranches.length > 0) {
         setSelectedBranch(eventBranches[0].id);
       }
       
@@ -207,28 +174,24 @@ function EventRegistrationContent() {
   };
 
   const handleUseMyData = () => {
-    if (!parent) return;
-    
-    console.log('[EventRegistration] Using parent data:', parent);
+    if (!parentData) return;
     
     setContactForm({
-      name: parent.displayName,
-      phone: parent.phone,
-      email: parent.email || '',
-      address: parent.address ? 
-        `${parent.address.houseNumber} ${parent.address.street || ''} ${parent.address.subDistrict} ${parent.address.district} ${parent.address.province} ${parent.address.postalCode}`.trim() 
+      name: parentData.displayName,
+      phone: parentData.phone,
+      email: parentData.email || '',
+      address: parentData.address ? 
+        `${parentData.address.houseNumber} ${parentData.address.street || ''} ${parentData.address.subDistrict} ${parentData.address.district} ${parentData.address.province} ${parentData.address.postalCode}`.trim() 
         : ''
     });
     
     // Set preferred branch
-    if (parent.preferredBranchId && branches.some(b => b.id === parent.preferredBranchId)) {
-      setSelectedBranch(parent.preferredBranchId);
+    if (parentData.preferredBranchId && branches.some(b => b.id === parentData.preferredBranchId)) {
+      setSelectedBranch(parentData.preferredBranchId);
     }
     
     // Pre-fill students if counting by students
-    if (event?.countingMethod === 'students' && existingStudents && existingStudents.length > 0) {
-      console.log('[EventRegistration] Pre-filling students:', existingStudents);
-      
+    if (event?.countingMethod === 'students' && existingStudents.length > 0) {
       setStudentForms(existingStudents.map(student => ({
         name: student.name,
         nickname: student.nickname,
@@ -252,21 +215,11 @@ function EventRegistrationContent() {
       address: ''
     });
     
-    // Reset students if needed
     if (event?.countingMethod === 'students') {
       setStudentForms([]);
     }
     
     toast.success('รีเซ็ตข้อมูลแล้ว');
-  };
-
-  const handleRefreshData = async () => {
-    try {
-      await refetchParent();
-      toast.success('โหลดข้อมูลใหม่เรียบร้อย');
-    } catch (error) {
-      toast.error('ไม่สามารถโหลดข้อมูลได้');
-    }
   };
 
   const handleAddStudent = () => {
@@ -300,24 +253,17 @@ function EventRegistrationContent() {
   };
 
   const handleRemoveParent = (index: number) => {
-    if (parentForms[index].isMainContact) return; // Can't remove main contact
+    if (parentForms[index].isMainContact) return;
     setParentForms(parentForms.filter((_, i) => i !== index));
   };
 
   const handleUpdateParent = (index: number, field: keyof ParentFormData, value: any) => {
     const updated = [...parentForms];
-    if (field === 'isMainContact' && value) {
-      // Unset other main contacts
-      updated.forEach((p, i) => {
-        if (i !== index) p.isMainContact = false;
-      });
-    }
     updated[index] = { ...updated[index], [field]: value };
     setParentForms(updated);
   };
 
   const validateForm = (): boolean => {
-    // Basic validation
     if (!selectedSchedule || !selectedBranch) {
       toast.error('กรุณาเลือกรอบเวลาและสาขา');
       return false;
@@ -328,7 +274,6 @@ function EventRegistrationContent() {
       return false;
     }
 
-    // Validate based on counting method
     if (event?.countingMethod === 'students') {
       const selectedStudents = studentForms.filter(s => s.selected);
       if (selectedStudents.length === 0) {
@@ -377,10 +322,10 @@ function EventRegistrationContent() {
         branchId: selectedBranch,
         
         // Guest or member
-        isGuest: !isLoggedIn || !parent,
-        parentId: parent?.id || null,
+        isGuest: !lineProfile || !parentData,
+        parentId: parentData?.id || null,
         
-        // Contact info - use null instead of undefined
+        // Contact info
         parentName: contactForm.name,
         parentPhone: contactForm.phone,
         
@@ -410,19 +355,14 @@ function EventRegistrationContent() {
           parentForms.filter(p => p.name && p.phone).length :
           1,
         
-        // From LIFF
         registeredFrom: 'liff' as const
       };
       
-      // Add optional fields only if they have values
-      if (isLoggedIn && profile?.userId) {
-        registrationData.lineUserId = profile.userId;
-      }
-      if (isLoggedIn && profile?.displayName) {
-        registrationData.lineDisplayName = profile.displayName;
-      }
-      if (isLoggedIn && profile?.pictureUrl) {
-        registrationData.linePictureUrl = profile.pictureUrl;
+      // Add optional fields
+      if (lineProfile) {
+        registrationData.lineUserId = lineProfile.userId;
+        registrationData.lineDisplayName = lineProfile.displayName;
+        registrationData.linePictureUrl = lineProfile.pictureUrl;
       }
       if (contactForm.email) {
         registrationData.parentEmail = contactForm.email;
@@ -440,8 +380,6 @@ function EventRegistrationContent() {
       await createEventRegistration(registrationData, event);
       
       toast.success('ลงทะเบียนสำเร็จ!');
-      
-      // Redirect to success or my events
       router.push('/liff/events?tab=my-events');
       
     } catch (error: any) {
@@ -452,7 +390,21 @@ function EventRegistrationContent() {
     }
   };
 
-  if (loading || parentLoading) {
+  // Update parent forms when contact form changes (for parent counting)
+  useEffect(() => {
+    if (event?.countingMethod === 'parents' && contactForm.name && contactForm.phone) {
+      const updatedParentForms = [...parentForms];
+      updatedParentForms[0] = {
+        name: contactForm.name,
+        phone: contactForm.phone,
+        email: contactForm.email || '',
+        isMainContact: true
+      };
+      setParentForms(updatedParentForms);
+    }
+  }, [event?.countingMethod, contactForm, parentForms.length]);
+
+  if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
@@ -529,6 +481,67 @@ function EventRegistrationContent() {
           </CardContent>
         </Card>
 
+        {/* Schedule & Branch Selection */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">เลือกรอบเวลาและสาขา</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Schedule */}
+            <div className="space-y-2">
+              <Label>รอบเวลา *</Label>
+              <Select value={selectedSchedule} onValueChange={setSelectedSchedule}>
+                <SelectTrigger>
+                  <SelectValue placeholder="เลือกรอบเวลา" />
+                </SelectTrigger>
+                <SelectContent>
+                  {schedules.map(schedule => {
+                    const available = schedule.maxAttendees - 
+                      Object.values(schedule.attendeesByBranch).reduce((sum, count) => sum + count, 0);
+                    
+                    return (
+                      <SelectItem 
+                        key={schedule.id} 
+                        value={schedule.id}
+                        disabled={available <= 0}
+                      >
+                        {formatDate(schedule.date, 'long')} • {schedule.startTime}-{schedule.endTime}
+                        {available <= 0 ? ' (เต็ม)' : ` (เหลือ ${available} ที่)`}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+              {selectedScheduleData && availableSeats <= 5 && availableSeats > 0 && (
+                <p className="text-xs text-amber-600 flex items-center gap-1">
+                  <AlertCircle className="h-3 w-3" />
+                  เหลือที่ว่างน้อย รีบจองด่วน!
+                </p>
+              )}
+            </div>
+
+            {/* Branch */}
+            <div className="space-y-2">
+              <Label>สาขา *</Label>
+              <Select value={selectedBranch} onValueChange={setSelectedBranch}>
+                <SelectTrigger>
+                  <SelectValue placeholder="เลือกสาขา" />
+                </SelectTrigger>
+                <SelectContent>
+                  {branches.map(branch => (
+                    <SelectItem key={branch.id} value={branch.id}>
+                      <div className="flex items-center gap-2">
+                        <Building2 className="h-4 w-4" />
+                        {branch.name}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Contact Information */}
         <Card>
           <CardHeader>
@@ -536,7 +549,7 @@ function EventRegistrationContent() {
               <CardTitle className="text-base">
                 {event?.countingMethod === 'parents' ? 'ผู้ร่วมงานหลัก' : 'ข้อมูลติดต่อ'}
               </CardTitle>
-              {isLoggedIn && parent && (
+              {parentData && (
                 <div className="flex gap-2">
                   <Button
                     type="button"
@@ -621,7 +634,7 @@ function EventRegistrationContent() {
               ) : (
                 studentForms.map((student, index) => (
                   <div key={index} className="p-4 border rounded-lg space-y-3">
-                    {isLoggedIn && parent && existingStudents && existingStudents.length > 0 && index < existingStudents.length ? (
+                    {parentData && existingStudents.length > 0 && index < existingStudents.length ? (
                       // Show as checkbox for existing students
                       <div className="flex items-start gap-3">
                         <Checkbox
@@ -707,18 +720,15 @@ function EventRegistrationContent() {
                 ))
               )}
               
-              {(!isLoggedIn || !parent || !existingStudents || existingStudents.length === 0 || 
-                studentForms.length > existingStudents.length) && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleAddStudent}
-                  className="w-full"
-                >
-                  <User className="h-4 w-4 mr-2" />
-                  เพิ่มนักเรียน
-                </Button>
-              )}
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleAddStudent}
+                className="w-full"
+              >
+                <User className="h-4 w-4 mr-2" />
+                เพิ่มนักเรียน
+              </Button>
             </CardContent>
           </Card>
         )}
@@ -733,7 +743,6 @@ function EventRegistrationContent() {
               </p>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* ผู้ร่วมงานเพิ่มเติม */}
               {parentForms.slice(1).map((parent, index) => (
                 <div key={index + 1} className="p-4 border rounded-lg space-y-3">
                   <div className="flex justify-between items-center mb-2">
