@@ -48,35 +48,13 @@ export default function EventRegistrationSuccessPage() {
                 <p className="text-gray-600">
                   ข้อมูลของคุณได้ถูกบันทึกเรียบร้อยแล้ว
                 </p>
-              </div>
-
-              {/* Next Steps */}
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-left">
-                <h3 className="font-medium text-blue-900 mb-2 flex items-center gap-2">
-                  <Calendar className="h-4 w-4" />
-                  ขั้นตอนถัดไป
-                </h3>
-                <ol className="list-decimal list-inside space-y-1 text-sm text-blue-800">
-                  <li>เจ้าหน้าที่จะส่ง SMS ยืนยันการลงทะเบียน</li>
-                  <li>จะมีการแจ้งเตือนก่อนวันงาน 1 วัน</li>
-                  <li>กรุณามาถึงสถานที่ก่อนเวลา 15 นาที</li>
-                </ol>
-              </div>
-
-              {/* Contact Info */}
-              <div className="bg-gray-50 rounded-lg p-4">
-                <p className="text-sm text-gray-600 mb-2">
-                  หากมีข้อสงสัยเพิ่มเติม ติดต่อ:
+                <p className="text-sm text-gray-500 mt-2">
+                  เจ้าหน้าที่จะติดต่อกลับเพื่อยืนยันการเข้าร่วมงาน
                 </p>
-                <div className="flex justify-center gap-4">
-                  <a href="tel:0812345678" className="text-primary font-medium">
-                    📞 081-234-5678
-                  </a>
-                </div>
               </div>
 
               {/* Action Buttons */}
-              <div className="pt-4 space-y-3">
+              <div className="pt-6 space-y-3">
                 <Button
                   onClick={() => router.push('/liff/events')}
                   className="w-full bg-primary hover:bg-primary/90"
@@ -103,8 +81,8 @@ export default function EventRegistrationSuccessPage() {
                 <Button
                   onClick={() => {
                     // Close LIFF if in LINE app
-                    if (typeof window !== 'undefined' && window.liff?.isInClient()) {
-                      window.liff.closeWindow();
+                    if (typeof window !== 'undefined' && (window as any).liff?.isInClient()) {
+                      (window as any).liff.closeWindow();
                     } else {
                       router.push('/liff');
                     }

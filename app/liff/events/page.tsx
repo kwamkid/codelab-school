@@ -180,7 +180,7 @@ export default function LiffEventsPage() {
                   </Badge>
                 )}
               </TabsTrigger>
-              <TabsTrigger value="my-events" disabled={!isLoggedIn}>
+              <TabsTrigger value="my-events">
                 งานที่ลงทะเบียน
                 {myRegistrations.length > 0 && (
                   <Badge variant="secondary" className="ml-2 h-5 px-1">
