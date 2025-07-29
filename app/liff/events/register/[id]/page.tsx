@@ -103,23 +103,31 @@ export default function EventRegistrationPage() {
     console.log('[EventRegistration] Component state:', {
       liffLoading,
       isLoggedIn,
+      profileUserId: profile?.userId,
       parentLoading,
       hasParent: !!parent,
+      parentId: parent?.id,
       hasStudents: existingStudents?.length || 0,
       registrationType,
       dataLoaded
     });
-  }, [liffLoading, isLoggedIn, parentLoading, parent, existingStudents, registrationType, dataLoaded]);
+  }, [liffLoading, isLoggedIn, profile, parentLoading, parent, existingStudents, registrationType, dataLoaded]);
 
   // Auto-detect registration type based on login status
   useEffect(() => {
-    // Wait for LIFF to finish loading
-    if (liffLoading) return;
+    // Only run when parent data has finished loading
+    if (parentLoading) return;
     
-    if (!parentLoading && isLoggedIn && parent) {
+    console.log('[EventRegistration] Auto-detect registration type:', {
+      isLoggedIn,
+      hasParent: !!parent,
+      currentType: registrationType
+    });
+    
+    if (isLoggedIn && parent) {
       setRegistrationType('member');
     }
-  }, [liffLoading, isLoggedIn, parent, parentLoading]);
+  }, [parentLoading, isLoggedIn, parent]);
 
   useEffect(() => {
     loadData();
@@ -127,11 +135,15 @@ export default function EventRegistrationPage() {
 
   // Pre-fill data when parent data is available and member type is selected
   useEffect(() => {
-    // Wait for LIFF to finish loading
-    if (liffLoading) return;
+    // Only run when parent data has finished loading
+    if (parentLoading) return;
     
-    if (registrationType === 'member' && parent && !parentLoading && !dataLoaded) {
-      console.log('[EventRegistration] Pre-filling parent data:', parent);
+    if (registrationType === 'member' && parent && !dataLoaded) {
+      console.log('[EventRegistration] Pre-filling parent data:', {
+        parentId: parent.id,
+        parentName: parent.displayName,
+        studentsCount: existingStudents?.length || 0
+      });
       
       setContactForm({
         name: parent.displayName,
@@ -173,7 +185,7 @@ export default function EventRegistrationPage() {
       
       setDataLoaded(true);
     }
-  }, [liffLoading, registrationType, parent, existingStudents, event, parentLoading, branches, dataLoaded]);
+  }, [parentLoading, registrationType, parent, existingStudents, event, branches, dataLoaded]);
 
   // Update parent forms when contact form changes (for parent counting)
   useEffect(() => {
@@ -408,7 +420,7 @@ export default function EventRegistrationPage() {
     }
   };
 
-  if (loading || liffLoading) {
+  if (loading || parentLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
@@ -486,7 +498,7 @@ export default function EventRegistrationPage() {
         </Card>
 
         {/* Registration Type (if logged in) */}
-        {isLoggedIn && !liffLoading && (
+        {isLoggedIn && (
           <Card>
             <CardHeader>
               <CardTitle className="text-base">วิธีลงทะเบียน</CardTitle>
