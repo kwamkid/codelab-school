@@ -340,7 +340,7 @@ function EventRegistrationContent() {
       if (!schedule) throw new Error('Schedule not found');
 
       // Prepare registration data
-      const registrationData = {
+      const registrationData: any = {
         eventId: event.id,
         eventName: event.name,
         scheduleId: selectedSchedule,
@@ -350,23 +350,18 @@ function EventRegistrationContent() {
         
         // Guest or member
         isGuest: !isLoggedIn || !parent,
-        lineUserId: isLoggedIn ? profile?.userId : undefined,
-        lineDisplayName: isLoggedIn ? profile?.displayName : undefined,
-        linePictureUrl: isLoggedIn ? profile?.pictureUrl : undefined,
-        parentId: parent?.id,
+        parentId: parent?.id || null,
         
-        // Contact info
+        // Contact info - use null instead of undefined
         parentName: contactForm.name,
         parentPhone: contactForm.phone,
-        parentEmail: contactForm.email || undefined,
-        parentAddress: contactForm.address || undefined,
         
         // Parents (for parent counting)
         parents: event.countingMethod === 'parents' ? 
           parentForms.filter(p => p.name && p.phone).map(p => ({
             name: p.name,
             phone: p.phone,
-            email: p.email || undefined,
+            email: p.email || null,
             isMainContact: p.isMainContact
           })) : [],
         
@@ -376,8 +371,8 @@ function EventRegistrationContent() {
             name: s.name,
             nickname: s.nickname,
             birthdate: new Date(s.birthdate),
-            schoolName: s.schoolName || undefined,
-            gradeLevel: s.gradeLevel || undefined
+            schoolName: s.schoolName || null,
+            gradeLevel: s.gradeLevel || null
           })) : [],
         
         // Count based on method
@@ -387,11 +382,32 @@ function EventRegistrationContent() {
           parentForms.filter(p => p.name && p.phone).length :
           1,
         
-        // Additional info
-        specialRequest: specialRequest || undefined,
-        referralSource: referralSource || undefined,
+        // From LIFF
         registeredFrom: 'liff' as const
       };
+      
+      // Add optional fields only if they have values
+      if (isLoggedIn && profile?.userId) {
+        registrationData.lineUserId = profile.userId;
+      }
+      if (isLoggedIn && profile?.displayName) {
+        registrationData.lineDisplayName = profile.displayName;
+      }
+      if (isLoggedIn && profile?.pictureUrl) {
+        registrationData.linePictureUrl = profile.pictureUrl;
+      }
+      if (contactForm.email) {
+        registrationData.parentEmail = contactForm.email;
+      }
+      if (contactForm.address) {
+        registrationData.parentAddress = contactForm.address;
+      }
+      if (specialRequest) {
+        registrationData.specialRequest = specialRequest;
+      }
+      if (referralSource) {
+        registrationData.referralSource = referralSource;
+      }
 
       await createEventRegistration(registrationData, event);
       
