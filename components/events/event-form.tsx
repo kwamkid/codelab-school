@@ -448,56 +448,86 @@ export default function EventForm({ event, isEdit = false }: EventFormProps) {
             </div>
 
             <div className="space-y-2">
-                <Label htmlFor="imageUrl">URL รูปภาพ Event</Label>
-                <div className="flex gap-2">
-                    <Input
-                    id="imageUrl"
-                    type="url"
-                    value={formData.imageUrl}
-                    onChange={(e) => {
-                        let url = e.target.value;
-                        
-                        // Convert Google Drive share link to direct image URL
-                        if (url.includes('drive.google.com')) {
-                        // Extract file ID from various Google Drive URL formats
-                        let fileId = '';
-                        
-                        if (url.includes('/file/d/')) {
-                            // Format: https://drive.google.com/file/d/FILE_ID/view?usp=sharing
-                            const match = url.match(/\/file\/d\/([a-zA-Z0-9-_]+)/);
-                            if (match) fileId = match[1];
-                        } else if (url.includes('id=')) {
-                            // Format: https://drive.google.com/open?id=FILE_ID
-                            const match = url.match(/id=([a-zA-Z0-9-_]+)/);
-                            if (match) fileId = match[1];
-                        }
-                        
-                        if (fileId) {
-                            // Convert to direct image URL
-                            url = `https://drive.google.com/uc?export=view&id=${fileId}`;
-                        }
-                        }
-                        
-                        setFormData({ ...formData, imageUrl: url });
-                    }}
-                    placeholder="https://example.com/image.jpg หรือ Google Drive link"
-                    className="flex-1"
-                    />
-                    {formData.imageUrl && (
-                    <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => window.open(formData.imageUrl, '_blank')}
-                    >
-                        <Image className="h-4 w-4" />
-                    </Button>
-                    )}
-                </div>
-                <p className="text-xs text-gray-500">
-                    รองรับ URL รูปภาพทั่วไป หรือ Google Drive (คลิกขวา → Copy link) • แนะนำขนาด 16:9 (1200x675px)
-                </p>
-                </div>
+  <Label htmlFor="imageUrl">URL รูปภาพ Event</Label>
+  <div className="flex gap-2">
+    <Input
+      id="imageUrl"
+      type="url"
+      value={formData.imageUrl}
+      onChange={(e) => {
+        let url = e.target.value;
+        console.log('Original URL:', url);
+        
+        // Convert Google Drive share link to direct image URL
+        if (url.includes('drive.google.com')) {
+          // Extract file ID from various Google Drive URL formats
+          let fileId = '';
+          
+          if (url.includes('/file/d/')) {
+            // Format: https://drive.google.com/file/d/FILE_ID/view?usp=sharing
+            const match = url.match(/\/file\/d\/([a-zA-Z0-9-_]+)/);
+            if (match) fileId = match[1];
+          } else if (url.includes('id=')) {
+            // Format: https://drive.google.com/open?id=FILE_ID
+            const match = url.match(/id=([a-zA-Z0-9-_]+)/);
+            if (match) fileId = match[1];
+          }
+          
+          if (fileId) {
+            // Use thumbnail URL that works better with img tags
+            url = `https://drive.google.com/thumbnail?id=${fileId}&sz=w1200`;
+            console.log('Converted URL:', url);
+          }
+        }
+        
+        // Convert Dropbox share link to direct image URL
+        else if (url.includes('dropbox.com')) {
+          // Replace www.dropbox.com with dl.dropboxusercontent.com
+          url = url.replace('www.dropbox.com', 'dl.dropboxusercontent.com');
+          // Remove any dl parameter
+          url = url.replace(/[?&]dl=\d/, '');
+          console.log('Converted Dropbox URL:', url);
+        }
+        
+        setFormData({ ...formData, imageUrl: url });
+      }}
+      placeholder="https://example.com/image.jpg, Google Drive หรือ Dropbox link"
+      className="flex-1"
+    />
+    {formData.imageUrl && (
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() => window.open(formData.imageUrl, '_blank')}
+      >
+        <Image className="h-4 w-4" />
+      </Button>
+    )}
+  </div>
+  <p className="text-xs text-gray-500">
+    รองรับ: URL รูปภาพ, Google Drive, Dropbox หรือ imgbb.com • แนะนำขนาด 16:9 (1200x675px)
+  </p>
+  
+  {/* Image Preview */}
+  {formData.imageUrl && (
+    <div className="mt-2 p-2 border rounded-lg bg-gray-50">
+      <p className="text-xs text-gray-600 mb-1">ตัวอย่างรูปภาพ:</p>
+      <img 
+        src={formData.imageUrl} 
+        alt="Preview" 
+        className="max-h-40 mx-auto rounded"
+        onError={(e) => {
+          e.currentTarget.style.display = 'none';
+          e.currentTarget.nextElementSibling?.classList.remove('hidden');
+        }}
+      />
+      <p className="hidden text-xs text-red-500 text-center mt-2">
+        ไม่สามารถโหลดรูปได้ - ตรวจสอบ URL หรือการตั้งค่า Share
+      </p>
+    </div>
+  )}
+</div>
           </CardContent>
         </Card>
 
