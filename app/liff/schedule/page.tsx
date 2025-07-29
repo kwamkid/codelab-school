@@ -575,11 +575,28 @@ function ScheduleContent() {
               disabled={isSubmitting}
               className="bg-destructive hover:bg-destructive/90"
             >
-              {isSubmitting ? 'กำลังบันทึก...' : 'ยืนยันการลา'}
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  กำลังบันทึก...
+                </>
+              ) : (
+                'ยืนยันการลา'
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      
+      {/* Loading Overlay */}
+      {isSubmitting && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+          <div className="bg-white rounded-lg p-6 flex flex-col items-center gap-3">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <p className="text-sm font-medium">กำลังบันทึกการลาเรียน...</p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
