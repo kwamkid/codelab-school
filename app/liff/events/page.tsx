@@ -200,20 +200,25 @@ export default function LiffEventsPage() {
                 return (
                   <Card key={event.id} className="overflow-hidden">
                     {event.imageUrl && (
-                      <div className="h-48 w-full relative">
-                        <Image
-                          src={event.imageUrl}
-                          alt={event.name}
-                          fill
-                          className="object-cover"
-                        />
-                        <div className="absolute top-2 right-2">
-                          <Badge className={getEventTypeColor(event.eventType)}>
-                            {getEventTypeLabel(event.eventType)}
-                          </Badge>
+                        <div className="h-48 w-full relative">
+                            <Image
+                            src={event.imageUrl}
+                            alt={event.name}
+                            fill
+                            className="object-cover"
+                            unoptimized                    // <-- เพิ่มบรรทัดนี้
+                            onError={(e) => {              // <-- เพิ่มบรรทัดนี้
+                                console.error('Image load error:', event.imageUrl);
+                                e.currentTarget.style.display = 'none';
+                            }}                             // <-- ถึงบรรทัดนี้
+                            />
+                            <div className="absolute top-2 right-2">
+                            <Badge className={getEventTypeColor(event.eventType)}>
+                                {getEventTypeLabel(event.eventType)}
+                            </Badge>
+                            </div>
                         </div>
-                      </div>
-                    )}
+                        )}
                     
                     <CardHeader className="pb-3">
                       <div className="flex justify-between items-start">

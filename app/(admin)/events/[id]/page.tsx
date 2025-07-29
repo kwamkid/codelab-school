@@ -35,7 +35,8 @@ import {
   UserCheck,
   BarChart3,
   Clock,
-  AlertCircle
+  AlertCircle,
+  LinkIcon
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatDate, formatTime } from '@/lib/utils';
@@ -187,14 +188,30 @@ export default function EventDetailPage() {
           <p className="text-gray-600">{event.description}</p>
         </div>
         
-        <PermissionGuard action="update">
-          <Link href={`/events/${event.id}/edit`}>
-            <Button className="bg-red-500 hover:bg-red-600">
-              <Edit className="h-4 w-4 mr-2" />
-              แก้ไข Event
+        <div className="flex gap-2">
+          {event.status === 'published' && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                const link = `${window.location.origin}/liff/events/register/${event.id}`;
+                navigator.clipboard.writeText(link);
+                toast.success('คัดลอกลิงก์ลงทะเบียนแล้ว');
+              }}
+            >
+              <LinkIcon className="h-4 w-4 mr-2" />
+              คัดลอกลิงก์ลงทะเบียน
             </Button>
-          </Link>
-        </PermissionGuard>
+          )}
+          
+          <PermissionGuard action="update">
+            <Link href={`/events/${event.id}/edit`}>
+              <Button className="bg-red-500 hover:bg-red-600">
+                <Edit className="h-4 w-4 mr-2" />
+                แก้ไข Event
+              </Button>
+            </Link>
+          </PermissionGuard>
+        </div>
       </div>
 
       {/* Quick Info Cards */}
@@ -353,6 +370,36 @@ export default function EventDetailPage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Registration Link */}
+          {event.status === 'published' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>ลิงก์สำหรับลงทะเบียน</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  <div className="p-3 bg-gray-50 rounded-lg font-mono text-sm break-all">
+                    {window.location.origin}/liff/events/register/{event.id}
+                  </div>
+                  <Button
+                    className="w-full"
+                    onClick={() => {
+                      const link = `${window.location.origin}/liff/events/register/${event.id}`;
+                      navigator.clipboard.writeText(link);
+                      toast.success('คัดลอกลิงก์แล้ว');
+                    }}
+                  >
+                    <LinkIcon className="h-4 w-4 mr-2" />
+                    คัดลอกลิงก์
+                  </Button>
+                  <p className="text-sm text-gray-500">
+                    * ผู้ใช้สามารถลงทะเบียนได้โดยตรงผ่านลิงก์นี้ โดยไม่ต้องสมัครสมาชิกก่อน
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Settings */}
           <Card>

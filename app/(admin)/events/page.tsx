@@ -3,8 +3,9 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Event } from '@/types/models';
+import { Event, Branch } from '@/types/models';
 import { getEvents, deleteEvent } from '@/lib/services/events';
+import { getActiveBranches } from '@/lib/services/branches';
 import { useAuth } from '@/hooks/useAuth';
 import { useBranch } from '@/contexts/BranchContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -46,7 +47,9 @@ import {
   Trash2,
   Eye,
   CalendarX,
-  Loader2
+  Loader2,
+  Link as LinkIcon,
+  CheckCircle2
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
@@ -58,11 +61,13 @@ export default function EventsPage() {
   const { user, isSuperAdmin } = useAuth();
   const { selectedBranchId, isAllBranches } = useBranch();
   const [events, setEvents] = useState<Event[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [deleteEventId, setDeleteEventId] = useState<string | null>(null);
+  const [copiedEventId, setCopiedEventId] = useState<string | null>(null);
 
   useEffect(() => {
     loadEvents();
@@ -71,8 +76,12 @@ export default function EventsPage() {
   const loadEvents = async () => {
     try {
       setLoading(true);
-      const data = await getEvents(isAllBranches ? undefined : selectedBranchId || undefined);
-      setEvents(data);
+      const [eventsData, branchesData] = await Promise.all([
+        getEvents(isAllBranches ? undefined : selectedBranchId || undefined),
+        getActiveBranches()
+      ]);
+      setEvents(eventsData);
+      setBranches(branchesData);
     } catch (error) {
       console.error('Error loading events:', error);
       toast.error('ไม่สามารถโหลดข้อมูล Events ได้');
@@ -93,6 +102,18 @@ export default function EventsPage() {
       console.error('Error deleting event:', error);
       toast.error(error.message || 'ไม่สามารถลบ Event ได้');
     }
+  };
+
+  const copyRegistrationLink = (eventId: string) => {
+    const link = `${window.location.origin}/liff/events/register/${eventId}`;
+    navigator.clipboard.writeText(link);
+    setCopiedEventId(eventId);
+    toast.success('คัดลอกลิงก์แล้ว');
+    
+    // Reset copied state after 2 seconds
+    setTimeout(() => {
+      setCopiedEventId(null);
+    }, 2000);
   };
 
   // Filter events
@@ -153,6 +174,11 @@ export default function EventsPage() {
       'cancelled': 'ยกเลิก'
     };
     return texts[status] || status;
+  };
+
+  const getBranchName = (branchId: string) => {
+    const branch = branches.find(b => b.id === branchId);
+    return branch?.name || branchId;
   };
 
   if (loading) {
@@ -344,9 +370,9 @@ export default function EventsPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
-                          {event.branchIds.map((branchId, index) => (
+                          {event.branchIds.map((branchId) => (
                             <Badge key={branchId} variant="outline" className="text-xs">
-                              สาขา {index + 1}
+                              {getBranchName(branchId)}
                             </Badge>
                           ))}
                         </div>
@@ -363,6 +389,7 @@ export default function EventsPage() {
                               <Eye className="h-4 w-4" />
                             </Button>
                           </Link>
+                          
                           <PermissionGuard action="update">
                             <Link href={`/events/${event.id}/edit`}>
                               <Button variant="ghost" size="sm">
@@ -370,12 +397,30 @@ export default function EventsPage() {
                               </Button>
                             </Link>
                           </PermissionGuard>
+                          
+                          {/* Copy Registration Link Button */}
+                          {event.status === 'published' && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => copyRegistrationLink(event.id)}
+                              className="text-blue-600 hover:text-blue-700 hover:bg-blue-100"
+                              title="คัดลอกลิงก์ลงทะเบียน"
+                            >
+                              {copiedEventId === event.id ? (
+                                <CheckCircle2 className="h-4 w-4" />
+                              ) : (
+                                <LinkIcon className="h-4 w-4" />
+                              )}
+                            </Button>
+                          )}
+                          
                           {isSuperAdmin() && (
                             <Button
                               variant="ghost"
                               size="sm"
                               onClick={() => setDeleteEventId(event.id)}
-                              className="text-red-600 hover:text-red-700"
+                              className="text-red-600 hover:text-red-700 hover:bg-red-100"
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
