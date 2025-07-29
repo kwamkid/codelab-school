@@ -155,6 +155,12 @@ function ScheduleContent() {
       // Get the schedule ID from the event ID (format: classId-scheduleId-studentId)
       const [classId, scheduleId] = selectedEvent.id.split('-')
       
+      console.log('[LIFF] Submitting leave request:', {
+        classId,
+        scheduleId,
+        studentId: selectedEvent.extendedProps.studentId
+      })
+      
       // Call API to create makeup request
       const response = await fetch('/api/liff/leave-request', {
         method: 'POST',
@@ -170,9 +176,11 @@ function ScheduleContent() {
         })
       })
 
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.message || 'เกิดข้อผิดพลาด')
+      const data = await response.json()
+      console.log('[LIFF] Leave request response:', data)
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'เกิดข้อผิดพลาด')
       }
 
       toast.success('บันทึกการลาเรียนเรียบร้อยแล้ว', {
@@ -181,15 +189,16 @@ function ScheduleContent() {
       
       setDialogOpen(false)
       setConfirmLeaveOpen(false)
+      setSelectedEvent(null)
       
       // Force refresh to show red color
       if (forceRefresh) {
         setTimeout(() => {
           forceRefresh()
-        }, 500) // Small delay to ensure database is updated
+        }, 1000) // Increase delay
       }
     } catch (error) {
-      console.error('Error submitting leave request:', error)
+      console.error('[LIFF] Error submitting leave request:', error)
       toast.error(error instanceof Error ? error.message : 'ไม่สามารถบันทึกการลาได้')
     } finally {
       setIsSubmitting(false)

@@ -97,22 +97,53 @@ export async function POST(request: NextRequest) {
     const makeupRef = await adminDb.collection('makeupClasses').add(makeupData);
 
     // Update the schedule attendance (mark as absent)
-    const attendanceUpdate = {
-      attendance: FieldValue.arrayUnion({
-        studentId: studentId,
-        status: 'absent',
-        note: 'ลาผ่านระบบ LIFF',
-        checkedAt: FieldValue.serverTimestamp(),
-        checkedBy: 'parent-liff'
-      })
-    };
-
-    await adminDb
-      .collection('classes')
-      .doc(classId)
-      .collection('schedules')
-      .doc(scheduleId)
-      .update(attendanceUpdate);
+    try {
+      // First, get the current attendance array
+      const currentSchedule = await adminDb
+        .collection('classes')
+        .doc(classId)
+        .collection('schedules')
+        .doc(scheduleId)
+        .get();
+      
+      const currentData = currentSchedule.data();
+      const currentAttendance = currentData?.attendance || [];
+      
+      // Check if student already has attendance record
+      const existingIndex = currentAttendance.findIndex((a: any) => a.studentId === studentId);
+      
+      if (existingIndex >= 0) {
+        // Update existing attendance
+        currentAttendance[existingIndex] = {
+          studentId: studentId,
+          status: 'absent',
+          note: 'ลาผ่านระบบ LIFF',
+          checkedAt: new Date(),
+          checkedBy: 'parent-liff'
+        };
+      } else {
+        // Add new attendance
+        currentAttendance.push({
+          studentId: studentId,
+          status: 'absent',
+          note: 'ลาผ่านระบบ LIFF',
+          checkedAt: new Date(),
+          checkedBy: 'parent-liff'
+        });
+      }
+      
+      // Update with the modified array
+      await adminDb
+        .collection('classes')
+        .doc(classId)
+        .collection('schedules')
+        .doc(scheduleId)
+        .update({ attendance: currentAttendance });
+        
+    } catch (updateError) {
+      console.error('[LIFF Leave Request] Error updating attendance:', updateError);
+      // Continue even if attendance update fails
+    }
 
     // Log the request
     console.log(`[LIFF Leave Request] Created makeup request ${makeupRef.id} for student ${studentId}`);
