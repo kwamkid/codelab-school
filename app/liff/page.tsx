@@ -26,17 +26,10 @@ import Image from 'next/image';
 
 export default function LiffHomePage() {
   const router = useRouter();
-  const { liff, isLoggedIn, profile, isInitialized } = useLiff();
+  const { liff, isLoggedIn, profile, isReady } = useLiff();
   const { parent, students, loading: parentLoading, isRegistered } = useLiffParent();
   const [greeting, setGreeting] = useState('');
-
-  useEffect(() => {
-    // ตรวจสอบว่า login แล้วแต่ยังไม่ได้ลงทะเบียน
-    if (isInitialized && isLoggedIn && !parentLoading && !isRegistered) {
-      // Redirect ไปหน้าลงทะเบียน
-      router.push('/liff/register');
-    }
-  }, [isInitialized, isLoggedIn, parentLoading, isRegistered, router]);
+  const [checkingRegistration, setCheckingRegistration] = useState(true);
 
   useEffect(() => {
     const hour = new Date().getHours();
@@ -44,6 +37,22 @@ export default function LiffHomePage() {
     else if (hour < 18) setGreeting('สวัสดีตอนบ่าย');
     else setGreeting('สวัสดีตอนเย็น');
   }, []);
+
+  useEffect(() => {
+    // Check registration status when ready
+    if (isReady && isLoggedIn) {
+      if (!parentLoading) {
+        setCheckingRegistration(false);
+        // ถ้ายังไม่ได้ลงทะเบียน ไปหน้าลงทะเบียน
+        if (!isRegistered) {
+          router.push('/liff/register');
+        }
+      }
+    } else if (isReady && !isLoggedIn) {
+      // ถ้ายังไม่ login ต้อง login ก่อน
+      liff?.login();
+    }
+  }, [isReady, isLoggedIn, parentLoading, isRegistered, router, liff]);
 
   const menuItems = [
     {
@@ -117,48 +126,36 @@ export default function LiffHomePage() {
   ];
 
   const handleMenuClick = (item: typeof menuItems[0]) => {
-    if (item.requireLogin && !isLoggedIn) {
-      liff?.login();
-      return;
-    }
     router.push(item.href);
   };
 
   // Loading state
-  if (!isInitialized || parentLoading) {
+  if (!isReady || checkingRegistration || parentLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
-        <div className="text-center">
-          <div className="mb-8">
-            <Image
-              src="/logo.png"
-              alt="CodeLab School"
-              width={120}
-              height={120}
-              className="mx-auto"
-              priority
-            />
+      <div className="flex flex-col items-center justify-center min-h-screen bg-white">
+        {/* Logo */}
+        <div className="mb-8">
+          <div className="w-32 h-32 bg-red-500 rounded-full flex items-center justify-center">
+            <span className="text-white text-4xl font-bold">CL</span>
           </div>
-          <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
-          <p className="text-gray-600 text-lg">กำลังโหลดข้อมูล...</p>
         </div>
+        <Loader2 className="h-12 w-12 animate-spin text-red-500 mb-4" />
+        <p className="text-gray-600 text-lg">กำลังตรวจสอบข้อมูล...</p>
       </div>
     );
   }
 
+  // ถ้าผ่านการตรวจสอบแล้ว แสดงหน้า home ปกติ
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
+      {/* Header with Logo */}
       <div className="bg-gradient-to-r from-red-500 to-red-600 text-white p-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <Image
-              src="/logo-white.png"
-              alt="CodeLab School"
-              width={50}
-              height={50}
-              className="bg-white rounded-lg p-1"
-            />
+            {/* Logo */}
+            <div className="w-12 h-12 bg-white/20 backdrop-blur rounded-full flex items-center justify-center">
+              <span className="text-white text-xl font-bold">CL</span>
+            </div>
             <div>
               <h1 className="text-2xl font-bold">CodeLab School</h1>
               <p className="text-red-100 text-sm">โรงเรียนสอนเขียนโปรแกรม</p>
@@ -176,38 +173,25 @@ export default function LiffHomePage() {
         </div>
         
         {/* Greeting */}
-        <div className="bg-white/10 rounded-lg p-4">
-          <p className="text-xl font-medium">
+        <div className="bg-white/10 backdrop-blur rounded-lg p-4">
+          <p className="text-xl font-medium mb-1">
             {greeting} 👋
           </p>
-          {isLoggedIn && profile ? (
-            <p className="text-red-100 text-lg mt-1">คุณ{profile.displayName}</p>
-          ) : (
-            <div className="flex items-center gap-2 mt-2">
-              <p className="text-red-100">ยังไม่ได้เข้าสู่ระบบ</p>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => liff?.login()}
-                className="h-8"
-              >
-                <LogIn className="h-4 w-4 mr-1" />
-                เข้าสู่ระบบ
-              </Button>
-            </div>
+          {profile && (
+            <p className="text-red-100 text-base">คุณ{profile.displayName}</p>
           )}
         </div>
 
-        {/* Student Summary (if logged in) */}
-        {isLoggedIn && students.length > 0 && (
+        {/* Student Summary */}
+        {students.length > 0 && (
           <div className="mt-4 space-y-2">
-            <p className="text-red-100">นักเรียนในความดูแล</p>
+            <p className="text-base text-red-100">นักเรียนในความดูแล</p>
             <div className="flex flex-wrap gap-2">
               {students.map(student => (
                 <Badge 
                   key={student.id} 
                   variant="secondary" 
-                  className="bg-white/20 text-white border-0 text-base px-3 py-1"
+                  className="bg-white/20 text-white border-0 text-sm px-3 py-1"
                 >
                   {student.nickname}
                 </Badge>
@@ -220,12 +204,12 @@ export default function LiffHomePage() {
       {/* Menu Grid */}
       <div className="p-4 -mt-4">
         <Card className="shadow-lg">
-          <div className="grid grid-cols-2 gap-3 p-4">
+          <div className="grid grid-cols-2 gap-4 p-4">
             {menuItems.map((item) => (
               <button
                 key={item.title}
                 onClick={() => handleMenuClick(item)}
-                className="relative group text-left"
+                className="relative group"
               >
                 <Card className="h-full hover:shadow-md transition-shadow">
                   <CardContent className="p-4">
@@ -237,12 +221,6 @@ export default function LiffHomePage() {
                     {item.badge && (
                       <Badge className="absolute top-2 right-2 bg-red-500 text-white text-xs px-2 py-0.5">
                         {item.badge}
-                      </Badge>
-                    )}
-                    {item.requireLogin && !isLoggedIn && (
-                      <Badge variant="outline" className="absolute bottom-2 right-2 text-xs px-2 py-0.5">
-                        <LogIn className="h-3 w-3 mr-1" />
-                        ต้อง Login
                       </Badge>
                     )}
                   </CardContent>
@@ -258,7 +236,7 @@ export default function LiffHomePage() {
         <Card className="bg-gradient-to-r from-blue-500 to-blue-600 text-white">
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
-              <div className="bg-white/20 p-2 rounded-lg">
+              <div className="bg-white/20 backdrop-blur p-2 rounded-lg">
                 <MessageSquare className="h-6 w-6" />
               </div>
               <div className="flex-1">
@@ -269,7 +247,7 @@ export default function LiffHomePage() {
                 <Button
                   size="sm"
                   variant="secondary"
-                  className="mt-3 h-9"
+                  className="mt-3 h-9 text-sm px-4"
                   onClick={() => router.push('/liff/trial-booking')}
                 >
                   จองทดลองเรียน
@@ -284,7 +262,7 @@ export default function LiffHomePage() {
       {/* Quick Contacts */}
       <div className="px-4 pb-6">
         <h2 className="font-medium text-gray-700 text-lg mb-3">ติดต่อเรา</h2>
-        <div className="space-y-2">
+        <div className="space-y-3">
           {quickContacts.map((contact) => (
             <Card key={contact.title}>
               <CardContent className="p-4">
