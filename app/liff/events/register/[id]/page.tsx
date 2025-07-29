@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { GradeLevelCombobox } from '@/components/ui/grade-level-combobox';
+import { LiffProvider } from '@/components/liff/liff-provider';
 import { 
   Calendar, 
   MapPin, 
@@ -60,6 +61,14 @@ interface ParentFormData {
 }
 
 export default function EventRegistrationPage() {
+  return (
+    <LiffProvider requireLogin={false}>
+      <EventRegistrationContent />
+    </LiffProvider>
+  );
+}
+
+function EventRegistrationContent() {
   const params = useParams();
   const router = useRouter();
   const eventId = params.id as string;
