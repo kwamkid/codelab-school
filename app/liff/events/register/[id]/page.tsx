@@ -20,9 +20,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { GradeLevelCombobox } from '@/components/ui/grade-level-combobox';
-import { LiffProvider } from '@/components/liff/liff-provider';
-import { useLiff } from '@/components/liff/liff-provider';
-import { useLiffParent } from '@/hooks/useLiffParent';
 import { 
   Calendar, 
   MapPin, 
@@ -56,19 +53,21 @@ interface ParentFormData {
   isMainContact: boolean;
 }
 
-function EventRegistrationContent() {
+export default function EventRegistrationPage() {
   const params = useParams();
   const router = useRouter();
   const eventId = params.id as string;
-  
-  const { profile, isLoggedIn } = useLiff();
-  const { parent, students: existingStudents, loading: parentLoading } = useLiffParent();
   
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [event, setEvent] = useState<Event | null>(null);
   const [schedules, setSchedules] = useState<EventSchedule[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
+  
+  // Optional LINE login state
+  const [lineProfile, setLineProfile] = useState<any>(null);
+  const [parentData, setParentData] = useState<any>(null);
+  const [existingStudents, setExistingStudents] = useState<any[]>([]);
   
   // Form states
   const [selectedSchedule, setSelectedSchedule] = useState<string>('');
@@ -95,6 +94,7 @@ function EventRegistrationContent() {
 
   useEffect(() => {
     loadData();
+    checkLineLogin();
   }, [eventId]);
 
   const loadData = async () => {
@@ -139,21 +139,59 @@ function EventRegistrationContent() {
     }
   };
 
+  const checkLineLogin = async () => {
+    try {
+      // ตรวจสอบว่ามี LIFF SDK และ initialized หรือไม่
+      if (typeof window !== 'undefined' && window.liff) {
+        const liff = window.liff;
+        
+        // รอให้ LIFF พร้อม
+        if (!liff.isReady) {
+          await liff.ready;
+        }
+        
+        // ตรวจสอบการ login
+        if (liff.isLoggedIn()) {
+          try {
+            const profile = await liff.getProfile();
+            setLineProfile(profile);
+            
+            // ถ้ามี profile ให้ดึงข้อมูล parent
+            const { getParentByLineId, getStudentsByParent } = await import('@/lib/services/parents');
+            const parent = await getParentByLineId(profile.userId);
+            
+            if (parent) {
+              setParentData(parent);
+              const students = await getStudentsByParent(parent.id);
+              setExistingStudents(students.filter(s => s.isActive));
+            }
+          } catch (error) {
+            console.log('Error getting LINE profile:', error);
+            // ไม่ต้อง throw error เพราะไม่บังคับ login
+          }
+        }
+      }
+    } catch (error) {
+      console.log('LIFF not available or error:', error);
+      // ไม่ต้อง throw error เพราะไม่บังคับ login
+    }
+  };
+
   const handleUseMyData = () => {
-    if (!parent) return;
+    if (!parentData) return;
     
     setContactForm({
-      name: parent.displayName,
-      phone: parent.phone,
-      email: parent.email || '',
-      address: parent.address ? 
-        `${parent.address.houseNumber} ${parent.address.street || ''} ${parent.address.subDistrict} ${parent.address.district} ${parent.address.province} ${parent.address.postalCode}`.trim() 
+      name: parentData.displayName,
+      phone: parentData.phone,
+      email: parentData.email || '',
+      address: parentData.address ? 
+        `${parentData.address.houseNumber} ${parentData.address.street || ''} ${parentData.address.subDistrict} ${parentData.address.district} ${parentData.address.province} ${parentData.address.postalCode}`.trim() 
         : ''
     });
     
     // Set preferred branch
-    if (parent.preferredBranchId && branches.some(b => b.id === parent.preferredBranchId)) {
-      setSelectedBranch(parent.preferredBranchId);
+    if (parentData.preferredBranchId && branches.some(b => b.id === parentData.preferredBranchId)) {
+      setSelectedBranch(parentData.preferredBranchId);
     }
     
     // Pre-fill students if counting by students
@@ -288,8 +326,8 @@ function EventRegistrationContent() {
         branchId: selectedBranch,
         
         // Guest or member
-        isGuest: !isLoggedIn || !parent,
-        parentId: parent?.id || null,
+        isGuest: !lineProfile || !parentData,
+        parentId: parentData?.id || null,
         
         // Contact info
         parentName: contactForm.name,
@@ -325,10 +363,10 @@ function EventRegistrationContent() {
       };
       
       // Add optional fields
-      if (isLoggedIn && profile?.userId) {
-        registrationData.lineUserId = profile.userId;
-        registrationData.lineDisplayName = profile.displayName;
-        registrationData.linePictureUrl = profile.pictureUrl;
+      if (lineProfile) {
+        registrationData.lineUserId = lineProfile.userId;
+        registrationData.lineDisplayName = lineProfile.displayName;
+        registrationData.linePictureUrl = lineProfile.pictureUrl;
       }
       if (contactForm.email) {
         registrationData.parentEmail = contactForm.email;
@@ -346,7 +384,14 @@ function EventRegistrationContent() {
       await createEventRegistration(registrationData, event);
       
       toast.success('ลงทะเบียนสำเร็จ!');
-      router.push('/liff/events?tab=my-events');
+      
+      // ถ้ามี LINE login ให้กลับไปหน้า events
+      if (lineProfile) {
+        router.push('/liff/events?tab=my-events');
+      } else {
+        // ถ้าไม่ได้ login ให้แสดงหน้าสำเร็จ
+        router.push(`/liff/events/register/${eventId}/success`);
+      }
       
     } catch (error: any) {
       console.error('Registration error:', error);
@@ -370,7 +415,7 @@ function EventRegistrationContent() {
     }
   }, [event?.countingMethod, contactForm, parentForms.length]);
 
-  if (loading || parentLoading) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
@@ -515,7 +560,7 @@ function EventRegistrationContent() {
               <CardTitle className="text-base">
                 {event?.countingMethod === 'parents' ? 'ผู้ร่วมงานหลัก' : 'ข้อมูลติดต่อ'}
               </CardTitle>
-              {isLoggedIn && parent && (
+              {lineProfile && parentData && (
                 <div className="flex gap-2">
                   <Button
                     type="button"
@@ -539,7 +584,7 @@ function EventRegistrationContent() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            {isLoggedIn && !parent && (
+            {lineProfile && !parentData && (
               <div className="text-sm text-amber-600 bg-amber-50 p-3 rounded-lg mb-4">
                 <AlertCircle className="h-4 w-4 inline mr-1" />
                 Login แล้วแต่ยังไม่ได้ลงทะเบียนในระบบ
@@ -606,7 +651,7 @@ function EventRegistrationContent() {
               ) : (
                 studentForms.map((student, index) => (
                   <div key={index} className="p-4 border rounded-lg space-y-3">
-                    {isLoggedIn && parent && existingStudents.length > 0 && index < existingStudents.length ? (
+                    {lineProfile && parentData && existingStudents.length > 0 && index < existingStudents.length ? (
                       // Show as checkbox for existing students
                       <div className="flex items-start gap-3">
                         <Checkbox
@@ -927,13 +972,5 @@ function EventRegistrationContent() {
         </Card>
       </div>
     </div>
-  );
-}
-
-export default function EventRegistrationPage() {
-  return (
-    <LiffProvider requireLogin={false}>
-      <EventRegistrationContent />
-    </LiffProvider>
   );
 }
