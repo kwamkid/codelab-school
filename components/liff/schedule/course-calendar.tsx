@@ -250,11 +250,12 @@ export default function CourseCalendar({
                         {canRequestLeave && (
                           <Button
                             size="sm"
-                            variant="ghost"
-                            className="h-5 px-1.5 text-xs"
+                            variant="outline"
+                            className="h-6 px-2 text-xs"
                             onClick={() => onLeaveRequest(event)}
                           >
-                            ลา
+                            <CalendarOff className="h-3 w-3 mr-1" />
+                            ขอลา
                           </Button>
                         )}
                       </div>

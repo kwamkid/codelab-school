@@ -169,7 +169,7 @@ export default function MonthlyCalendar({
                         key={dayIndex}
                         className={cn(
                           "relative border rounded-lg p-1 md:p-2 overflow-hidden transition-colors",
-                          "aspect-[4/3] md:aspect-square",
+                          "min-h-[80px] md:min-h-[100px]",
                           isCurrentDay && "border-primary bg-primary/5",
                           isPast && "bg-gray-50",
                           dayEvents.length > 0 && !isPast && "hover:bg-gray-50 cursor-pointer"
@@ -178,16 +178,16 @@ export default function MonthlyCalendar({
                       >
                         {/* Day number */}
                         <div className={cn(
-                          "text-xs md:text-sm font-medium",
+                          "text-sm md:text-base font-medium mb-1",
                           isCurrentDay && "text-primary",
                           isPast && "text-gray-400"
                         )}>
                           {day}
                         </div>
                         
-                        {/* Events */}
-                        <div className="mt-0.5 md:mt-1 space-y-0.5">
-                          {dayEvents.slice(0, 2).map((event, idx) => {
+                        {/* Events - Bigger and clearer */}
+                        <div className="space-y-1">
+                          {dayEvents.slice(0, 3).map((event, idx) => {
                             const isMakeup = event.extendedProps.type === 'makeup'
                             const isAbsent = event.extendedProps.status === 'absent' || 
                                            event.extendedProps.status === 'leave-requested'
@@ -198,7 +198,7 @@ export default function MonthlyCalendar({
                               <div
                                 key={event.id}
                                 className={cn(
-                                  "text-xs px-1 py-0.5 rounded truncate",
+                                  "text-xs md:text-sm px-1.5 py-1 rounded font-medium",
                                   isMakeup && "bg-purple-100 text-purple-700",
                                   isAbsent && "bg-red-100 text-red-700 line-through",
                                   isCompleted && !isMakeup && !isAbsent && "bg-green-100 text-green-700",
@@ -206,18 +206,21 @@ export default function MonthlyCalendar({
                                 )}
                                 title={`${event.extendedProps.studentNickname} - ${event.extendedProps.className}`}
                               >
-                                <span className="hidden md:inline">
+                                <span className="block truncate">
                                   {event.extendedProps.studentNickname}
                                 </span>
-                                <span className="md:hidden">
-                                  {event.extendedProps.studentNickname?.slice(0, 3)}
+                                <span className="text-[10px] md:text-xs opacity-75">
+                                  {event.start.toLocaleTimeString('th-TH', { 
+                                    hour: '2-digit', 
+                                    minute: '2-digit' 
+                                  })}
                                 </span>
                               </div>
                             )
                           })}
-                          {dayEvents.length > 2 && (
-                            <div className="text-xs text-gray-500 px-1">
-                              +{dayEvents.length - 2}
+                          {dayEvents.length > 3 && (
+                            <div className="text-xs text-gray-600 font-medium px-1">
+                              +{dayEvents.length - 3} รายการ
                             </div>
                           )}
                         </div>

@@ -144,66 +144,69 @@ export default function CourseList({
                   <div 
                     key={event.id}
                     className={cn(
-                      "flex items-center justify-between p-3 rounded-lg border transition-colors",
+                      "p-3 rounded-lg border transition-colors",
                       statusDisplay.bgColor
                     )}
                   >
-                    <div className="flex items-center gap-3">
-                      <div className={cn(
-                        "flex items-center justify-center w-8 h-8 rounded-full",
-                        statusDisplay.bgColor
-                      )}>
-                        <statusDisplay.icon className={cn("h-4 w-4", statusDisplay.color)} />
-                      </div>
-                      
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">
-                            ครั้งที่ {event.extendedProps.sessionNumber || index + 1}
-                          </span>
-                          <span className="text-sm text-muted-foreground">
-                            {getDayName(event.start.getDay())}
-                          </span>
-                        </div>
-                        <div className="text-sm text-muted-foreground">
-                          {formatDate(event.start, 'short')}
-                          {' • '}
-                          {event.start.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
-                          {' - '}
-                          {event.end.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-start gap-3 flex-1">
+                        <div className={cn(
+                          "flex items-center justify-center w-8 h-8 rounded-full mt-0.5",
+                          statusDisplay.bgColor
+                        )}>
+                          <statusDisplay.icon className={cn("h-4 w-4", statusDisplay.color)} />
                         </div>
                         
-                        {/* Show makeup info if scheduled */}
-                        {event.extendedProps.hasMakeupRequest && event.extendedProps.makeupScheduled && (
-                          <div className="text-xs text-purple-600 mt-1 flex items-center gap-1">
-                            <AlertCircle className="h-3 w-3" />
-                            เรียนชดเชย: {formatDate(event.extendedProps.makeupDate, 'short')} 
-                            {' '}เวลา {event.extendedProps.makeupTime}
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-medium">
+                              ครั้งที่ {event.extendedProps.sessionNumber || index + 1}
+                            </span>
+                            <span className="text-sm text-muted-foreground">
+                              {getDayName(event.start.getDay())}
+                            </span>
                           </div>
-                        )}
+                          <div className="text-sm text-muted-foreground">
+                            {formatDate(event.start, 'short')}
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            {event.start.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+                            {' - '}
+                            {event.end.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                          
+                          {/* Show makeup info if scheduled */}
+                          {event.extendedProps.hasMakeupRequest && event.extendedProps.makeupScheduled && (
+                            <div className="text-xs text-purple-600 mt-1 flex items-center gap-1">
+                              <AlertCircle className="h-3 w-3" />
+                              เรียนชดเชย: {formatDate(event.extendedProps.makeupDate, 'short')} 
+                              {' '}เวลา {event.extendedProps.makeupTime}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
 
-                    <div className="flex items-center gap-2">
-                      <Badge 
-                        variant={statusDisplay.color === 'text-green-600' ? 'default' : 
-                                statusDisplay.color === 'text-red-600' ? 'destructive' : 'secondary'}
-                        className="text-xs"
-                      >
-                        {statusDisplay.label}
-                      </Badge>
-                      
-                      {canRequestLeave && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => onLeaveRequest(event)}
+                      <div className="flex flex-col items-end gap-1">
+                        <Badge 
+                          variant={statusDisplay.color === 'text-green-600' ? 'default' : 
+                                  statusDisplay.color === 'text-red-600' ? 'destructive' : 'secondary'}
                           className="text-xs"
                         >
-                          <CalendarOff className="h-3 w-3 mr-1" />
-                          ลา
-                        </Button>
-                      )}
+                          {statusDisplay.label === 'ลาเรียน' ? 'Makeup' : statusDisplay.label}
+                        </Badge>
+                        
+                        {canRequestLeave && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => onLeaveRequest(event)}
+                            className="text-xs h-7"
+                          >
+                            <CalendarOff className="h-3 w-3 mr-1" />
+                            ขอลา
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )
