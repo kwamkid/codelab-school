@@ -37,7 +37,6 @@ import {
 } from 'lucide-react';
 import { formatDate, formatPhoneNumber } from '@/lib/utils';
 import { toast } from 'sonner';
-import liff from '@line/liff';
 
 interface StudentFormData {
   name: string;
@@ -99,33 +98,44 @@ export default function EventRegistrationPage() {
   useEffect(() => {
     const init = async () => {
       try {
-        // Check if LIFF is available
-        if (typeof window !== 'undefined' && liff) {
-          await liff.init({ liffId: process.env.NEXT_PUBLIC_LIFF_ID! });
+        // Load event data first
+        await loadData();
+        
+        // Then check LIFF
+        if (typeof window !== 'undefined') {
+          const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
+          if (!liffId) {
+            console.log('[EventRegistration] No LIFF ID configured');
+            return;
+          }
           
-          if (liff.isLoggedIn()) {
+          const { default: liffModule } = await import('@line/liff');
+          await liffModule.init({ liffId });
+          console.log('[EventRegistration] LIFF initialized, isLoggedIn:', liffModule.isLoggedIn());
+          
+          if (liffModule.isLoggedIn()) {
             try {
-              const profile = await liff.getProfile();
+              const profile = await liffModule.getProfile();
+              console.log('[EventRegistration] Got LINE profile:', profile);
               setLineProfile(profile);
               
               // Try to get parent data if logged in
               const parent = await getParentByLineId(profile.userId);
+              console.log('[EventRegistration] Parent data:', parent);
               if (parent) {
                 setParentData(parent);
                 const students = await getStudentsByParent(parent.id);
                 setExistingStudents(students.filter(s => s.isActive));
+                console.log('[EventRegistration] Found students:', students.length);
               }
             } catch (error) {
-              console.log('No parent data found, continue as guest');
+              console.log('[EventRegistration] Error getting profile/parent:', error);
             }
           }
         }
       } catch (error) {
-        console.log('LIFF not available or error, continue without LIFF');
+        console.log('[EventRegistration] Error during initialization:', error);
       }
-      
-      // Load event data regardless of login status
-      await loadData();
     };
     
     init();
@@ -568,6 +578,11 @@ export default function EventRegistrationPage() {
                   >
                     <RefreshCw className="h-4 w-4" />
                   </Button>
+                </div>
+              )}
+              {lineProfile && !parentData && (
+                <div className="text-xs text-gray-500">
+                  (Login แล้วแต่ยังไม่ได้ลงทะเบียนในระบบ)
                 </div>
               )}
             </div>
