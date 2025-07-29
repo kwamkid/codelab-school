@@ -385,13 +385,8 @@ export default function EventRegistrationPage() {
       
       toast.success('ลงทะเบียนสำเร็จ!');
       
-      // ถ้ามี LINE login ให้กลับไปหน้า events
-      if (lineProfile) {
-        router.push('/liff/events?tab=my-events');
-      } else {
-        // ถ้าไม่ได้ login ให้แสดงหน้าสำเร็จ
-        router.push(`/liff/events/register/${eventId}/success`);
-      }
+      // ไปหน้า success ทุกกรณี เพื่อหลีกเลี่ยงปัญหา permission
+      router.push(`/liff/events/register/${eventId}/success`);
       
     } catch (error: any) {
       console.error('Registration error:', error);
