@@ -281,3 +281,35 @@ export function getStatusText(status: string): string {
   
   return statusTexts[status] || status;
 }
+
+// เพิ่ม function นี้ใน lib/utils.ts
+
+export function convertGoogleDriveUrl(url: string): string {
+  if (!url || !url.includes('drive.google.com')) {
+    return url;
+  }
+
+  // Extract file ID from various Google Drive URL formats
+  let fileId = '';
+  
+  if (url.includes('/file/d/')) {
+    // Format: https://drive.google.com/file/d/FILE_ID/view?usp=sharing
+    const match = url.match(/\/file\/d\/([a-zA-Z0-9-_]+)/);
+    if (match) fileId = match[1];
+  } else if (url.includes('id=')) {
+    // Format: https://drive.google.com/open?id=FILE_ID
+    const match = url.match(/id=([a-zA-Z0-9-_]+)/);
+    if (match) fileId = match[1];
+  } else if (url.includes('/folders/')) {
+    // This is a folder link, not an image
+    console.warn('Google Drive folder links are not supported');
+    return url;
+  }
+  
+  if (fileId) {
+    // Convert to direct image URL
+    return `https://drive.google.com/uc?export=view&id=${fileId}`;
+  }
+  
+  return url;
+}

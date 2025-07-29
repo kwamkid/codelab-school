@@ -448,28 +448,56 @@ export default function EventForm({ event, isEdit = false }: EventFormProps) {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="imageUrl">URL รูปภาพ Event</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="imageUrl"
-                  type="url"
-                  value={formData.imageUrl}
-                  onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
-                  placeholder="https://example.com/image.jpg"
-                  className="flex-1"
-                />
-                {formData.imageUrl && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => window.open(formData.imageUrl, '_blank')}
-                  >
-                    <Image className="h-4 w-4" />
-                  </Button>
-                )}
-              </div>
-            </div>
+                <Label htmlFor="imageUrl">URL รูปภาพ Event</Label>
+                <div className="flex gap-2">
+                    <Input
+                    id="imageUrl"
+                    type="url"
+                    value={formData.imageUrl}
+                    onChange={(e) => {
+                        let url = e.target.value;
+                        
+                        // Convert Google Drive share link to direct image URL
+                        if (url.includes('drive.google.com')) {
+                        // Extract file ID from various Google Drive URL formats
+                        let fileId = '';
+                        
+                        if (url.includes('/file/d/')) {
+                            // Format: https://drive.google.com/file/d/FILE_ID/view?usp=sharing
+                            const match = url.match(/\/file\/d\/([a-zA-Z0-9-_]+)/);
+                            if (match) fileId = match[1];
+                        } else if (url.includes('id=')) {
+                            // Format: https://drive.google.com/open?id=FILE_ID
+                            const match = url.match(/id=([a-zA-Z0-9-_]+)/);
+                            if (match) fileId = match[1];
+                        }
+                        
+                        if (fileId) {
+                            // Convert to direct image URL
+                            url = `https://drive.google.com/uc?export=view&id=${fileId}`;
+                        }
+                        }
+                        
+                        setFormData({ ...formData, imageUrl: url });
+                    }}
+                    placeholder="https://example.com/image.jpg หรือ Google Drive link"
+                    className="flex-1"
+                    />
+                    {formData.imageUrl && (
+                    <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => window.open(formData.imageUrl, '_blank')}
+                    >
+                        <Image className="h-4 w-4" />
+                    </Button>
+                    )}
+                </div>
+                <p className="text-xs text-gray-500">
+                    รองรับ URL รูปภาพทั่วไป หรือ Google Drive (คลิกขวา → Copy link) • แนะนำขนาด 16:9 (1200x675px)
+                </p>
+                </div>
           </CardContent>
         </Card>
 
