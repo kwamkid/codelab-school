@@ -60,8 +60,26 @@ export default function LiffEventsPage() {
 
       // Load user registrations if logged in
       if (isLoggedIn && profile?.userId) {
-        const registrations = await getUserRegistrations(profile.userId, true);
-        setMyRegistrations(registrations);
+        try {
+          // Use API to avoid permission issues
+          const response = await fetch(`/api/events/my-registrations?lineUserId=${profile.userId}`);
+          if (response.ok) {
+            const { registrations } = await response.json();
+            setMyRegistrations(registrations.map((r: any) => ({
+              ...r,
+              scheduleDate: new Date(r.scheduleDate),
+              registeredAt: new Date(r.registeredAt),
+              cancelledAt: r.cancelledAt ? new Date(r.cancelledAt) : undefined,
+              attendanceCheckedAt: r.attendanceCheckedAt ? new Date(r.attendanceCheckedAt) : undefined,
+              students: r.students?.map((s: any) => ({
+                ...s,
+                birthdate: new Date(s.birthdate)
+              })) || []
+            })));
+          }
+        } catch (error) {
+          console.error('Error loading my registrations:', error);
+        }
       }
     } catch (error) {
       console.error('Error loading events:', error);
