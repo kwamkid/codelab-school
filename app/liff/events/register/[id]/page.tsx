@@ -62,7 +62,7 @@ export default function EventRegistrationPage() {
   const eventId = params.id as string;
   
   const { liff, profile, isLoggedIn } = useLiff();
-  const { parent, students: existingStudents } = useLiffParent();
+  const { parent, students: existingStudents, loading: parentLoading } = useLiffParent();
   
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -94,13 +94,26 @@ export default function EventRegistrationPage() {
   const [referralSource, setReferralSource] = useState('');
   const [agreeTerms, setAgreeTerms] = useState(false);
 
+  // Debug logging
+  useEffect(() => {
+    console.log('[EventRegistration] Component state:', {
+      isLoggedIn,
+      parentLoading,
+      hasParent: !!parent,
+      hasStudents: existingStudents?.length || 0,
+      registrationType
+    });
+  }, [isLoggedIn, parentLoading, parent, existingStudents, registrationType]);
+
   useEffect(() => {
     loadData();
   }, [eventId, isLoggedIn]);
 
   useEffect(() => {
-    // Pre-fill data if logged in
-    if (isLoggedIn && parent) {
+    // Pre-fill data if logged in and parent data is loaded
+    if (isLoggedIn && parent && !parentLoading && registrationType === 'member') {
+      console.log('[EventRegistration] Pre-filling parent data:', parent);
+      
       setContactForm({
         name: parent.displayName,
         phone: parent.phone,
@@ -119,18 +132,22 @@ export default function EventRegistrationPage() {
       }]);
       
       // Pre-fill students if counting by students
-      if (event?.countingMethod === 'students' && existingStudents.length > 0) {
+      if (event?.countingMethod === 'students' && existingStudents && existingStudents.length > 0) {
+        console.log('[EventRegistration] Pre-filling students:', existingStudents);
+        
         setStudentForms(existingStudents.map(student => ({
           name: student.name,
           nickname: student.nickname,
-          birthdate: student.birthdate.toISOString().split('T')[0],
+          birthdate: student.birthdate instanceof Date 
+            ? student.birthdate.toISOString().split('T')[0]
+            : new Date(student.birthdate).toISOString().split('T')[0],
           schoolName: student.schoolName || '',
           gradeLevel: student.gradeLevel || '',
           selected: true
         })));
       }
     }
-  }, [isLoggedIn, parent, existingStudents, event]);
+  }, [isLoggedIn, parent, existingStudents, event, parentLoading, registrationType]);
 
   const loadData = async () => {
     try {
@@ -520,7 +537,7 @@ export default function EventRegistrationPage() {
                   value={contactForm.name}
                   onChange={(e) => setContactForm({ ...contactForm, name: e.target.value })}
                   placeholder="ชื่อ-นามสกุล"
-                  disabled={registrationType === 'member' && isLoggedIn}
+                  disabled={registrationType === 'member' && isLoggedIn && !!parent}
                 />
               </div>
               
@@ -532,7 +549,7 @@ export default function EventRegistrationPage() {
                   value={contactForm.phone}
                   onChange={(e) => setContactForm({ ...contactForm, phone: e.target.value })}
                   placeholder="0812345678"
-                  disabled={registrationType === 'member' && isLoggedIn}
+                  disabled={registrationType === 'member' && isLoggedIn && !!parent}
                 />
               </div>
               
@@ -577,7 +594,7 @@ export default function EventRegistrationPage() {
               ) : (
                 studentForms.map((student, index) => (
                   <div key={index} className="p-4 border rounded-lg space-y-3">
-                    {registrationType === 'member' && existingStudents.length > 0 ? (
+                    {registrationType === 'member' && existingStudents && existingStudents.length > 0 && index < existingStudents.length ? (
                       // Show as checkbox for existing students
                       <div className="flex items-start gap-3">
                         <Checkbox
@@ -663,7 +680,7 @@ export default function EventRegistrationPage() {
                 ))
               )}
               
-              {(registrationType === 'guest' || !isLoggedIn || existingStudents.length === 0) && (
+              {(registrationType === 'guest' || !isLoggedIn || !existingStudents || existingStudents.length === 0) && (
                 <Button
                   type="button"
                   variant="outline"
