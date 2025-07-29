@@ -200,25 +200,25 @@ export default function LiffEventsPage() {
                 return (
                   <Card key={event.id} className="overflow-hidden">
                     {event.imageUrl && (
-                        <div className="h-48 w-full relative">
-                            <Image
+                      <div className="relative w-full flex justify-center bg-gray-50 p-4">
+                        <div className="relative" style={{ maxHeight: '200px' }}>
+                          <img
                             src={event.imageUrl}
                             alt={event.name}
-                            fill
-                            className="object-cover"
-                            unoptimized                    // <-- เพิ่มบรรทัดนี้
-                            onError={(e) => {              // <-- เพิ่มบรรทัดนี้
-                                console.error('Image load error:', event.imageUrl);
-                                e.currentTarget.style.display = 'none';
-                            }}                             // <-- ถึงบรรทัดนี้
-                            />
-                            <div className="absolute top-2 right-2">
-                            <Badge className={getEventTypeColor(event.eventType)}>
-                                {getEventTypeLabel(event.eventType)}
-                            </Badge>
-                            </div>
+                            className="object-contain max-h-[200px] max-w-full rounded-lg"
+                            onError={(e) => {
+                              console.error('Image load error:', event.imageUrl);
+                              e.currentTarget.style.display = 'none';
+                            }}
+                          />
                         </div>
-                        )}
+                        <div className="absolute top-2 right-2">
+                          <Badge className={getEventTypeColor(event.eventType)}>
+                            {getEventTypeLabel(event.eventType)}
+                          </Badge>
+                        </div>
+                      </div>
+                    )}
                     
                     <CardHeader className="pb-3">
                       <div className="flex justify-between items-start">
