@@ -338,7 +338,12 @@ export default function AdminLayout({
       icon: TestTube,
       requiredRole: ['super_admin', 'branch_admin'] // admin ขึ้นไป
     },
-
+    { 
+      name: 'กิจกรรม', 
+      href: '/events', 
+      icon: CalendarDays,
+      requiredRole: ['super_admin', 'branch_admin'] // admin ขึ้นไป
+    },
     {
       name: 'รายงาน',
       icon: BarChart3,

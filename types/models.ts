@@ -431,3 +431,152 @@ export interface TeachingMaterial {
   updatedAt?: Date;
   updatedBy?: string;
 }
+
+// Teaching Materials - สื่อการสอนที่ผูกกับวิชา
+export interface TeachingMaterial {
+  id: string;
+  subjectId: string; // ผูกกับวิชาโดยตรง
+  sessionNumber: number; // ครั้งที่
+  title: string; // ชื่อบทเรียน
+  description?: string; // คำอธิบายสั้นๆ
+  objectives: string[]; // จุดประสงค์การเรียนรู้
+  materials: string[]; // อุปกรณ์ที่ใช้
+  preparation: string[]; // การเตรียมตัวก่อนสอน
+  canvaUrl: string; // Canva share URL
+  embedUrl: string; // Auto-generated embed URL
+  thumbnailUrl?: string; // รูป thumbnail
+  duration: number; // ระยะเวลา (นาที)
+  teachingNotes?: string; // บันทึกสำหรับครู
+  tags?: string[]; // แท็ก เช่น ["hands-on", "group-work", "assessment"]
+  isActive: boolean;
+  createdAt: Date;
+  createdBy: string;
+  updatedAt?: Date;
+  updatedBy?: string;
+}
+
+// Event Types - ระบบจัดงาน/กิจกรรม
+export interface Event {
+  id: string;
+  name: string;                          // ชื่องาน
+  description: string;                   // คำอธิบายสั้นๆ
+  fullDescription?: string;              // รายละเอียดแบบยาว (รองรับ markdown)
+  imageUrl?: string;                     // URL รูปภาพ Event
+  location: string;                      // สถานที่จัดงาน
+  locationUrl?: string;                  // Google Maps URL
+  
+  // Branch Settings
+  branchIds: string[];                   // สาขาที่จัด Event
+  
+  // Event Type & Display
+  eventType: 'open-house' | 'parent-meeting' | 'showcase' | 'workshop' | 'other';
+  highlights?: string[];                 // จุดเด่นของงาน
+  targetAudience?: string;               // กลุ่มเป้าหมาย
+  whatToBring?: string[];                // สิ่งที่ควรนำมา
+  
+  // Registration Settings
+  registrationStartDate: Date;           // เปิดรับลงทะเบียน
+  registrationEndDate: Date;             // ปิดรับลงทะเบียน
+  
+  // Counting Method
+  countingMethod: 'students' | 'parents' | 'registrations';
+  
+  // Reminder Settings
+  enableReminder: boolean;               // เปิด/ปิดการแจ้งเตือน
+  reminderDaysBefore: number;            // แจ้งเตือนล่วงหน้ากี่วัน (default: 1)
+  reminderTime?: string;                 // เวลาที่จะส่ง reminder
+  
+  // Status
+  status: 'draft' | 'published' | 'completed' | 'cancelled';
+  
+  // Metadata
+  isActive: boolean;
+  createdAt: Date;
+  createdBy: string;                     // userId ของคนสร้าง
+  updatedAt?: Date;
+  updatedBy?: string;
+}
+
+export interface EventSchedule {
+  id: string;
+  eventId: string;                       // Reference to events
+  date: Date;                            // วันที่จัด
+  startTime: string;                     // เวลาเริ่ม "09:00"
+  endTime: string;                       // เวลาจบ "12:00"
+  maxAttendees: number;                  // จำนวนรับสูงสุด
+  
+  // นับแยกตามสาขา
+  attendeesByBranch: {
+    [branchId: string]: number;          // จำนวนที่ลงแต่ละสาขา
+  };
+  
+  status: 'available' | 'full' | 'cancelled';
+}
+
+export interface EventRegistration {
+  id: string;
+  eventId: string;
+  eventName: string;                     // เก็บชื่อไว้เลย
+  scheduleId: string;
+  scheduleDate: Date;                    // เก็บวันที่ไว้เลย
+  scheduleTime: string;                  // เก็บเวลาไว้เลย "09:00-12:00"
+  branchId: string;                      // สาขาที่เลือก
+  
+  // Registration Info - รองรับทั้ง Guest และ Login
+  isGuest: boolean;                      // flag ว่าเป็น Guest หรือไม่
+  
+  // ถ้า Login ด้วย LINE
+  lineUserId?: string;
+  lineDisplayName?: string;
+  linePictureUrl?: string;
+  
+  // ถ้ามี Parent Account
+  parentId?: string;
+  
+  // ข้อมูลที่กรอก (ทั้ง Guest และ Login)
+  parentName: string;                    // ชื่อผู้ติดต่อหลัก
+  parentPhone: string;
+  parentEmail?: string;
+  parentAddress?: string;
+  
+  // Parents - สำหรับกรณีนับผู้ปกครอง
+  parents: {
+    name: string;
+    phone: string;
+    email?: string;
+    isMainContact: boolean;
+  }[];
+  
+  // Students - สำหรับกรณีนับนักเรียน
+  students: {
+    studentId?: string;                  // ถ้ามีในระบบ
+    name: string;
+    nickname: string;
+    birthdate: Date;
+    schoolName?: string;
+    gradeLevel?: string;
+  }[];
+  
+  // Counting
+  attendeeCount: number;                 // จำนวนที่นับ (ขึ้นอยู่กับ countingMethod)
+  
+  // Status & Tracking
+  status: 'confirmed' | 'cancelled' | 'attended' | 'no-show';
+  registeredAt: Date;
+  registeredFrom: 'liff' | 'admin';      // ลงผ่าน LIFF หรือ Admin ลงให้
+  
+  // Cancellation
+  cancelledAt?: Date;
+  cancelledBy?: string;                  // userId ของคนที่ยกเลิก
+  cancellationReason?: string;
+  
+  // Attendance
+  attended?: boolean;
+  attendanceCheckedAt?: Date;
+  attendanceCheckedBy?: string;
+  attendanceNote?: string;
+  
+  // Additional
+  specialRequest?: string;               // ความต้องการพิเศษ
+  referralSource?: string;               // รู้จักงานนี้จากที่ไหน
+}
