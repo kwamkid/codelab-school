@@ -217,12 +217,21 @@ export default function ScheduleManager({ eventId, schedules, onUpdate }: Schedu
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {schedules.map((schedule) => {
-                    const totalAttendees = getTotalAttendees(schedule);
-                    const remaining = schedule.maxAttendees - totalAttendees;
-                    
-                    return (
-                      <TableRow key={schedule.id}>
+                    {schedules
+                        .sort((a, b) => {
+                        // เรียงตามวันที่ก่อน
+                        const dateCompare = new Date(a.date).getTime() - new Date(b.date).getTime();
+                        if (dateCompare !== 0) return dateCompare;
+                        
+                        // ถ้าวันเดียวกัน เรียงตามเวลาเริ่ม
+                        return a.startTime.localeCompare(b.startTime);
+                        })
+                        .map((schedule) => {
+                        const totalAttendees = getTotalAttendees(schedule);
+                        const remaining = schedule.maxAttendees - totalAttendees;
+                        
+                        return (
+                            <TableRow key={schedule.id}>
                         <TableCell>
                           <div className="flex items-center gap-2">
                             <Calendar className="h-4 w-4 text-gray-400" />
