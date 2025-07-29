@@ -85,8 +85,6 @@ function EventRegistrationContent() {
   // Form states
   const [selectedSchedule, setSelectedSchedule] = useState<string>('');
   const [selectedBranch, setSelectedBranch] = useState<string>('');
-  const [registrationType, setRegistrationType] = useState<'member' | 'guest'>('guest');
-  const [dataLoaded, setDataLoaded] = useState(false);
   
   // Contact info
   const [contactForm, setContactForm] = useState({
@@ -116,89 +114,17 @@ function EventRegistrationContent() {
       parentLoading,
       hasParent: !!parent,
       parentId: parent?.id,
-      hasStudents: existingStudents?.length || 0,
-      registrationType,
-      dataLoaded
+      hasStudents: existingStudents?.length || 0
     });
-  }, [liffLoading, isLoggedIn, profile, parentLoading, parent, existingStudents, registrationType, dataLoaded]);
-
-  // Auto-detect registration type based on login status
-  useEffect(() => {
-    // Only run when parent data has finished loading
-    if (parentLoading) return;
-    
-    console.log('[EventRegistration] Auto-detect registration type:', {
-      isLoggedIn,
-      hasParent: !!parent,
-      currentType: registrationType
-    });
-    
-    if (isLoggedIn && parent) {
-      setRegistrationType('member');
-    }
-  }, [parentLoading, isLoggedIn, parent]);
+  }, [liffLoading, isLoggedIn, profile, parentLoading, parent, existingStudents]);
 
   useEffect(() => {
     loadData();
   }, [eventId]);
 
-  // Pre-fill data when parent data is available and member type is selected
-  useEffect(() => {
-    // Only run when parent data has finished loading
-    if (parentLoading) return;
-    
-    if (registrationType === 'member' && parent && !dataLoaded) {
-      console.log('[EventRegistration] Pre-filling parent data:', {
-        parentId: parent.id,
-        parentName: parent.displayName,
-        studentsCount: existingStudents?.length || 0
-      });
-      
-      setContactForm({
-        name: parent.displayName,
-        phone: parent.phone,
-        email: parent.email || '',
-        address: parent.address ? 
-          `${parent.address.houseNumber} ${parent.address.street || ''} ${parent.address.subDistrict} ${parent.address.district} ${parent.address.province} ${parent.address.postalCode}`.trim() 
-          : ''
-      });
-      
-      // Pre-fill parent info for parent counting
-      setParentForms([{
-        name: parent.displayName,
-        phone: parent.phone,
-        email: parent.email || '',
-        isMainContact: true
-      }]);
-      
-      // Pre-fill students if counting by students
-      if (event?.countingMethod === 'students' && existingStudents && existingStudents.length > 0) {
-        console.log('[EventRegistration] Pre-filling students:', existingStudents);
-        
-        setStudentForms(existingStudents.map(student => ({
-          name: student.name,
-          nickname: student.nickname,
-          birthdate: student.birthdate instanceof Date 
-            ? student.birthdate.toISOString().split('T')[0]
-            : new Date(student.birthdate).toISOString().split('T')[0],
-          schoolName: student.schoolName || '',
-          gradeLevel: student.gradeLevel || '',
-          selected: true
-        })));
-      }
-      
-      // Set preferred branch
-      if (parent.preferredBranchId && branches.some(b => b.id === parent.preferredBranchId)) {
-        setSelectedBranch(parent.preferredBranchId);
-      }
-      
-      setDataLoaded(true);
-    }
-  }, [parentLoading, registrationType, parent, existingStudents, event, branches, dataLoaded]);
-
   // Update parent forms when contact form changes (for parent counting)
   useEffect(() => {
-    if (event?.countingMethod === 'parents' && registrationType === 'member' && contactForm.name && contactForm.phone) {
+    if (event?.countingMethod === 'parents' && contactForm.name && contactForm.phone) {
       const updatedParentForms = [...parentForms];
       updatedParentForms[0] = {
         name: contactForm.name,
@@ -208,7 +134,7 @@ function EventRegistrationContent() {
       };
       setParentForms(updatedParentForms);
     }
-  }, [event?.countingMethod, registrationType, contactForm, parentForms.length]);
+  }, [event?.countingMethod, contactForm, parentForms.length]);
 
   const loadData = async () => {
     try {
@@ -252,10 +178,63 @@ function EventRegistrationContent() {
     }
   };
 
+  const handleUseMyData = () => {
+    if (!parent) return;
+    
+    console.log('[EventRegistration] Using parent data:', parent);
+    
+    setContactForm({
+      name: parent.displayName,
+      phone: parent.phone,
+      email: parent.email || '',
+      address: parent.address ? 
+        `${parent.address.houseNumber} ${parent.address.street || ''} ${parent.address.subDistrict} ${parent.address.district} ${parent.address.province} ${parent.address.postalCode}`.trim() 
+        : ''
+    });
+    
+    // Set preferred branch
+    if (parent.preferredBranchId && branches.some(b => b.id === parent.preferredBranchId)) {
+      setSelectedBranch(parent.preferredBranchId);
+    }
+    
+    // Pre-fill students if counting by students
+    if (event?.countingMethod === 'students' && existingStudents && existingStudents.length > 0) {
+      console.log('[EventRegistration] Pre-filling students:', existingStudents);
+      
+      setStudentForms(existingStudents.map(student => ({
+        name: student.name,
+        nickname: student.nickname,
+        birthdate: student.birthdate instanceof Date 
+          ? student.birthdate.toISOString().split('T')[0]
+          : new Date(student.birthdate).toISOString().split('T')[0],
+        schoolName: student.schoolName || '',
+        gradeLevel: student.gradeLevel || '',
+        selected: true
+      })));
+    }
+    
+    toast.success('ใช้ข้อมูลของคุณแล้ว');
+  };
+
+  const handleResetData = () => {
+    setContactForm({
+      name: '',
+      phone: '',
+      email: '',
+      address: ''
+    });
+    
+    // Reset students if needed
+    if (event?.countingMethod === 'students') {
+      setStudentForms([]);
+    }
+    
+    toast.success('รีเซ็ตข้อมูลแล้ว');
+  };
+
   const handleRefreshData = async () => {
     try {
       await refetchParent();
-      setDataLoaded(false); // Force re-fill data
       toast.success('โหลดข้อมูลใหม่เรียบร้อย');
     } catch (error) {
       toast.error('ไม่สามารถโหลดข้อมูลได้');
@@ -370,7 +349,7 @@ function EventRegistrationContent() {
         branchId: selectedBranch,
         
         // Guest or member
-        isGuest: registrationType === 'guest' || !isLoggedIn,
+        isGuest: !isLoggedIn || !parent,
         lineUserId: isLoggedIn ? profile?.userId : undefined,
         lineDisplayName: isLoggedIn ? profile?.displayName : undefined,
         linePictureUrl: isLoggedIn ? profile?.pictureUrl : undefined,
@@ -506,155 +485,45 @@ function EventRegistrationContent() {
           </CardContent>
         </Card>
 
-        {/* Registration Type (if logged in) */}
-        {isLoggedIn && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">วิธีลงทะเบียน</CardTitle>
-              {parent && (
-                <div className="text-sm text-gray-500 mt-1">
-                  {parent.displayName} • {formatPhoneNumber(parent.phone)}
-                </div>
-              )}
-            </CardHeader>
-            <CardContent>
-              <RadioGroup value={registrationType} onValueChange={(v) => {
-                setRegistrationType(v as any);
-                setDataLoaded(false); // Reset data loaded flag
-              }}>
-                {parent ? (
-                  <>
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="member" id="member" />
-                      <Label htmlFor="member" className="font-normal flex-1">
-                        <div className="flex items-center justify-between">
-                          <span>ใช้ข้อมูลจากบัญชีของฉัน</span>
-                          <Badge className="bg-green-100 text-green-700">
-                            <UserCheck className="h-3 w-3 mr-1" />
-                            แนะนำ
-                          </Badge>
-                        </div>
-                        {existingStudents && existingStudents.length > 0 && (
-                          <span className="text-xs text-gray-500">
-                            มีข้อมูลนักเรียน {existingStudents.length} คน
-                          </span>
-                        )}
-                      </Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <RadioGroupItem value="guest" id="guest" />
-                      <Label htmlFor="guest" className="font-normal">
-                        กรอกข้อมูลใหม่ (Guest)
-                      </Label>
-                    </div>
-                  </>
-                ) : (
-                  <div className="text-sm text-gray-600 bg-amber-50 p-3 rounded-lg">
-                    <AlertCircle className="h-4 w-4 text-amber-600 inline mr-1" />
-                    ไม่พบข้อมูลบัญชี กรุณากรอกข้อมูลใหม่
-                  </div>
-                )}
-              </RadioGroup>
-              
-              {registrationType === 'member' && parent && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={handleRefreshData}
-                  className="mt-3 w-full"
-                  disabled={parentLoading}
-                >
-                  {parentLoading ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                  )}
-                  โหลดข้อมูลใหม่
-                </Button>
-              )}
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Schedule & Branch Selection */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">เลือกรอบเวลาและสาขา</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Schedule */}
-            <div className="space-y-2">
-              <Label>รอบเวลา *</Label>
-              <Select value={selectedSchedule} onValueChange={setSelectedSchedule}>
-                <SelectTrigger>
-                  <SelectValue placeholder="เลือกรอบเวลา" />
-                </SelectTrigger>
-                <SelectContent>
-                  {schedules.map(schedule => {
-                    const available = schedule.maxAttendees - 
-                      Object.values(schedule.attendeesByBranch).reduce((sum, count) => sum + count, 0);
-                    
-                    return (
-                      <SelectItem key={schedule.id} value={schedule.id}>
-                        <div className="flex justify-between items-center w-full">
-                          <span>
-                            {formatDate(schedule.date, 'long')} • {schedule.startTime}-{schedule.endTime}
-                          </span>
-                          <Badge variant={available > 5 ? "outline" : "secondary"} className="ml-2">
-                            เหลือ {available} ที่
-                          </Badge>
-                        </div>
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-              {selectedScheduleData && availableSeats <= 5 && (
-                <p className="text-xs text-amber-600 flex items-center gap-1">
-                  <AlertCircle className="h-3 w-3" />
-                  เหลือที่ว่างน้อย รีบจองด่วน!
-                </p>
-              )}
-            </div>
-
-            {/* Branch */}
-            <div className="space-y-2">
-              <Label>สาขา *</Label>
-              <Select value={selectedBranch} onValueChange={setSelectedBranch}>
-                <SelectTrigger>
-                  <SelectValue placeholder="เลือกสาขา" />
-                </SelectTrigger>
-                <SelectContent>
-                  {branches.map(branch => (
-                    <SelectItem key={branch.id} value={branch.id}>
-                      <div className="flex items-center gap-2">
-                        <Building2 className="h-4 w-4" />
-                        {branch.name}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </CardContent>
-        </Card>
-
         {/* Contact Information */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">ข้อมูลติดต่อ</CardTitle>
+            <div className="flex justify-between items-center">
+              <CardTitle className="text-base">
+                {event?.countingMethod === 'parents' ? 'ผู้ร่วมงานหลัก' : 'ข้อมูลติดต่อ'}
+              </CardTitle>
+              {isLoggedIn && parent && (
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleUseMyData}
+                  >
+                    <UserCheck className="h-4 w-4 mr-1" />
+                    ใช้ข้อมูลของฉัน
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleResetData}
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="contactName">ชื่อผู้ติดต่อ *</Label>
+                <Label htmlFor="contactName">ชื่อ-นามสกุล *</Label>
                 <Input
                   id="contactName"
                   value={contactForm.name}
                   onChange={(e) => setContactForm({ ...contactForm, name: e.target.value })}
                   placeholder="ชื่อ-นามสกุล"
-                  disabled={registrationType === 'member' && isLoggedIn && !!parent}
                 />
               </div>
               
@@ -666,7 +535,6 @@ function EventRegistrationContent() {
                   value={contactForm.phone}
                   onChange={(e) => setContactForm({ ...contactForm, phone: e.target.value })}
                   placeholder="0812345678"
-                  disabled={registrationType === 'member' && isLoggedIn && !!parent}
                 />
               </div>
               
@@ -678,7 +546,6 @@ function EventRegistrationContent() {
                   value={contactForm.email}
                   onChange={(e) => setContactForm({ ...contactForm, email: e.target.value })}
                   placeholder="email@example.com"
-                  disabled={registrationType === 'member' && isLoggedIn && !!parent?.email}
                 />
               </div>
               
@@ -690,7 +557,6 @@ function EventRegistrationContent() {
                   onChange={(e) => setContactForm({ ...contactForm, address: e.target.value })}
                   placeholder="ที่อยู่สำหรับติดต่อ"
                   rows={2}
-                  disabled={registrationType === 'member' && isLoggedIn && !!parent?.address}
                 />
               </div>
             </div>
@@ -711,7 +577,7 @@ function EventRegistrationContent() {
               ) : (
                 studentForms.map((student, index) => (
                   <div key={index} className="p-4 border rounded-lg space-y-3">
-                    {registrationType === 'member' && existingStudents && existingStudents.length > 0 && index < existingStudents.length ? (
+                    {isLoggedIn && parent && existingStudents && existingStudents.length > 0 && index < existingStudents.length ? (
                       // Show as checkbox for existing students
                       <div className="flex items-start gap-3">
                         <Checkbox
@@ -797,7 +663,7 @@ function EventRegistrationContent() {
                 ))
               )}
               
-              {(registrationType === 'guest' || !existingStudents || existingStudents.length === 0 || 
+              {(!isLoggedIn || !parent || !existingStudents || existingStudents.length === 0 || 
                 studentForms.length > existingStudents.length) && (
                 <Button
                   type="button"
@@ -819,37 +685,10 @@ function EventRegistrationContent() {
             <CardHeader>
               <CardTitle className="text-base">ผู้ร่วมงานเพิ่มเติม</CardTitle>
               <p className="text-sm text-gray-500">
-                ผู้ติดต่อหลักถือเป็นผู้ร่วมงานคนแรกโดยอัตโนมัติ
+                เพิ่มผู้ร่วมงานอื่นๆ นอกจากผู้ร่วมงานหลัก
               </p>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* แสดงข้อมูลผู้ติดต่อหลักเป็นผู้ร่วมงานคนแรก (อ่านอย่างเดียว) */}
-              <div className="p-4 border rounded-lg bg-gray-50 space-y-3">
-                <div className="flex justify-between items-center mb-2">
-                  <h4 className="font-medium flex items-center gap-2">
-                    ผู้ร่วมงานคนที่ 1
-                    <Badge className="bg-green-100 text-green-700 text-xs">ผู้ติดต่อหลัก</Badge>
-                  </h4>
-                </div>
-                
-                <div className="space-y-2 text-sm">
-                  <div>
-                    <span className="text-gray-600">ชื่อ-นามสกุล:</span>
-                    <span className="ml-2 font-medium">{contactForm.name || '-'}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-600">เบอร์โทร:</span>
-                    <span className="ml-2 font-medium">{contactForm.phone || '-'}</span>
-                  </div>
-                  {contactForm.email && (
-                    <div>
-                      <span className="text-gray-600">อีเมล:</span>
-                      <span className="ml-2">{contactForm.email}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
               {/* ผู้ร่วมงานเพิ่มเติม */}
               {parentForms.slice(1).map((parent, index) => (
                 <div key={index + 1} className="p-4 border rounded-lg space-y-3">
@@ -912,6 +751,7 @@ function EventRegistrationContent() {
               
               <p className="text-xs text-gray-500 text-center">
                 จำนวนผู้ร่วมงานทั้งหมด: {parentForms.filter(p => p.name && p.phone).length} คน
+                (รวมผู้ร่วมงานหลัก)
               </p>
             </CardContent>
           </Card>
