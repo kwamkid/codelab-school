@@ -115,6 +115,18 @@ export function Timeline({
     return brightness > 155;
   };
 
+  // Group busy slots by room
+  const roomBusySlots = new Map<string, typeof dayInfo.busySlots>();
+  
+  if (dayInfo?.busySlots) {
+    dayInfo.busySlots.forEach(slot => {
+      if (!roomBusySlots.has(slot.roomId)) {
+        roomBusySlots.set(slot.roomId, []);
+      }
+      roomBusySlots.get(slot.roomId)!.push(slot);
+    });
+  }
+
   return (
     <Card>
       <CardContent className="p-6">
@@ -144,8 +156,8 @@ export function Timeline({
             {/* Room Rows */}
             <div className="space-y-2">
               {roomAvailability.map(({ room }) => {
-                // Get busy slots for this room
-                const roomBusySlots = dayInfo?.busySlots.filter(slot => slot.roomId === room.id) || [];
+                // Get busy slots for this room from the map
+                const roomSlots = roomBusySlots.get(room.id) || [];
                 
                 return (
                   <div key={room.id} className="flex items-stretch">
@@ -165,8 +177,8 @@ export function Timeline({
                         <div className="border-l border-gray-200 w-px" />
                       </div>
                       
-                      {/* Busy Slots with Popover */}
-                      {roomBusySlots.map((busySlot, idx) => {
+                      {/* Busy Slots with Popover - Using unique key with both room.id and index */}
+                      {roomSlots.map((busySlot, idx) => {
                         const startPercent = getTimePercentage(busySlot.startTime, timeRange.start, timeRange.end);
                         const endPercent = getTimePercentage(busySlot.endTime, timeRange.start, timeRange.end);
                         const width = endPercent - startPercent;
@@ -175,8 +187,15 @@ export function Timeline({
                         let bgColor = '';
                         let textColor = 'text-white';
                         let borderColor = '';
+                        let opacity = 1;
                         
-                        if (busySlot.type === 'class' && busySlot.subjectId) {
+                        // Check if class is completed
+                        if (busySlot.type === 'class' && busySlot.isCompleted) {
+                          bgColor = '#9CA3AF'; // gray-400
+                          borderColor = '#6B7280'; // gray-500
+                          textColor = 'text-white';
+                          opacity = 0.8;
+                        } else if (busySlot.type === 'class' && busySlot.subjectId) {
                           const subject = subjects.find(s => s.id === busySlot.subjectId);
                           if (subject?.color) {
                             bgColor = subject.color;
@@ -212,8 +231,19 @@ export function Timeline({
                           studentInfo = studentName;
                         }
                         
+                        // Create unique key using room ID, class ID, slot index, and type
+                        const uniqueKey = busySlot.classId 
+                          ? `${room.id}-${busySlot.classId}-${idx}-${busySlot.type}` 
+                          : `${room.id}-${idx}-${busySlot.type}-${busySlot.startTime}`;
+                        
+                        // Create display name with session number for classes
+                        let displayName = busySlot.name;
+                        if (busySlot.type === 'class' && busySlot.sessionNumber && busySlot.totalSessions) {
+                          displayName = `${busySlot.name} (${busySlot.sessionNumber}/${busySlot.totalSessions})`;
+                        }
+                        
                         return (
-                          <Popover key={idx}>
+                          <Popover key={uniqueKey}>
                             <PopoverTrigger asChild>
                               <div
                                 className={cn(
@@ -225,10 +255,12 @@ export function Timeline({
                                   width: `${width}%`,
                                   backgroundColor: bgColor,
                                   border: borderColor ? `1px solid ${borderColor}` : `2px solid ${bgColor}`,
+                                  zIndex: idx + 1, // เพิ่ม z-index เพื่อป้องกันการทับซ้อน
+                                  opacity: opacity
                                 }}
                               >
                                 <div className="text-xs font-medium truncate">
-                                  {busySlot.name}
+                                  {displayName}
                                 </div>
                               </div>
                             </PopoverTrigger>
@@ -240,9 +272,18 @@ export function Timeline({
                             >
                               <div className="space-y-3">
                                 <div>
-                                  <h4 className="font-semibold text-gray-900">{busySlot.name}</h4>
+                                  <h4 className="font-semibold text-gray-900">
+                                    {busySlot.name}
+                                    {busySlot.type === 'class' && busySlot.sessionNumber && busySlot.totalSessions && (
+                                      <span className="ml-2 text-sm font-normal text-gray-600">
+                                        (ครั้งที่ {busySlot.sessionNumber}/{busySlot.totalSessions})
+                                      </span>
+                                    )}
+                                  </h4>
                                   <p className="text-xs text-gray-500 mt-0.5">
-                                    {busySlot.type === 'class' ? 'คลาสปกติ' : 
+                                    {busySlot.type === 'class' ? (
+                                      busySlot.isCompleted ? 'คลาสจบแล้ว' : 'คลาสปกติ'
+                                    ) : 
                                      busySlot.type === 'makeup' ? 'เรียนชดเชย' : 'ทดลองเรียน'}
                                   </p>
                                 </div>
@@ -264,8 +305,8 @@ export function Timeline({
                                       <div className="text-gray-700">
                                         <div className="font-medium mb-1">นักเรียน {busySlot.trialCount} คน:</div>
                                         <div className="space-y-1 text-sm pl-2">
-                                          {busySlot.trialDetails.map((trial: any, idx: number) => (
-                                            <div key={idx} className="flex items-center gap-1">
+                                          {busySlot.trialDetails.map((trial: any, trialIdx: number) => (
+                                            <div key={`trial-${trialIdx}`} className="flex items-center gap-1">
                                               <span className="text-gray-500">•</span>
                                               <span>{trial.studentName}</span>
                                               <span className="text-gray-500">-</span>
@@ -317,6 +358,10 @@ export function Timeline({
                 <div className="flex items-center gap-2">
                   <div className="w-4 h-4 rounded" style={{ backgroundColor: '#FED7AA', border: '1px solid #FDBA74' }}></div>
                   <span>ทดลองเรียน</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded" style={{ backgroundColor: '#9CA3AF', border: '1px solid #6B7280' }}></div>
+                  <span>คลาสจบแล้ว</span>
                 </div>
                 <div className="text-gray-500 text-xs ml-4">
                   * คลาสปกติจะแสดงสีตามวิชา

@@ -5,14 +5,17 @@ import {
   query, 
   where, 
   getDocs,
-  Timestamp 
+  Timestamp,
+  DocumentData,
+  QuerySnapshot
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { isHoliday } from '@/lib/services/holidays';
-import { getClasses } from '@/lib/services/classes';
+import { getClasses, getClassSchedules } from '@/lib/services/classes';
 import { getMakeupClasses } from '@/lib/services/makeup';
 import { getTrialSessions } from '@/lib/services/trial-bookings';
 import { getSubjects } from '@/lib/services/subjects';
+import { Class } from '@/types/models';
 
 export interface AvailabilityCheckResult {
   available: boolean;
@@ -140,39 +143,42 @@ async function checkRoomAvailability(
     !(excludeType === 'class' && cls.id === excludeId)
   );
   
-  // Check time conflicts for each class
-  for (const cls of relevantClasses) {
-    // Check if the class has a session on this specific date
-    const schedulesRef = collection(db, 'classes', cls.id, 'schedules');
-    
-    // Create start and end of day for query
+  // Batch check all schedules
+  if (relevantClasses.length > 0) {
     const startOfDay = new Date(date);
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(date);
     endOfDay.setHours(23, 59, 59, 999);
     
-    const scheduleQuery = query(
-      schedulesRef,
-      where('sessionDate', '>=', Timestamp.fromDate(startOfDay)),
-      where('sessionDate', '<=', Timestamp.fromDate(endOfDay)),
-      where('status', '!=', 'cancelled')
+    // Get all schedules for relevant classes in one query
+    const schedulePromises = relevantClasses.map(cls => 
+      getDocs(query(
+        collection(db, 'classes', cls.id, 'schedules'),
+        where('sessionDate', '>=', Timestamp.fromDate(startOfDay)),
+        where('sessionDate', '<=', Timestamp.fromDate(endOfDay)),
+        where('status', '!=', 'cancelled')
+      ))
     );
-    const scheduleSnapshot = await getDocs(scheduleQuery);
     
-    if (!scheduleSnapshot.empty) {
-      // Check time overlap
-      if (startTime < cls.endTime && endTime > cls.startTime) {
-        issues.push({
-          type: 'room_conflict',
-          message: `ห้องไม่ว่าง - มีคลาส ${cls.name} เวลา ${cls.startTime}-${cls.endTime}`,
-          details: {
-            conflictType: 'class',
-            conflictName: cls.name,
-            conflictTime: `${cls.startTime}-${cls.endTime}`
-          }
-        });
+    const scheduleSnapshots = await Promise.all(schedulePromises);
+    
+    // Check each class with schedule
+    relevantClasses.forEach((cls, index) => {
+      if (!scheduleSnapshots[index].empty) {
+        // Check time overlap
+        if (startTime < cls.endTime && endTime > cls.startTime) {
+          issues.push({
+            type: 'room_conflict',
+            message: `ห้องไม่ว่าง - มีคลาส ${cls.name} เวลา ${cls.startTime}-${cls.endTime}`,
+            details: {
+              conflictType: 'class',
+              conflictName: cls.name,
+              conflictTime: `${cls.startTime}-${cls.endTime}`
+            }
+          });
+        }
       }
-    }
+    });
   }
   
   // 2. Check makeup classes
@@ -210,7 +216,6 @@ async function checkRoomAvailability(
   }
   
   // 3. SKIP trial sessions checking - อนุญาตให้นัดทดลองเรียนหลายคนในเวลาเดียวกันได้
-  // ไม่นับ trial sessions เป็น conflict เพื่อให้สามารถนัดหลายคนในช่วงเวลาเดียวกันได้
   
   return issues;
 }
@@ -242,38 +247,40 @@ async function checkTeacherAvailability(
     !(excludeType === 'class' && cls.id === excludeId)
   );
   
-  // Check time conflicts
-  for (const cls of teacherClasses) {
-    // Check if the class has a session on this specific date
-    const schedulesRef = collection(db, 'classes', cls.id, 'schedules');
-    
+  // Batch check all schedules
+  if (teacherClasses.length > 0) {
     const startOfDay = new Date(date);
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(date);
     endOfDay.setHours(23, 59, 59, 999);
     
-    const scheduleQuery = query(
-      schedulesRef,
-      where('sessionDate', '>=', Timestamp.fromDate(startOfDay)),
-      where('sessionDate', '<=', Timestamp.fromDate(endOfDay)),
-      where('status', '!=', 'cancelled')
+    const schedulePromises = teacherClasses.map(cls => 
+      getDocs(query(
+        collection(db, 'classes', cls.id, 'schedules'),
+        where('sessionDate', '>=', Timestamp.fromDate(startOfDay)),
+        where('sessionDate', '<=', Timestamp.fromDate(endOfDay)),
+        where('status', '!=', 'cancelled')
+      ))
     );
-    const scheduleSnapshot = await getDocs(scheduleQuery);
     
-    if (!scheduleSnapshot.empty) {
-      // Check time overlap
-      if (startTime < cls.endTime && endTime > cls.startTime) {
-        issues.push({
-          type: 'teacher_conflict',
-          message: `ครูไม่ว่าง - มีคลาส ${cls.name} เวลา ${cls.startTime}-${cls.endTime}`,
-          details: {
-            conflictType: 'class',
-            conflictName: cls.name,
-            conflictTime: `${cls.startTime}-${cls.endTime}`
-          }
-        });
+    const scheduleSnapshots = await Promise.all(schedulePromises);
+    
+    teacherClasses.forEach((cls, index) => {
+      if (!scheduleSnapshots[index].empty) {
+        // Check time overlap
+        if (startTime < cls.endTime && endTime > cls.startTime) {
+          issues.push({
+            type: 'teacher_conflict',
+            message: `ครูไม่ว่าง - มีคลาส ${cls.name} เวลา ${cls.startTime}-${cls.endTime}`,
+            details: {
+              conflictType: 'class',
+              conflictName: cls.name,
+              conflictTime: `${cls.startTime}-${cls.endTime}`
+            }
+          });
+        }
       }
-    }
+    });
   }
   
   // 2. Check makeup classes
@@ -309,8 +316,7 @@ async function checkTeacherAvailability(
     }
   }
   
-  // 3. SKIP trial sessions checking - อนุญาตให้ครูสอนทดลองเรียนหลายคนพร้อมกันได้
-  // ไม่นับ trial sessions เป็น conflict สำหรับครู เพื่อให้ครูสามารถสอนทดลองเรียนได้หลายคนในเวลาเดียวกัน
+  // 3. SKIP trial sessions checking
   
   return issues;
 }
@@ -326,7 +332,7 @@ export async function isTimeSlotAvailable(
 }
 
 /**
- * Get all conflicts for a specific date and branch
+ * Optimized get all conflicts for a specific date and branch
  */
 export async function getDayConflicts(
   date: Date,
@@ -344,9 +350,14 @@ export async function getDayConflicts(
     teacherId: string;
     teacherName?: string;
     subjectId?: string;
+    subjectColor?: string;
     studentName?: string;
     subjectName?: string;
     trialCount?: number;
+    classId?: string;
+    sessionNumber?: number;
+    totalSessions?: number;
+    isCompleted?: boolean;
     trialDetails?: Array<{
       id: string;
       studentName: string;
@@ -370,9 +381,14 @@ export async function getDayConflicts(
     teacherId: string;
     teacherName?: string;
     subjectId?: string;
+    subjectColor?: string;
     studentName?: string;
     subjectName?: string;
     trialCount?: number;
+    classId?: string;
+    sessionNumber?: number;
+    totalSessions?: number;
+    isCompleted?: boolean;
     trialDetails?: Array<{
       id: string;
       studentName: string;
@@ -383,7 +399,7 @@ export async function getDayConflicts(
     }>;
   }> = [];
   
-  // Get all necessary data
+  // Load all data in parallel
   const [classes, makeupClasses, trialSessions, subjects] = await Promise.all([
     getClasses(),
     getMakeupClasses(), 
@@ -402,6 +418,7 @@ export async function getDayConflicts(
   // Create lookup maps
   const teacherMap = new Map(teachers.map(t => [t.id, t]));
   const roomMap = new Map(rooms.map(r => [r.id, r]));
+  const subjectMap = new Map(subjects.map(s => [s.id, s]));
   
   // Get all classes on that day
   const dayOfWeek = date.getDay();
@@ -411,48 +428,66 @@ export async function getDayConflicts(
   const relevantClasses = classes.filter(cls => 
     cls.branchId === branchId &&
     cls.daysOfWeek.includes(dayOfWeek) &&
-    (cls.status === 'published' || cls.status === 'started') &&
+    (cls.status === 'published' || cls.status === 'started' || cls.status === 'completed') &&
     new Date(cls.startDate) <= dateOnly &&
     new Date(cls.endDate) >= dateOnly
   );
   
-  // Check each class for actual sessions
-  for (const cls of relevantClasses) {
-    const schedulesRef = collection(db, 'classes', cls.id, 'schedules');
+  // Batch load all schedules for relevant classes
+  if (relevantClasses.length > 0) {
     const startOfDay = new Date(date);
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(date);
     endOfDay.setHours(23, 59, 59, 999);
     
-    const scheduleQuery = query(
-      schedulesRef,
-      where('sessionDate', '>=', Timestamp.fromDate(startOfDay)),
-      where('sessionDate', '<=', Timestamp.fromDate(endOfDay)),
-      where('status', '!=', 'cancelled')
-    );
-    const scheduleSnapshot = await getDocs(scheduleQuery);
+    // Create all schedule queries
+    const scheduleQueries = relevantClasses.map(cls => ({
+      classId: cls.id,
+      query: getDocs(query(
+        collection(db, 'classes', cls.id, 'schedules'),
+        where('sessionDate', '>=', Timestamp.fromDate(startOfDay)),
+        where('sessionDate', '<=', Timestamp.fromDate(endOfDay)),
+        where('status', '!=', 'cancelled')
+      ))
+    }));
     
-    if (!scheduleSnapshot.empty) {
-      const teacher = teacherMap.get(cls.teacherId);
-      const room = roomMap.get(cls.roomId);
-      const subject = subjects.find(s => s.id === cls.subjectId);
+    // Execute all queries in parallel
+    const scheduleResults = await Promise.all(
+      scheduleQueries.map(sq => sq.query)
+    );
+    
+    // Process results
+    relevantClasses.forEach((cls, index) => {
+      const scheduleSnapshot = scheduleResults[index];
       
-      busySlots.push({
-        startTime: cls.startTime,
-        endTime: cls.endTime,
-        type: 'class',
-        name: cls.name,
-        roomId: cls.roomId,
-        roomName: room?.name || cls.roomId,
-        teacherId: cls.teacherId,
-        teacherName: teacher?.nickname || teacher?.name || 'ไม่ระบุครู',
-        subjectId: cls.subjectId,
-        subjectName: subject?.name
-      });
-    }
+      if (!scheduleSnapshot.empty) {
+        const sessionData = scheduleSnapshot.docs[0].data();
+        const teacher = teacherMap.get(cls.teacherId);
+        const room = roomMap.get(cls.roomId);
+        const subject = subjectMap.get(cls.subjectId);
+        
+        busySlots.push({
+          startTime: cls.startTime,
+          endTime: cls.endTime,
+          type: 'class',
+          name: cls.name,
+          roomId: cls.roomId,
+          roomName: room?.name || cls.roomId,
+          teacherId: cls.teacherId,
+          teacherName: teacher?.nickname || teacher?.name || 'ไม่ระบุครู',
+          subjectId: cls.subjectId,
+          subjectName: subject?.name,
+          subjectColor: subject?.color,
+          classId: cls.id,
+          sessionNumber: sessionData.sessionNumber,
+          totalSessions: cls.totalSessions,
+          isCompleted: cls.status === 'completed'
+        });
+      }
+    });
   }
   
-  // Get makeup classes
+  // Process makeup classes (already optimized)
   const relevantMakeups = makeupClasses.filter(makeup => 
     makeup.status === 'scheduled' &&
     makeup.makeupSchedule &&
@@ -460,32 +495,41 @@ export async function getDayConflicts(
     new Date(makeup.makeupSchedule.date).toDateString() === date.toDateString()
   );
   
-  for (const makeup of relevantMakeups) {
-    if (makeup.makeupSchedule) {
-      const { getStudent } = await import('@/lib/services/parents');
-      const student = await getStudent(makeup.parentId, makeup.studentId);
-      const teacher = teacherMap.get(makeup.makeupSchedule.teacherId);
-      const room = roomMap.get(makeup.makeupSchedule.roomId);
-      const originalClass = classes.find(c => c.id === makeup.originalClassId);
-      const subject = originalClass ? subjects.find(s => s.id === originalClass.subjectId) : null;
-      
-      busySlots.push({
-        startTime: makeup.makeupSchedule.startTime,
-        endTime: makeup.makeupSchedule.endTime,
-        type: 'makeup',
-        name: `Makeup: ${student?.nickname || 'นักเรียน'}`,
-        roomId: makeup.makeupSchedule.roomId,
-        roomName: room?.name || makeup.makeupSchedule.roomId,
-        teacherId: makeup.makeupSchedule.teacherId,
-        teacherName: teacher?.nickname || teacher?.name || 'ไม่ระบุครู',
-        studentName: student?.nickname || student?.name || 'นักเรียน',
-        subjectId: originalClass?.subjectId,
-        subjectName: subject?.name
-      });
-    }
+  // Batch load students for makeup classes
+  if (relevantMakeups.length > 0) {
+    const { getStudent } = await import('@/lib/services/parents');
+    const studentPromises = relevantMakeups.map(makeup => 
+      getStudent(makeup.parentId, makeup.studentId)
+    );
+    const students = await Promise.all(studentPromises);
+    
+    relevantMakeups.forEach((makeup, index) => {
+      if (makeup.makeupSchedule) {
+        const student = students[index];
+        const teacher = teacherMap.get(makeup.makeupSchedule.teacherId);
+        const room = roomMap.get(makeup.makeupSchedule.roomId);
+        const originalClass = classes.find(c => c.id === makeup.originalClassId);
+        const subject = originalClass ? subjectMap.get(originalClass.subjectId) : null;
+        
+        busySlots.push({
+          startTime: makeup.makeupSchedule.startTime,
+          endTime: makeup.makeupSchedule.endTime,
+          type: 'makeup',
+          name: `Makeup: ${student?.nickname || 'นักเรียน'}`,
+          roomId: makeup.makeupSchedule.roomId,
+          roomName: room?.name || makeup.makeupSchedule.roomId,
+          teacherId: makeup.makeupSchedule.teacherId,
+          teacherName: teacher?.nickname || teacher?.name || 'ไม่ระบุครู',
+          studentName: student?.nickname || student?.name || 'นักเรียน',
+          subjectId: originalClass?.subjectId,
+          subjectName: subject?.name,
+          subjectColor: subject?.color
+        });
+      }
+    });
   }
   
-  // Get trial sessions and GROUP them
+  // Process trial sessions (already optimized with grouping)
   const relevantTrials = trialSessions.filter(trial =>
     trial.status === 'scheduled' &&
     trial.branchId === branchId &&
@@ -511,18 +555,15 @@ export async function getDayConflicts(
     const teacher = teacherMap.get(firstTrial.teacherId);
     const room = roomMap.get(firstTrial.roomId);
     
-    // สร้างชื่อที่รวมนักเรียนทั้งหมด
     const studentNames = trials.map(t => t.studentName).join(', ');
     
-    // รวบรวมวิชาที่ไม่ซ้ำกัน
     const uniqueSubjects = [...new Set(trials.map(t => {
-      const subject = subjects.find(s => s.id === t.subjectId);
+      const subject = subjectMap.get(t.subjectId);
       return subject?.name || 'ไม่ระบุวิชา';
     }))];
     
-    // สร้างรายละเอียดของแต่ละคน
     const trialDetails = trials.map(trial => {
-      const subject = subjects.find(s => s.id === trial.subjectId);
+      const subject = subjectMap.get(trial.subjectId);
       return {
         id: trial.id,
         studentName: trial.studentName,

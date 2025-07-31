@@ -50,6 +50,12 @@ interface TimeSlot {
   conflicts?: Array<{
     type: 'class' | 'makeup' | 'trial';
     name: string;
+    subjectId?: string;
+    subjectColor?: string;
+    classId?: string;
+    sessionNumber?: number;
+    totalSessions?: number;
+    isCompleted?: boolean;
   }>;
 }
 
@@ -218,7 +224,11 @@ export default function AvailabilityReportPage() {
             type: c.type,
             name: c.name,
             subjectId: c.subjectId,
-            subjectColor: c.subjectColor
+            subjectColor: c.subjectColor,
+            classId: c.classId,
+            sessionNumber: c.sessionNumber,
+            totalSessions: c.totalSessions,
+            isCompleted: c.isCompleted
           }));
         }
       });

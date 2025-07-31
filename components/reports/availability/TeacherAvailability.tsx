@@ -205,8 +205,14 @@ export function TeacherAvailability({
                         // Get color based on type
                         let bgColor = '';
                         let textColor = 'text-white';
+                        let opacity = 1;
                         
-                        if (busySlot.type === 'class' && busySlot.subjectId) {
+                        // Check if class is completed
+                        if (busySlot.type === 'class' && busySlot.isCompleted) {
+                          bgColor = '#9CA3AF'; // gray-400
+                          textColor = 'text-white';
+                          opacity = 0.8;
+                        } else if (busySlot.type === 'class' && busySlot.subjectId) {
                           const subject = subjects.find(s => s.id === busySlot.subjectId);
                           if (subject?.color) {
                             bgColor = subject.color;
@@ -233,8 +239,19 @@ export function TeacherAvailability({
                           studentInfo = busySlot.studentName || busySlot.name.split(': ')[1] || 'นักเรียน';
                         }
                         
+                        // Create display name with session info
+                        let displayName = busySlot.name;
+                        if (busySlot.type === 'class' && busySlot.sessionNumber && busySlot.totalSessions) {
+                          displayName = `${busySlot.name} (${busySlot.sessionNumber}/${busySlot.totalSessions})`;
+                        }
+                        
+                        // Create unique key
+                        const uniqueKey = busySlot.classId 
+                          ? `${teacher.id}-${busySlot.classId}-${idx}` 
+                          : `${teacher.id}-${idx}-${busySlot.type}-${busySlot.startTime}`;
+                        
                         return (
-                          <Popover key={idx}>
+                          <Popover key={uniqueKey}>
                             <PopoverTrigger asChild>
                               <div
                                 className={cn(
@@ -246,11 +263,12 @@ export function TeacherAvailability({
                                   width: `${width}%`,
                                   backgroundColor: bgColor,
                                   border: `2px solid ${bgColor}`,
-                                  filter: 'brightness(1.1)'
+                                  filter: 'brightness(1.1)',
+                                  opacity: opacity
                                 }}
                               >
                                 <div className="text-xs font-medium truncate">
-                                  {busySlot.name}
+                                  {displayName}
                                 </div>
                               </div>
                             </PopoverTrigger>
@@ -261,9 +279,17 @@ export function TeacherAvailability({
                             >
                               <div className="space-y-3">
                                 <div>
-                                  <h4 className="font-semibold text-gray-900">{busySlot.name}</h4>
+                                  <h4 className="font-semibold text-gray-900">
+                                    {busySlot.name}
+                                    {busySlot.type === 'class' && busySlot.sessionNumber && busySlot.totalSessions && (
+                                      <span className="ml-2 text-sm font-normal text-gray-600">
+                                        (ครั้งที่ {busySlot.sessionNumber}/{busySlot.totalSessions})
+                                      </span>
+                                    )}
+                                  </h4>
                                   <p className="text-xs text-gray-500 mt-0.5">
-                                    {busySlot.type === 'class' ? 'คลาสปกติ' : 
+                                    {busySlot.type === 'class' ? 
+                                      (busySlot.isCompleted ? 'คลาสจบแล้ว' : 'คลาสปกติ') : 
                                      busySlot.type === 'makeup' ? 'เรียนชดเชย' : 'ทดลองเรียน'}
                                   </p>
                                 </div>
@@ -368,6 +394,10 @@ export function TeacherAvailability({
                 <div className="flex items-center gap-2">
                   <div className="w-4 h-4 rounded" style={{ backgroundColor: '#DBEAFE' }}></div>
                   <span>คลาสปกติ</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded" style={{ backgroundColor: '#9CA3AF' }}></div>
+                  <span>คลาสจบแล้ว</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="w-4 h-4 rounded" style={{ backgroundColor: '#E9D5FF' }}></div>

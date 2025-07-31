@@ -44,6 +44,7 @@ import {
   ArrowUp,
   ArrowDown,
   Clock,
+  BookOpen,
   Hash
 } from 'lucide-react';
 import { getSubject } from '@/lib/services/subjects';

@@ -26,6 +26,10 @@ interface TimeSlot {
     name: string;
     subjectId?: string;
     subjectColor?: string;
+    classId?: string;
+    sessionNumber?: number;
+    totalSessions?: number;
+    isCompleted?: boolean;
   }>;
 }
 
@@ -75,7 +79,7 @@ export function RoomAvailability({ roomAvailability, subjects = [] }: RoomAvaila
     return Math.max(0, Math.min(100, percentage));
   };
 
-  // Merge consecutive slots for display
+  // Merge consecutive slots for display with unique identification
   const mergeSlots = (slots: TimeSlot[]) => {
     const merged: Array<{
       startTime: string;
@@ -86,22 +90,35 @@ export function RoomAvailability({ roomAvailability, subjects = [] }: RoomAvaila
       count: number;
       subjectId?: string;
       subjectColor?: string;
+      classId?: string;
+      sessionNumber?: number;
+      totalSessions?: number;
+      isCompleted?: boolean;
+      conflicts?: Array<any>;
     }> = [];
     
     let current: any = null;
     
     slots.forEach(slot => {
       const isAvailable = slot.available;
-      const conflictType = slot.conflicts?.[0]?.type;
-      const conflictName = slot.conflicts?.[0]?.name;
-      const subjectId = slot.conflicts?.[0]?.subjectId;
-      const subjectColor = slot.conflicts?.[0]?.subjectColor;
+      const conflict = slot.conflicts?.[0];
+      const conflictType = conflict?.type;
+      const conflictName = conflict?.name;
+      const subjectId = conflict?.subjectId;
+      const subjectColor = conflict?.subjectColor;
+      const classId = conflict?.classId;
+      const sessionNumber = conflict?.sessionNumber;
+      const totalSessions = conflict?.totalSessions;
+      const isCompleted = conflict?.isCompleted;
+      
+      // Create a unique identifier for comparison
+      const identifier = !isAvailable && conflict ? 
+        `${conflictType}-${conflictName}-${classId || 'no-class'}-${subjectId || 'no-subject'}` : 
+        'available';
       
       if (!current || 
           current.available !== isAvailable || 
-          current.type !== conflictType ||
-          current.name !== conflictName ||
-          current.subjectId !== subjectId) {
+          current.identifier !== identifier) {
         // Start new segment
         if (current) merged.push(current);
         current = {
@@ -112,16 +129,29 @@ export function RoomAvailability({ roomAvailability, subjects = [] }: RoomAvaila
           name: conflictName,
           count: 1,
           subjectId,
-          subjectColor
+          subjectColor,
+          classId,
+          sessionNumber,
+          totalSessions,
+          isCompleted,
+          identifier,
+          conflicts: slot.conflicts || []
         };
       } else {
         // Extend current segment
         current.endTime = slot.endTime;
         current.count++;
+        // Merge conflicts
+        if (slot.conflicts) {
+          current.conflicts = [...(current.conflicts || []), ...slot.conflicts];
+        }
       }
     });
     
-    if (current) merged.push(current);
+    if (current) {
+      delete current.identifier; // Remove identifier from final output
+      merged.push(current);
+    }
     return merged;
   };
 
@@ -132,6 +162,16 @@ export function RoomAvailability({ roomAvailability, subjects = [] }: RoomAvaila
         bg: 'bg-green-100',
         border: 'border-green-300',
         text: 'text-green-700'
+      };
+    }
+    
+    // Check if completed class
+    if (segment.type === 'class' && segment.isCompleted) {
+      return {
+        bg: 'bg-gray-300',
+        border: 'border-gray-400',
+        text: 'text-gray-700',
+        opacity: 0.8
       };
     }
     
@@ -198,6 +238,17 @@ export function RoomAvailability({ roomAvailability, subjects = [] }: RoomAvaila
     };
   };
 
+  // Create display name with session info
+  const getDisplayName = (segment: any) => {
+    if (!segment.available && segment.name) {
+      if (segment.type === 'class' && segment.sessionNumber && segment.totalSessions) {
+        return `${segment.name} (${segment.sessionNumber}/${segment.totalSessions})`;
+      }
+      return segment.name;
+    }
+    return '';
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -211,6 +262,10 @@ export function RoomAvailability({ roomAvailability, subjects = [] }: RoomAvaila
             <div className="flex items-center gap-2">
               <div className="w-4 h-4 bg-blue-100 border border-blue-300 rounded"></div>
               <span>คลาสปกติ</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 bg-gray-300 border border-gray-400 rounded"></div>
+              <span>คลาสจบแล้ว</span>
             </div>
             <div className="flex items-center gap-2">
               <div className="w-4 h-4 bg-purple-100 border border-purple-300 rounded"></div>
@@ -300,10 +355,11 @@ export function RoomAvailability({ roomAvailability, subjects = [] }: RoomAvaila
                       const endPercent = getTimePercentage(segment.endTime);
                       const width = endPercent - startPercent;
                       const colors = getSegmentColor(segment);
+                      const displayName = getDisplayName(segment);
                       
                       return (
                         <div
-                          key={idx}
+                          key={`${room.id}-segment-${idx}-${segment.startTime}`}
                           className={cn(
                             "absolute top-1 bottom-1 rounded border transition-all hover:z-10 hover:shadow-md",
                             colors.useCustomColor ? '' : colors.bg,
@@ -315,11 +371,14 @@ export function RoomAvailability({ roomAvailability, subjects = [] }: RoomAvaila
                             ...(colors.useCustomColor && {
                               backgroundColor: colors.bgColor,
                               borderColor: colors.borderColor,
+                            }),
+                            ...(colors.opacity && {
+                              opacity: colors.opacity
                             })
                           }}
                           title={segment.available 
                             ? `ว่าง: ${segment.startTime} - ${segment.endTime}` 
-                            : `${segment.name}: ${segment.startTime} - ${segment.endTime}`
+                            : `${displayName}: ${segment.startTime} - ${segment.endTime}`
                           }
                         >
                           <div className={cn(
@@ -329,7 +388,7 @@ export function RoomAvailability({ roomAvailability, subjects = [] }: RoomAvaila
                             {segment.available ? (
                               <CheckCircle className="h-3.5 w-3.5" />
                             ) : (
-                              <span className="truncate">{segment.name}</span>
+                              <span className="truncate">{displayName}</span>
                             )}
                           </div>
                         </div>
