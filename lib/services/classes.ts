@@ -947,6 +947,93 @@ export async function getEnrolledStudents(classId: string): Promise<string[]> {
   }
 }
 
+// เพิ่ม functions เหล่านี้ใน lib/services/classes.ts
+
+// Manual update class status based on dates and sessions
+export async function updateClassStatusBasedOnDates(classId: string): Promise<void> {
+  try {
+    const classDoc = await getClass(classId);
+    if (!classDoc) return;
+    
+    const now = new Date();
+    
+    // Check if should be started
+    if (classDoc.status === 'published' && classDoc.startDate <= now) {
+      await updateDoc(doc(db, COLLECTION_NAME, classId), {
+        status: 'started',
+        startedAt: serverTimestamp()
+      });
+      return;
+    }
+    
+    // Check if should be completed
+    if (classDoc.status === 'started') {
+      // Check if end date has passed
+      const endDateOnly = new Date(classDoc.endDate);
+      endDateOnly.setHours(23, 59, 59, 999);
+      
+      if (endDateOnly < now) {
+        // Check all sessions
+        const schedules = await getClassSchedules(classId);
+        let allSessionsPassed = true;
+        
+        for (const schedule of schedules) {
+          if (schedule.status !== 'cancelled' && schedule.sessionDate > now) {
+            allSessionsPassed = false;
+            break;
+          }
+        }
+        
+        if (allSessionsPassed) {
+          await updateDoc(doc(db, COLLECTION_NAME, classId), {
+            status: 'completed',
+            completedAt: serverTimestamp()
+          });
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error updating class status:', error);
+    throw error;
+  }
+}
+
+// Batch update all classes status
+export async function batchUpdateClassStatuses(): Promise<{
+  updated: number;
+  errors: string[];
+}> {
+  try {
+    const classes = await getClasses();
+    const activeClasses = classes.filter(c => 
+      c.status === 'published' || c.status === 'started'
+    );
+    
+    let updated = 0;
+    const errors: string[] = [];
+    
+    for (const cls of activeClasses) {
+      try {
+        const oldStatus = cls.status;
+        await updateClassStatusBasedOnDates(cls.id);
+        
+        // Check if status changed
+        const updatedClass = await getClass(cls.id);
+        if (updatedClass && updatedClass.status !== oldStatus) {
+          updated++;
+        }
+      } catch (error) {
+        errors.push(`Class ${cls.id}: ${error}`);
+      }
+    }
+    
+    return { updated, errors };
+  } catch (error) {
+    console.error('Error in batch update:', error);
+    return { updated: 0, errors: [String(error)] };
+  }
+}
+
 // Export functions
 export {
   generateSchedules,

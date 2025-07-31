@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Class, Branch, Subject, Teacher } from '@/types/models';
-import { getClasses, deleteClass } from '@/lib/services/classes';
+import { getClasses, deleteClass, batchUpdateClassStatuses } from '@/lib/services/classes';
 import { getActiveBranches } from '@/lib/services/branches';
 import { getActiveSubjects } from '@/lib/services/subjects';
 import { getActiveTeachers } from '@/lib/services/teachers';
@@ -19,7 +19,10 @@ import {
   Eye,
   Search,
   Filter,
-  MoreHorizontal
+  MoreHorizontal,
+  RefreshCw,
+  CheckCircle,
+  XCircle
 } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
@@ -61,6 +64,7 @@ import {
 import { useBranch } from '@/contexts/BranchContext';
 import { ActionButton } from '@/components/ui/action-button';
 import { PermissionGuard } from '@/components/auth/permission-guard';
+import { useAuth } from '@/hooks/useAuth';
 
 const statusColors = {
   'draft': 'bg-gray-100 text-gray-700',
@@ -80,6 +84,7 @@ const statusLabels = {
 
 export default function ClassesPage() {
   const { selectedBranchId, isAllBranches } = useBranch();
+  const { isSuperAdmin } = useAuth();
   const [classes, setClasses] = useState<Class[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
@@ -87,6 +92,11 @@ export default function ClassesPage() {
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [updateResult, setUpdateResult] = useState<{
+    updated: number;
+    errors: string[];
+  } | null>(null);
   
   // Filters
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
@@ -132,6 +142,33 @@ export default function ClassesPage() {
       }
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const handleUpdateClassStatuses = async () => {
+    setUpdatingStatus(true);
+    setUpdateResult(null);
+    
+    try {
+      const result = await batchUpdateClassStatuses();
+      setUpdateResult(result);
+      
+      if (result.updated > 0) {
+        toast.success(`อัปเดตสถานะคลาสสำเร็จ ${result.updated} คลาส`);
+        // Reload data to show updated statuses
+        await loadData();
+      } else {
+        toast.info('ไม่มีคลาสที่ต้องอัปเดตสถานะ');
+      }
+      
+      if (result.errors.length > 0) {
+        toast.error(`พบข้อผิดพลาด ${result.errors.length} รายการ`);
+      }
+    } catch (error) {
+      console.error('Error updating class statuses:', error);
+      toast.error('เกิดข้อผิดพลาดในการอัปเดตสถานะ');
+    } finally {
+      setUpdatingStatus(false);
     }
   };
 
@@ -208,15 +245,63 @@ export default function ClassesPage() {
           </h1>
           <p className="text-gray-600 mt-2">จัดการตารางเรียนและคลาสทั้งหมด</p>
         </div>
-        <PermissionGuard action="create">
-          <Link href="/classes/new">
-            <ActionButton action="create" className="bg-red-500 hover:bg-red-600">
-              <Plus className="h-4 w-4 mr-2" />
-              สร้างคลาสใหม่
-            </ActionButton>
-          </Link>
-        </PermissionGuard>
+        <div className="flex gap-2">
+          {isSuperAdmin() && (
+            <Button
+              variant="outline"
+              onClick={handleUpdateClassStatuses}
+              disabled={updatingStatus}
+            >
+              {updatingStatus ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  กำลังอัปเดต...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  อัปเดตสถานะ
+                </>
+              )}
+            </Button>
+          )}
+          <PermissionGuard requiredRole={['super_admin', 'branch_admin']}>
+            <Link href="/classes/new">
+              <ActionButton action="create" className="bg-red-500 hover:bg-red-600">
+                <Plus className="h-4 w-4 mr-2" />
+                สร้างคลาสใหม่
+              </ActionButton>
+            </Link>
+          </PermissionGuard>
+        </div>
       </div>
+
+      {/* Show update result */}
+      {updateResult && (
+        <Card className="mb-6 border-blue-200 bg-blue-50">
+          <CardContent className="pt-6">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="h-5 w-5 text-green-600" />
+                <span className="font-medium">อัปเดตสถานะสำเร็จ: {updateResult.updated} คลาส</span>
+              </div>
+              {updateResult.errors.length > 0 && (
+                <div className="flex items-start gap-2">
+                  <XCircle className="h-5 w-5 text-red-600 mt-0.5" />
+                  <div>
+                    <span className="font-medium text-red-600">พบข้อผิดพลาด: {updateResult.errors.length} รายการ</span>
+                    <ul className="text-sm text-red-600 mt-1">
+                      {updateResult.errors.map((error, index) => (
+                        <li key={index}>{error}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Statistics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
@@ -329,7 +414,7 @@ export default function ClassesPage() {
                 {classes.length === 0 ? 'เริ่มต้นด้วยการสร้างคลาสแรก' : 'ลองปรับเงื่อนไขการค้นหาใหม่'}
               </p>
               {classes.length === 0 && (
-                <PermissionGuard action="create">
+                <PermissionGuard requiredRole={['super_admin', 'branch_admin']}>
                   <Link href="/classes/new">
                     <ActionButton action="create" className="bg-red-500 hover:bg-red-600">
                       <Plus className="h-4 w-4 mr-2" />
@@ -421,7 +506,7 @@ export default function ClassesPage() {
                                   ดูรายละเอียด
                                 </Link>
                               </DropdownMenuItem>
-                              <PermissionGuard action="update">
+                              <PermissionGuard requiredRole={['super_admin', 'branch_admin']}>
                                 <DropdownMenuItem asChild>
                                   <Link href={`/classes/${cls.id}/edit`}>
                                     <Edit className="mr-2 h-4 w-4" />
@@ -430,7 +515,7 @@ export default function ClassesPage() {
                                 </DropdownMenuItem>
                               </PermissionGuard>
                               {isDeletable && (
-                                <PermissionGuard action="delete">
+                                <PermissionGuard requiredRole={['super_admin', 'branch_admin']}>
                                   <AlertDialog>
                                     <AlertDialogTrigger asChild>
                                       <DropdownMenuItem 
