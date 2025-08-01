@@ -10,16 +10,12 @@
   ],
   "crons": [
     {
-      "path": "/api/cron/send-reminders",
-      "schedule": "0 12 * * *"
+      "path": "/api/cron/reminders",
+      "schedule": "0 11 * * *"
     },
     {
       "path": "/api/cron/update-class-status",
-      "schedule": "0 1 * * *"
-    },
-    {
-      "path": "/api/cron/event-reminders",
-      "schedule": "0 9 * * *"
+      "schedule": "0 18 * * *"
     }
   ]
 }

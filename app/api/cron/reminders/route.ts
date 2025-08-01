@@ -1,4 +1,4 @@
-// app/api/cron/send-reminders/route.ts
+// app/api/cron/reminders/route.ts
 
 import { NextRequest, NextResponse } from 'next/server';
 import { 
@@ -15,6 +15,7 @@ import {
   sendClassReminder, 
   sendMakeupNotification
 } from '@/lib/services/line-notifications';
+import { getEventsForReminder, sendEventReminder } from '@/lib/services/events';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,19 +41,22 @@ export async function GET(request: NextRequest) {
     const dayAfterTomorrow = new Date(tomorrow);
     dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 1);
     
-    let sentCount = 0;
+    let totalSent = 0;
     const results = {
       classReminders: 0,
       makeupReminders: 0,
+      eventReminders: 0,
       errors: []
     };
     
-    console.log('=== Starting reminder cron job ===');
+    console.log('=== Starting combined reminder cron job ===');
     console.log('Current time:', now.toLocaleString('th-TH'));
     console.log('Checking for tomorrow:', tomorrow.toLocaleDateString('th-TH'));
     
-    // 1. ส่งการแจ้งเตือนคลาสปกติ
-    console.log('\n--- Checking class reminders ---');
+    // ============================================
+    // 1. Class Reminders (from send-reminders)
+    // ============================================
+    console.log('\n--- Part 1: Class Reminders ---');
     
     const classesQuery = query(
       collection(db, 'classes'),
@@ -63,8 +67,9 @@ export async function GET(request: NextRequest) {
     console.log(`Found ${classesSnapshot.size} active classes`);
     
     for (const classDoc of classesSnapshot.docs) {
-        const classData = classDoc.data();
-        const classId = classDoc.id;      
+      const classData = classDoc.data();
+      const classId = classDoc.id;
+      
       // ดึง schedules สำหรับพรุ่งนี้
       const schedulesQuery = query(
         collection(db, 'classes', classDoc.id, 'schedules'),
@@ -100,7 +105,7 @@ export async function GET(request: NextRequest) {
             
             if (success) {
               results.classReminders++;
-              sentCount++;
+              totalSent++;
               console.log(`  ✓ Sent reminder for student ${enrollment.studentId}`);
             } else {
               console.log(`  ✗ Failed to send for student ${enrollment.studentId}`);
@@ -113,8 +118,10 @@ export async function GET(request: NextRequest) {
       }
     }
     
-    // 2. ส่งการแจ้งเตือน Makeup Class
-    console.log('\n--- Checking makeup reminders ---');
+    // ============================================
+    // 2. Makeup Class Reminders
+    // ============================================
+    console.log('\n--- Part 2: Makeup Class Reminders ---');
     
     const makeupQuery = query(
       collection(db, 'makeupClasses'),
@@ -134,7 +141,7 @@ export async function GET(request: NextRequest) {
         const success = await sendMakeupNotification(makeupDoc.id, 'reminder');
         if (success) {
           results.makeupReminders++;
-          sentCount++;
+          totalSent++;
           console.log('  ✓ Sent makeup reminder');
         } else {
           console.log('  ✗ Failed to send makeup reminder');
@@ -145,24 +152,61 @@ export async function GET(request: NextRequest) {
       }
     }
     
-    console.log('\n=== Cron job completed ===');
+    // ============================================
+    // 3. Event Reminders (from event-reminders)
+    // ============================================
+    console.log('\n--- Part 3: Event Reminders ---');
+    
+    // Get events that need reminders
+    const eventsToRemind = await getEventsForReminder();
+    console.log(`Found ${eventsToRemind.length} events with reminders to send`);
+    
+    // Process each event
+    for (const { event, registrations } of eventsToRemind) {
+      console.log(`\nProcessing event: ${event.name}`);
+      console.log(`Found ${registrations.length} registrations to remind`);
+      
+      // Send reminder to each registration
+      for (const registration of registrations) {
+        try {
+          const success = await sendEventReminder(registration, event);
+          
+          if (success) {
+            results.eventReminders++;
+            totalSent++;
+            console.log(`✓ Sent reminder for registration ${registration.id}`);
+          } else {
+            console.log(`✗ Failed to send reminder for registration ${registration.id}`);
+          }
+        } catch (error) {
+          console.error(`! Error sending reminder for registration ${registration.id}:`, error);
+          results.errors.push(`Event reminder error: ${error}`);
+        }
+      }
+    }
+    
+    // ============================================
+    // Summary
+    // ============================================
+    console.log('\n=== Combined reminder cron job completed ===');
     console.log('Summary:', {
-      totalSent: sentCount,
+      totalSent,
       classReminders: results.classReminders,
       makeupReminders: results.makeupReminders,
+      eventReminders: results.eventReminders,
       errors: results.errors.length
     });
     
     return NextResponse.json({
       success: true,
-      message: `ส่งการแจ้งเตือน ${sentCount} รายการ`,
-      sentCount,
+      message: `ส่งการแจ้งเตือนทั้งหมด ${totalSent} รายการ`,
+      sentCount: totalSent,
       details: results,
       timestamp: now.toISOString()
     });
     
   } catch (error) {
-    console.error('!!! Cron job error:', error);
+    console.error('!!! Combined reminder cron job error:', error);
     return NextResponse.json(
       { 
         error: 'Internal server error',
