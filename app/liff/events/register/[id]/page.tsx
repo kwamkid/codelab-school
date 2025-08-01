@@ -640,10 +640,10 @@ export default function EventRegistrationPage() {
               <div className="space-y-2">
                 <Label>รอบเวลา *</Label>
                 <Select value={selectedSchedule} onValueChange={setSelectedSchedule}>
-                  <SelectTrigger>
+                  <SelectTrigger className="w-full">
                     <SelectValue placeholder="เลือกรอบเวลา" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="w-full">
                     {schedules.map(schedule => {
                       const available = schedule.maxAttendees - 
                         Object.values(schedule.attendeesByBranch).reduce((sum, count) => sum + count, 0);
@@ -653,13 +653,13 @@ export default function EventRegistrationPage() {
                           key={schedule.id} 
                           value={schedule.id}
                           disabled={available <= 0}
+                          className="w-full"
                         >
-                          <div>
-                            <p>{formatDate(schedule.date, 'long')}</p>
-                            <p className="text-xs">
-                              {schedule.startTime}-{schedule.endTime}
-                              {available <= 0 ? ' (เต็ม)' : ` (เหลือ ${available} ที่)`}
-                            </p>
+                          <div className="flex items-center justify-between w-full gap-2">
+                            <span className="truncate">{formatDate(schedule.date, 'long')} • {schedule.startTime}-{schedule.endTime}</span>
+                            <span className={`text-xs whitespace-nowrap ${available <= 2 && available > 0 ? 'text-red-600 font-semibold' : ''}`}>
+                              {available <= 0 ? '(เต็ม)' : `(เหลือ ${available} ที่)`}
+                            </span>
                           </div>
                         </SelectItem>
                       );
@@ -667,7 +667,7 @@ export default function EventRegistrationPage() {
                   </SelectContent>
                 </Select>
                 {selectedScheduleData && availableSeats <= 5 && availableSeats > 0 && (
-                  <p className="text-xs text-amber-600 flex items-center gap-1">
+                  <p className={`text-xs flex items-center gap-1 ${availableSeats <= 2 ? 'text-red-600 font-semibold' : 'text-amber-600'}`}>
                     <AlertCircle className="h-3 w-3" />
                     เหลือที่ว่างน้อย รีบจองด่วน!
                   </p>
