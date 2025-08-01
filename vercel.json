@@ -7,19 +7,11 @@
       "source": "/liff/(.*)",
       "destination": "/liff/$1"
     }
-  ], 
-  "crons": [  
+  ],
+  "crons": [
     {
       "path": "/api/cron/send-reminders",
-      "schedule": "0 18 * * *"
-    },
-    {
-      "path": "/api/cron/event-reminders", 
-      "schedule": "0 9,18 * * *"
-    },
-    {
-      "path": "/api/cron/update-class-status",
-      "schedule": "0 1 * * *"
+      "schedule": "0 12 * * *"
     }
-  ] 
+  ]
 }
