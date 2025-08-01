@@ -259,8 +259,29 @@ export default function EventDetailPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{statistics?.totalRegistered || 0}</p>
-            <p className="text-sm text-gray-500">จาก {statistics?.totalCapacity || 0} ที่นั่ง</p>
+            <p className="text-2xl font-bold">
+              {registrations
+                .filter(r => r.status !== 'cancelled')
+                .reduce((sum, r) => sum + r.attendeeCount, 0)}
+              <span className="text-lg font-normal text-gray-500">/{statistics?.totalCapacity || 0}</span>
+            </p>
+            <div className="mt-2 mb-1">
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div 
+                  className="bg-red-500 h-2 rounded-full transition-all"
+                  style={{ 
+                    width: `${Math.min(100, 
+                      (registrations
+                        .filter(r => r.status !== 'cancelled')
+                        .reduce((sum, r) => sum + r.attendeeCount, 0) / (statistics?.totalCapacity || 1)) * 100
+                    )}%` 
+                  }}
+                />
+              </div>
+            </div>
+            <p className="text-sm text-gray-500">
+              {registrations.filter(r => r.status !== 'cancelled').length} รายการ
+            </p>
           </CardContent>
         </Card>
         
@@ -297,9 +318,11 @@ export default function EventDetailPage() {
             <Clock className="h-4 w-4" />
             รอบเวลา ({schedules.length})
           </TabsTrigger>
-          <TabsTrigger value="registrations" className="flex items-center gap-2">
+           <TabsTrigger value="registrations" className="flex items-center gap-2">
             <Users className="h-4 w-4" />
-            ผู้ลงทะเบียน ({registrations.filter(r => r.status !== 'cancelled').length})
+            ผู้ลงทะเบียน ({registrations
+              .filter(r => r.status !== 'cancelled')
+              .reduce((sum, r) => sum + r.attendeeCount, 0)})
           </TabsTrigger>
           <TabsTrigger value="statistics" className="flex items-center gap-2">
             <BarChart3 className="h-4 w-4" />

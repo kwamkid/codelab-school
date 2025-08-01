@@ -188,17 +188,24 @@ export default function TeachingMaterialsPage() {
                   return (
                     <Card
                       key={subject.id}
-                      className="hover:shadow-md transition-all duration-200 cursor-pointer"
+                      className="hover:shadow-md transition-all duration-200 cursor-pointer border-l-4"
+                      style={{ borderLeftColor: subject.color }}
                       onClick={() => router.push(`/teaching-materials/${subject.id}`)}
                     >
                       <CardContent className="p-4">
                         <div className="flex items-center gap-4">
                           {/* Material Count - Big Number */}
-                          <div className="bg-gray-50 rounded-lg p-4 min-w-[80px] text-center">
-                            <div className="text-3xl font-bold text-gray-800">
+                          <div 
+                            className="rounded-lg p-4 min-w-[80px] text-center"
+                            style={{ 
+                              backgroundColor: subject.color + '20',
+                              color: subject.color 
+                            }}
+                          >
+                            <div className="text-3xl font-bold">
                               {materialCount}
                             </div>
-                            <div className="text-xs text-gray-600 mt-1">
+                            <div className="text-xs mt-1">
                               บทเรียน
                             </div>
                           </div>
@@ -221,13 +228,31 @@ export default function TeachingMaterialsPage() {
                               </div>
                               
                               <div className="flex items-center gap-2 ml-4">
-                                <Badge className={getLevelBadgeColor(subject.level)} variant="secondary">
+                                <Badge 
+                                  variant="secondary"
+                                  style={{ 
+                                    backgroundColor: subject.color + '20',
+                                    color: subject.color 
+                                  }}
+                                >
                                   {subject.level}
                                 </Badge>
                                 <Button 
                                   variant="ghost" 
                                   size="sm" 
-                                  className="text-blue-600 hover:text-blue-700"
+                                  className="hover:text-white"
+                                  style={{ 
+                                    color: subject.color,
+                                    borderColor: subject.color 
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.backgroundColor = subject.color;
+                                    e.currentTarget.style.color = 'white';
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.backgroundColor = 'transparent';
+                                    e.currentTarget.style.color = subject.color;
+                                  }}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     router.push(`/teaching-materials/${subject.id}`);

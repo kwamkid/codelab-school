@@ -216,6 +216,8 @@ export async function deleteEvent(id: string): Promise<void> {
 
 // ==================== Event Schedule Operations ====================
 
+// lib/services/events.ts - getEventSchedules function
+
 // Get event schedules
 export async function getEventSchedules(eventId: string): Promise<EventSchedule[]> {
   try {
@@ -227,7 +229,7 @@ export async function getEventSchedules(eventId: string): Promise<EventSchedule[
     
     const querySnapshot = await getDocs(q);
     
-    return querySnapshot.docs.map(doc => {
+    const schedules = querySnapshot.docs.map(doc => {
       const data = doc.data() as DocumentData;
       return {
         id: doc.id,
@@ -239,6 +241,24 @@ export async function getEventSchedules(eventId: string): Promise<EventSchedule[
         attendeesByBranch: data.attendeesByBranch || {},
         status: data.status
       } as EventSchedule;
+    });
+    
+    // Sort by date and then by startTime
+    return schedules.sort((a, b) => {
+      // First compare by date
+      const dateCompare = a.date.getTime() - b.date.getTime();
+      if (dateCompare !== 0) {
+        return dateCompare;
+      }
+      
+      // If same date, compare by startTime
+      const [aHours, aMinutes] = a.startTime.split(':').map(Number);
+      const [bHours, bMinutes] = b.startTime.split(':').map(Number);
+      
+      const aTimeMinutes = aHours * 60 + aMinutes;
+      const bTimeMinutes = bHours * 60 + bMinutes;
+      
+      return aTimeMinutes - bTimeMinutes;
     });
   } catch (error) {
     console.error('Error getting event schedules:', error);
@@ -726,7 +746,7 @@ export function isRegistrationOpen(event: Event): boolean {
 
 // Get available schedules
 export async function getAvailableSchedules(eventId: string): Promise<EventSchedule[]> {
-  const schedules = await getEventSchedules(eventId);
+  const schedules = await getEventSchedules(eventId); // Already sorted by date and time
   const now = new Date();
   
   return schedules.filter(schedule => {
@@ -736,6 +756,7 @@ export async function getAvailableSchedules(eventId: string): Promise<EventSched
     
     return schedule.status === 'available' && scheduleDateTime > now;
   });
+  // No need to sort again since getEventSchedules already returns sorted results
 }
 
 // Get event statistics

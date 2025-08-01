@@ -10,9 +10,15 @@ import {
   Minimize2,
   BookOpen,
   ArrowLeft,
-  RotateCcw
+  RotateCcw,
+  HelpCircle
 } from 'lucide-react';
 import { TeachingMaterial, Class } from '@/types/models';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 interface SecureSlideViewerProps {
   material: TeachingMaterial;
@@ -172,7 +178,7 @@ export default function SecureSlideViewer({
               
               <div className="space-y-4 text-sm">
                 <div>
-                  <div className="font-medium text-blue-300 mb-2">🎯 เป้าหมายการเรียนรู้</div>
+                  <div className="font-medium text-blue-300 mb-2">🎯 จุดประสงค์การเรียนรู้</div>
                   <ul className="list-disc list-inside space-y-1 text-gray-300">
                     {material.objectives.map((obj: string, index: number) => (
                       <li key={index}>{obj}</li>
@@ -191,14 +197,16 @@ export default function SecureSlideViewer({
                   </div>
                 </div>
                 
-                <div>
-                  <div className="font-medium text-yellow-300 mb-2">✅ เตรียมการ</div>
-                  <ul className="list-disc list-inside space-y-1 text-gray-300 text-xs">
-                    {material.preparation?.map((prep: string, index: number) => (
-                      <li key={index}>{prep}</li>
-                    ))}
-                  </ul>
-                </div>
+                {material.preparation && material.preparation.length > 0 && (
+                  <div>
+                    <div className="font-medium text-yellow-300 mb-2">✅ เตรียมการ</div>
+                    <ul className="list-disc list-inside space-y-1 text-gray-300 text-xs">
+                      {material.preparation.map((prep: string, index: number) => (
+                        <li key={index}>{prep}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 
                 {material.teachingNotes && (
                   <div>
@@ -246,134 +254,183 @@ export default function SecureSlideViewer({
 
   // Normal mode
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header */}
-      <div className="flex justify-between items-start">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
         <div>
           <Button 
             onClick={onBack}
             variant="outline" 
-            className="mb-4"
+            size="sm"
+            className="mb-2"
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
-            กลับไปเลือกคลาส
+            กลับ
           </Button>
           
-          <h1 className="text-3xl font-bold">{material.title}</h1>
-          <div className="flex items-center gap-4 text-gray-600 mt-2">
+          <h1 className="text-2xl font-bold">{material.title}</h1>
+          <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600 mt-1">
             <span>ครั้งที่ {material.sessionNumber}</span>
-            <span>{material.duration} นาที</span>
-            <span className="text-sm">{classInfo.name}</span>
+            <span>•</span>
+            <span>{classInfo.name}</span>
           </div>
         </div>
         
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
+            size="sm"
             onClick={refreshSlides}
             title="Refresh Slides (R)"
           >
-            <RotateCcw className="h-4 w-4 mr-2" />
-            รีเฟรช
+            <RotateCcw className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">รีเฟรช</span>
           </Button>
+          
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                title="Keyboard Shortcuts"
+              >
+                <HelpCircle className="h-4 w-4" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-64" align="end">
+              <div className="space-y-2">
+                <h4 className="font-medium text-sm mb-2">คีย์ลัด</h4>
+                <div className="space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span><kbd className="bg-gray-100 px-1.5 py-0.5 rounded text-xs">F</kbd></span>
+                    <span className="text-gray-600">เต็มจอ/ออกจากเต็มจอ</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span><kbd className="bg-gray-100 px-1.5 py-0.5 rounded text-xs">H</kbd></span>
+                    <span className="text-gray-600">ซ่อน/แสดง Controls</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span><kbd className="bg-gray-100 px-1.5 py-0.5 rounded text-xs">I</kbd></span>
+                    <span className="text-gray-600">แสดงข้อมูล (เต็มจอ)</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span><kbd className="bg-gray-100 px-1.5 py-0.5 rounded text-xs">R</kbd></span>
+                    <span className="text-gray-600">รีเฟรช Slides</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span><kbd className="bg-gray-100 px-1.5 py-0.5 rounded text-xs">Esc</kbd></span>
+                    <span className="text-gray-600">ออก/กลับ</span>
+                  </div>
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
+          
           <Button
-            variant="outline"
+            size="sm"
             onClick={toggleFullscreen}
             title="Fullscreen (F)"
+            className="bg-blue-600 hover:bg-blue-700"
           >
-            <Maximize2 className="h-4 w-4 mr-2" />
-            เต็มจอ
+            <Maximize2 className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">เต็มจอ</span>
           </Button>
         </div>
       </div>
 
-      {/* Slide Content */}
-      <Card>
-        <CardContent className="p-0">
-          <div className="relative">
-            <iframe
-              key={iframeKey}
-              src={material.embedUrl}
-              className="w-full h-[600px] border-none rounded-lg"
-              allowFullScreen
-              allow="autoplay; fullscreen"
-              onContextMenu={(e) => e.preventDefault()}
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Session Info */}
-      <div className="grid md:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>🎯 เป้าหมายการเรียนรู้</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="list-disc list-inside space-y-2">
-              {material.objectives.map((obj: string, index: number) => (
-                <li key={index}>{obj}</li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>📦 อุปกรณ์ที่ใช้</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-2">
-              {material.materials?.map((item: string, index: number) => (
-                <Badge key={index} variant="secondary">
-                  {item}
-                </Badge>
-              ))}
+      {/* Main Content */}
+      <div className="space-y-4">
+        {/* Slide Content - Full Width */}
+        <Card className="overflow-hidden">
+          <CardContent className="p-0">
+            <div className="relative bg-black">
+              <iframe
+                key={iframeKey}
+                src={material.embedUrl}
+                className="w-full h-[400px] sm:h-[500px] lg:h-[600px] border-none"
+                allowFullScreen
+                allow="autoplay; fullscreen"
+                onContextMenu={(e) => e.preventDefault()}
+              />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="md:col-span-2">
-          <CardHeader>
-            <CardTitle>✅ เตรียมการก่อนสอน</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="list-disc list-inside space-y-2">
-              {material.preparation?.map((prep: string, index: number) => (
-                <li key={index}>{prep}</li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-
-        {material.teachingNotes && (
-          <Card className="md:col-span-2">
-            <CardHeader>
-              <CardTitle>📝 บันทึกสำหรับครู</CardTitle>
+        {/* Session Info - 2 columns grid */}
+        <div className="grid md:grid-cols-2 gap-4">
+          {/* Learning Objectives */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-1">
+                <span>🎯</span>
+                <span>จุดประสงค์การเรียนรู้</span>
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="whitespace-pre-wrap">{material.teachingNotes}</p>
+              <ul className="list-disc list-inside space-y-1 text-sm">
+                {material.objectives.map((obj: string, index: number) => (
+                  <li key={index} className="text-gray-700">{obj}</li>
+                ))}
+              </ul>
             </CardContent>
           </Card>
-        )}
-      </div>
 
-      {/* Keyboard Shortcuts */}
-      <Card className="bg-blue-50 border-blue-200">
-        <CardHeader>
-          <CardTitle className="text-blue-800">⌨️ คีย์ลัด</CardTitle>
-        </CardHeader>
-        <CardContent className="text-blue-700">
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div><kbd className="bg-white px-2 py-1 rounded">F</kbd> เต็มจอ/ออกจากเต็มจอ</div>
-            <div><kbd className="bg-white px-2 py-1 rounded">H</kbd> ซ่อน/แสดง Controls</div>
-            <div><kbd className="bg-white px-2 py-1 rounded">I</kbd> แสดงข้อมูล (เต็มจอ)</div>
-            <div><kbd className="bg-white px-2 py-1 rounded">R</kbd> รีเฟรช Slides</div>
-            <div><kbd className="bg-white px-2 py-1 rounded">Esc</kbd> ออก/กลับ</div>
-            <div className="col-span-2"><kbd className="bg-white px-2 py-1 rounded">Space/Arrow</kbd> เปลี่ยนหน้า Slides (ใช้ controls ของ Canva)</div>
-          </div>
-        </CardContent>
-      </Card>
+          {/* Materials */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-1">
+                <span>📦</span>
+                <span>อุปกรณ์ที่ใช้</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ul className="list-disc list-inside space-y-1 text-sm">
+                {material.materials?.map((item: string, index: number) => (
+                  <li key={index} className="text-gray-700">{item}</li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+
+          {/* Preparation */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-1">
+                <span>✅</span>
+                <span>เตรียมการก่อนสอน</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {material.preparation && material.preparation.length > 0 ? (
+                <ul className="list-disc list-inside space-y-1 text-sm">
+                  {material.preparation.map((prep: string, index: number) => (
+                    <li key={index} className="text-gray-700">{prep}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-gray-500">ไม่มีข้อมูล</p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Teaching Notes */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-1">
+                <span>📝</span>
+                <span>บันทึกสำหรับครู</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {material.teachingNotes ? (
+                <p className="text-sm text-gray-700 whitespace-pre-wrap">{material.teachingNotes}</p>
+              ) : (
+                <p className="text-sm text-gray-500">ไม่มีข้อมูล</p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     </div>
   );
 }

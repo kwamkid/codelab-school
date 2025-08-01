@@ -58,11 +58,13 @@ import { Badge } from '@/components/ui/badge';
 interface NavigationItem {
   name: string;
   href?: string;
-  icon: any;
+  icon?: any;
+  iconColor?: string;
   badge?: number;
   subItems?: NavigationItem[];
   requiredRole?: ('super_admin' | 'branch_admin' | 'teacher')[];
   requiredPermission?: string;
+  isDivider?: boolean;
 }
 
 // Custom Link component with loading
@@ -184,6 +186,9 @@ export default function AdminLayout({
   // Filter navigation based on role
   const filterNavigation = (items: NavigationItem[]): NavigationItem[] => {
     return items.filter(item => {
+      // Keep dividers
+      if (item.isDivider) return true;
+      
       // Check role
       if (item.requiredRole && adminUser) {
         if (!item.requiredRole.includes(adminUser.role)) {
@@ -217,23 +222,31 @@ export default function AdminLayout({
     { 
       name: 'Dashboard', 
       href: '/dashboard', 
-      icon: Home 
+      icon: Home,
+      iconColor: 'text-blue-500'
+    },
+    { 
+      name: 'divider-1',
+      isDivider: true 
     },
     {
       name: 'ผู้ใช้งาน และครู',
       icon: Users,
+      iconColor: 'text-orange-500',
       requiredRole: ['super_admin', 'branch_admin'],
       subItems: [
         { 
           name: 'ผู้ดูแลระบบ', 
           href: '/users', 
           icon: Shield,
+          iconColor: 'text-red-500',
           requiredRole: ['super_admin']
         },
         { 
           name: 'ครูผู้สอน', 
           href: '/teachers', 
           icon: UserCog,
+          iconColor: 'text-purple-500',
           requiredRole: ['super_admin', 'branch_admin']
         },
       ]
@@ -241,49 +254,61 @@ export default function AdminLayout({
     {
       name: 'ข้อมูลพื้นฐาน',
       icon: Building,
+      iconColor: 'text-cyan-500',
       subItems: [
         { 
           name: 'สาขา', 
           href: '/branches', 
           icon: Building2,
+          iconColor: 'text-teal-500',
           requiredRole: ['super_admin'] // เฉพาะ super admin
         },
         { 
           name: 'ห้องเรียน', 
           href: '/rooms', 
           icon: School,
+          iconColor: 'text-indigo-500',
           requiredRole: ['super_admin', 'branch_admin'] // admin ขึ้นไป
         },
         { 
           name: 'วันหยุด', 
           href: '/holidays', 
           icon: CalendarDays,
+          iconColor: 'text-pink-500',
           requiredRole: ['super_admin', 'branch_admin'] // admin ขึ้นไป
         },
         { 
           name: 'วิชา', 
           href: '/subjects', 
           icon: BookOpen,
+          iconColor: 'text-green-500',
           requiredRole: ['super_admin'] // เฉพาะ super admin (ข้อมูลกลาง)
         },
      
       ]
     },
+    { 
+      name: 'divider-2',
+      isDivider: true 
+    },
    {
       name: 'การสอน',
       icon: GraduationCap,
+      iconColor: 'text-amber-500',
       requiredRole: ['super_admin', 'teacher'], // เพิ่ม super_admin
       subItems: [
         { 
           name: 'สื่อการสอน', 
           href: '/teaching-materials', 
           icon: Layers,
+          iconColor: 'text-violet-500',
           requiredRole: ['super_admin'] // เฉพาะ super admin จัดการได้
         },
         { 
           name: 'Slides & เนื้อหา', 
           href: '/teaching/slides', 
           icon: Play,
+          iconColor: 'text-rose-500',
           requiredRole: ['super_admin', 'teacher'] // ครูและ admin ดูได้
         },
         // จะเพิ่มเมนูอื่นๆ ในอนาคต
@@ -293,22 +318,30 @@ export default function AdminLayout({
       name: 'เช็คชื่อ', 
       href: '/attendance', 
       icon: UserCheck,
+      iconColor: 'text-emerald-500',
       requiredRole: ['super_admin', 'branch_admin','teacher'] // ครูและ admin ดูได้
+    },
+    { 
+      name: 'divider-3',
+      isDivider: true 
     },
     {
       name: 'ลูกค้า',
       icon: Users,
+      iconColor: 'text-blue-600',
       subItems: [
         { 
           name: 'ผู้ปกครอง', 
           href: '/parents', 
           icon: Users,
+          iconColor: 'text-sky-500',
           requiredRole: ['super_admin', 'branch_admin'] // admin ขึ้นไป
         },
         { 
           name: 'นักเรียน', 
           href: '/students', 
           icon: UserCheck,
+          iconColor: 'text-purple-600',
           requiredRole: ['super_admin', 'branch_admin'] // admin ขึ้นไป
         },
       ]
@@ -316,19 +349,22 @@ export default function AdminLayout({
     { 
       name: 'คลาสเรียน', 
       href: '/classes', 
-      icon: GraduationCap
+      icon: GraduationCap,
+      iconColor: 'text-orange-600'
       // ทุกคนเห็นได้ แต่ teacher จะเห็นเฉพาะคลาสที่สอน
     },
     { 
       name: 'ลงทะเบียนเรียน', 
       href: '/enrollments', 
       icon: Calendar,
+      iconColor: 'text-green-600',
       requiredRole: ['super_admin', 'branch_admin'] // admin ขึ้นไป
     },
     { 
       name: 'ลาและชดเชย', 
       href: '/makeup', 
       icon: Repeat,
+      iconColor: 'text-yellow-600',
       badge: pendingMakeupCount > 0 ? pendingMakeupCount : undefined
       // ทุกคนเห็นได้ แต่ teacher เห็นเฉพาะของคลาสที่สอน
     },
@@ -336,23 +372,31 @@ export default function AdminLayout({
       name: 'ทดลองเรียน', 
       href: '/trial', 
       icon: TestTube,
+      iconColor: 'text-cyan-600',
       requiredRole: ['super_admin', 'branch_admin'] // admin ขึ้นไป
     },
     { 
       name: 'กิจกรรม', 
       href: '/events', 
       icon: CalendarDays,
+      iconColor: 'text-pink-600',
       requiredRole: ['super_admin', 'branch_admin'] // admin ขึ้นไป
+    },
+    { 
+      name: 'divider-4',
+      isDivider: true 
     },
     {
       name: 'รายงาน',
       icon: BarChart3,
+      iconColor: 'text-indigo-600',
       requiredRole: ['super_admin', 'branch_admin'], // admin ขึ้นไป
       subItems: [
         { 
           name: 'ห้องและครูว่าง', 
           href: '/reports/availability', 
-          icon: Calendar 
+          icon: Calendar,
+          iconColor: 'text-teal-600'
         },
       ]
     },
@@ -360,6 +404,7 @@ export default function AdminLayout({
       name: 'ตั้งค่า', 
       href: '/settings', 
       icon: Settings,
+      iconColor: 'text-gray-600',
       requiredPermission: 'canManageSettings' // ตรวจสอบ permission พิเศษ
     },
   ];
@@ -430,6 +475,14 @@ export default function AdminLayout({
             {/* Loading overlay */}
             {navigating && <PageLoading />}
             
+            {/* Mobile menu overlay */}
+            {sidebarOpen && (
+              <div
+                className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+                onClick={() => setSidebarOpen(false)}
+              />
+            )}
+            
             {/* Sidebar */}
             <div
               className={cn(
@@ -460,9 +513,11 @@ export default function AdminLayout({
 
                 {/* Navigation */}
                 <nav className="flex-1 overflow-y-auto px-4 py-6">
-                  {filteredNavigation.map((item) => (
-                    <div key={item.name} className="mb-2">
-                      {item.subItems ? (
+                  {filteredNavigation.map((item, index) => (
+                    <div key={item.name} className={item.isDivider ? '' : 'mb-2'}>
+                      {item.isDivider ? (
+                        <div className="my-3 border-t border-gray-200" />
+                      ) : item.subItems ? (
                         <>
                           <button
                             onClick={() => toggleExpanded(item.name)}
@@ -474,7 +529,7 @@ export default function AdminLayout({
                             )}
                           >
                             <div className="flex items-center">
-                              <item.icon className="mr-3 h-5 w-5" />
+                              <item.icon className={cn("mr-3 h-5 w-5", item.iconColor || 'text-gray-500')} />
                               {item.name}
                             </div>
                             {expandedItems.includes(item.name) ? (
@@ -500,7 +555,7 @@ export default function AdminLayout({
                                     setNavigating(true);
                                   }}
                                 >
-                                  <subItem.icon className="mr-3 h-4 w-4" />
+                                  <subItem.icon className={cn("mr-3 h-4 w-4", subItem.iconColor || 'text-gray-500')} />
                                   {subItem.name}
                                 </MenuLink>
                               ))}
@@ -523,7 +578,7 @@ export default function AdminLayout({
                         >
                           <div className="flex items-center justify-between w-full">
                             <div className="flex items-center">
-                              <item.icon className="mr-3 h-5 w-5" />
+                              <item.icon className={cn("mr-3 h-5 w-5", item.iconColor || 'text-gray-500')} />
                               {item.name}
                             </div>
                             {item.badge && (
@@ -561,19 +616,19 @@ export default function AdminLayout({
                       <div className="text-sm text-gray-600 px-3 py-1 bg-gray-100 rounded-md">
                         {adminUser.role === 'super_admin' && (
                           <span className="flex items-center gap-1">
-                            <Shield className="h-3.5 w-3.5" />
+                            <Shield className="h-3.5 w-3.5 text-red-500" />
                             Super Admin
                           </span>
                         )}
                         {adminUser.role === 'branch_admin' && (
                           <span className="flex items-center gap-1">
-                            <Building2 className="h-3.5 w-3.5" />
+                            <Building2 className="h-3.5 w-3.5 text-teal-500" />
                             Branch Admin
                           </span>
                         )}
                         {adminUser.role === 'teacher' && (
                           <span className="flex items-center gap-1">
-                            <UserCog className="h-3.5 w-3.5" />
+                            <UserCog className="h-3.5 w-3.5 text-purple-500" />
                             Teacher
                           </span>
                         )}
@@ -597,7 +652,7 @@ export default function AdminLayout({
                       className="relative notification-bell"
                       onClick={() => setShowNotifications(!showNotifications)}
                     >
-                      <Bell className="h-5 w-5" />
+                      <Bell className="h-5 w-5 text-gray-600" />
                       {notifications.length > 0 && (
                         <span className="absolute -top-1 -right-1 h-5 w-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
                           {notifications.length}
@@ -680,7 +735,7 @@ export default function AdminLayout({
                           router.push('/profile');
                         }}
                       >
-                        <UserIcon className="mr-2 h-4 w-4" />
+                        <UserIcon className="mr-2 h-4 w-4 text-blue-500" />
                         <span>โปรไฟล์ของฉัน</span>
                       </DropdownMenuItem>
                       
@@ -690,14 +745,14 @@ export default function AdminLayout({
                           router.push('/profile/change-password');
                         }}
                       >
-                        <Key className="mr-2 h-4 w-4" />
+                        <Key className="mr-2 h-4 w-4 text-amber-500" />
                         <span>เปลี่ยนรหัสผ่าน</span>
                       </DropdownMenuItem>
                       
                       <DropdownMenuSeparator />
                       
                       <DropdownMenuItem onClick={handleSignOut}>
-                        <LogOut className="mr-2 h-4 w-4" />
+                        <LogOut className="mr-2 h-4 w-4 text-red-500" />
                         <span>ออกจากระบบ</span>
                       </DropdownMenuItem>
                     </DropdownMenuContent>

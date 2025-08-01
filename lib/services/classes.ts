@@ -1034,6 +1034,120 @@ export async function batchUpdateClassStatuses(): Promise<{
   }
 }
 
+// เพิ่ม function นี้ใน lib/services/classes.ts
+
+// Validate if class can be edited based on status and dates
+export function canEditClassDates(classData: Class): {
+  canEdit: boolean;
+  reason?: string;
+} {
+  const now = new Date();
+  
+  // Draft และ Cancelled สามารถแก้ไขได้เสมอ
+  if (classData.status === 'draft' || classData.status === 'cancelled') {
+    return { canEdit: true };
+  }
+  
+  // Published สามารถแก้ไขได้ ถ้ายังไม่มีนักเรียนลงทะเบียน
+  if (classData.status === 'published') {
+    if (classData.enrolledCount === 0) {
+      return { canEdit: true };
+    } else if (classData.startDate > now) {
+      // ถ้ามีนักเรียนแล้ว แต่ยังไม่ถึงวันเริ่ม อนุญาตให้แก้ไขบางส่วน
+      return { 
+        canEdit: true, 
+        reason: 'มีนักเรียนลงทะเบียนแล้ว แก้ไขได้เฉพาะบางส่วน' 
+      };
+    }
+  }
+  
+  // Started - ห้ามแก้ไขวันที่ แต่แก้ไขข้อมูลอื่นได้
+  if (classData.status === 'started') {
+    return { 
+      canEdit: false, 
+      reason: 'คลาสกำลังดำเนินการอยู่ ไม่สามารถแก้ไขวันที่และเวลาได้' 
+    };
+  }
+  
+  // Completed - ห้ามแก้ไข
+  if (classData.status === 'completed') {
+    return { 
+      canEdit: false, 
+      reason: 'คลาสจบแล้ว ไม่สามารถแก้ไขได้' 
+    };
+  }
+  
+  return { canEdit: false, reason: 'ไม่สามารถแก้ไขได้' };
+}
+
+// Get editable fields based on class status
+export function getEditableFields(classData: Class): {
+  basicInfo: boolean;     // ชื่อ, คำอธิบาย
+  schedule: boolean;      // วันที่, เวลา, จำนวนครั้ง
+  resources: boolean;     // ครู, ห้อง, สาขา
+  pricing: boolean;       // ราคา
+  capacity: boolean;      // จำนวนรับ
+  status: boolean;        // สถานะ
+} {
+  // Draft และ Cancelled - แก้ไขได้ทั้งหมด
+  if (classData.status === 'draft' || classData.status === 'cancelled') {
+    return {
+      basicInfo: true,
+      schedule: true,
+      resources: true,
+      pricing: true,
+      capacity: true,
+      status: true
+    };
+  }
+  
+  // Published ไม่มีนักเรียน - แก้ไขได้ทั้งหมด
+  if (classData.status === 'published' && classData.enrolledCount === 0) {
+    return {
+      basicInfo: true,
+      schedule: true,
+      resources: true,
+      pricing: true,
+      capacity: true,
+      status: true
+    };
+  }
+  
+  // Published มีนักเรียนแล้ว - แก้ไขได้บางส่วน
+  if (classData.status === 'published' && classData.enrolledCount > 0) {
+    return {
+      basicInfo: true,
+      schedule: false,    // ห้ามแก้วันเวลา
+      resources: false,   // ห้ามเปลี่ยนครู/ห้อง
+      pricing: false,     // ห้ามแก้ราคา
+      capacity: true,     // แก้จำนวนรับได้ (เพิ่มได้อย่างเดียว)
+      status: true        // เปลี่ยนสถานะได้
+    };
+  }
+  
+  // Started - แก้ไขได้น้อยมาก
+  if (classData.status === 'started') {
+    return {
+      basicInfo: true,    // แก้ชื่อ/คำอธิบายได้
+      schedule: false,    // ห้ามแก้วันเวลา
+      resources: false,   // ห้ามเปลี่ยนครู/ห้อง
+      pricing: false,     // ห้ามแก้ราคา
+      capacity: false,    // ห้ามแก้จำนวนรับ
+      status: true        // เปลี่ยนสถานะได้ (เช่น ยกเลิก)
+    };
+  }
+  
+  // Completed - ห้ามแก้ไขทั้งหมด
+  return {
+    basicInfo: false,
+    schedule: false,
+    resources: false,
+    pricing: false,
+    capacity: false,
+    status: false
+  };
+}
+
 // Export functions
 export {
   generateSchedules,

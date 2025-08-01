@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Class, Branch, Subject, Teacher, Room } from '@/types/models';
-import { createClass, updateClass, checkRoomAvailability } from '@/lib/services/classes';
+import { createClass, updateClass, checkRoomAvailability, canEditClassDates, getEditableFields } from '@/lib/services/classes';
 import { getHolidaysForBranch } from '@/lib/services/holidays';
 import { getActiveBranches } from '@/lib/services/branches';
 import { getActiveSubjects } from '@/lib/services/subjects';
@@ -23,7 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from 'sonner';
-import { Loader2, Save, X, Calendar, AlertCircle, Plus, Info, CheckCircle } from 'lucide-react';
+import { Loader2, Save, X, Calendar, AlertCircle, Plus, Info, CheckCircle, Lock } from 'lucide-react';
 import Link from 'next/link';
 import { generateClassCode, getDayName } from '@/lib/utils';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -59,6 +59,21 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
     conflicts?: any[];
   }>({ checked: false, available: true });
   
+  // เพิ่ม state สำหรับเก็บ editable fields
+  const [editableFields, setEditableFields] = useState({
+    basicInfo: true,
+    schedule: true,
+    resources: true,
+    pricing: true,
+    capacity: true,
+    status: true
+  });
+  
+  const [editPermission, setEditPermission] = useState({
+    canEdit: true,
+    reason: ''
+  });
+  
   const [formData, setFormData] = useState({
     name: classData?.name || '',
     code: classData?.code || '',
@@ -84,6 +99,17 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
     },
     status: classData?.status || 'draft',
   });
+
+  // เพิ่ม useEffect สำหรับตรวจสอบสิทธิ์การแก้ไข
+  useEffect(() => {
+    if (isEdit && classData) {
+      const permission = canEditClassDates(classData);
+      setEditPermission(permission);
+      
+      const fields = getEditableFields(classData);
+      setEditableFields(fields);
+    }
+  }, [isEdit, classData]);
 
   useEffect(() => {
     loadInitialData();
@@ -126,7 +152,7 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
     }
   }, [formData.startDate, formData.daysOfWeek, formData.totalSessions, formData.branchId]);
 
-  // เพิ่ม useEffect สำหรับตรวจสอบวันเริ่มต้นและกำหนดสถานะอัตโนมัติ
+  // แก้ไข useEffect สำหรับตรวจสอบวันเริ่มต้นและกำหนดสถานะอัตโนมัติ
   useEffect(() => {
     if (formData.startDate) {
       const today = new Date();
@@ -134,17 +160,18 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
       const startDate = new Date(formData.startDate);
       startDate.setHours(0, 0, 0, 0);
       
-      // ถ้าเป็นการสร้างใหม่ หรือ แก้ไขแต่สถานะยังไม่ใช่ started
-      if (!isEdit || (isEdit && formData.status !== 'started' && formData.status !== 'completed' && formData.status !== 'cancelled')) {
-        if (startDate <= today) {
+      // ถ้าเป็นการสร้างใหม่ หรือ แก้ไขแต่สถานะเป็น draft/published
+      if (!isEdit || (isEdit && (formData.status === 'draft' || formData.status === 'published'))) {
+        // สถานะ draft ไม่ต้องเปลี่ยนอัตโนมัติ
+        if (formData.status === 'draft') {
+          setAutoStatus(null);
+        } 
+        // สถานะ published และวันเริ่มผ่านไปแล้ว
+        else if (formData.status === 'published' && startDate <= today) {
           setAutoStatus('started');
-          setFormData(prev => ({ ...prev, status: 'started' }));
+          // อย่าเปลี่ยนสถานะอัตโนมัติ แค่แจ้งเตือน
         } else {
           setAutoStatus(null);
-          // ถ้าวันเริ่มต้นเป็นอนาคต และสถานะเป็น started ให้เปลี่ยนกลับ
-          if (formData.status === 'started') {
-            setFormData(prev => ({ ...prev, status: 'published' }));
-          }
         }
       }
     }
@@ -320,7 +347,7 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
     }
 
     // Check room availability one more time before save
-    if (!roomAvailability.available) {
+    if (!roomAvailability.available && editableFields.schedule) {
       toast.error('ห้องเรียนไม่ว่างในช่วงเวลานี้ กรุณาเลือกห้องอื่นหรือเปลี่ยนเวลา');
       return;
     }
@@ -351,9 +378,27 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
     }
   };
 
+  // Helper function to show lock icon for disabled fields
+  const renderFieldLabel = (label: string, isEditable: boolean) => (
+    <div className="flex items-center gap-2">
+      <span>{label}</span>
+      {!isEditable && isEdit && <Lock className="h-3 w-3 text-gray-400" />}
+    </div>
+  );
+
   return (
     <form onSubmit={handleSubmit}>
       <div className="max-w-4xl mx-auto space-y-6">
+        {/* Edit Permission Alert */}
+        {isEdit && editPermission.reason && (
+          <Alert className={editPermission.canEdit ? 'border-yellow-200' : 'border-red-200'}>
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              {editPermission.reason}
+            </AlertDescription>
+          </Alert>
+        )}
+
         {/* Basic Information */}
         <Card>
           <CardHeader>
@@ -362,12 +407,13 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="name">ชื่อคลาส *</Label>
+                <Label htmlFor="name">{renderFieldLabel('ชื่อคลาส *', editableFields.basicInfo)}</Label>
                 <Input
                   id="name"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   placeholder="เช่น Python Basic Sat 14:00"
+                  disabled={!editableFields.basicInfo}
                   required
                 />
               </div>
@@ -385,22 +431,24 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="description">คำอธิบาย</Label>
+              <Label htmlFor="description">{renderFieldLabel('คำอธิบาย', editableFields.basicInfo)}</Label>
               <Textarea
                 id="description"
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                 placeholder="รายละเอียดเพิ่มเติมของคลาส"
                 rows={3}
+                disabled={!editableFields.basicInfo}
               />
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="branch">สาขา *</Label>
+                <Label htmlFor="branch">{renderFieldLabel('สาขา *', editableFields.resources)}</Label>
                 <Select
                   value={formData.branchId}
                   onValueChange={(value) => setFormData({ ...formData, branchId: value })}
+                  disabled={!editableFields.resources}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="เลือกสาขา" />
@@ -428,10 +476,11 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="subject">วิชา *</Label>
+                <Label htmlFor="subject">{renderFieldLabel('วิชา *', editableFields.resources)}</Label>
                 <Select
                   value={formData.subjectId}
                   onValueChange={(value) => setFormData({ ...formData, subjectId: value })}
+                  disabled={!editableFields.resources}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="เลือกวิชา" />
@@ -468,7 +517,7 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label>วันที่เรียน *</Label>
+              <Label>{renderFieldLabel('วันที่เรียน *', editableFields.schedule)}</Label>
               <p className="text-xs text-gray-500 mb-2">
                 เลือกวันที่เรียนก่อน เพื่อให้ระบบกำหนดวันเริ่มเรียนที่ถูกต้อง
               </p>
@@ -479,6 +528,7 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
                       id={`day-${day.value}`}
                       checked={formData.daysOfWeek.includes(day.value)}
                       onCheckedChange={() => handleDayToggle(day.value)}
+                      disabled={!editableFields.schedule}
                     />
                     <Label
                       htmlFor={`day-${day.value}`}
@@ -493,23 +543,25 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="startTime">เวลาเริ่ม *</Label>
+                <Label htmlFor="startTime">{renderFieldLabel('เวลาเริ่ม *', editableFields.schedule)}</Label>
                 <Input
                   id="startTime"
                   type="time"
                   value={formData.startTime}
                   onChange={(e) => setFormData({ ...formData, startTime: e.target.value })}
+                  disabled={!editableFields.schedule}
                   required
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="endTime">เวลาจบ *</Label>
+                <Label htmlFor="endTime">{renderFieldLabel('เวลาจบ *', editableFields.schedule)}</Label>
                 <Input
                   id="endTime"
                   type="time"
                   value={formData.endTime}
                   onChange={(e) => setFormData({ ...formData, endTime: e.target.value })}
+                  disabled={!editableFields.schedule}
                   required
                 />
               </div>
@@ -517,7 +569,7 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="startDate">วันเริ่มเรียน *</Label>
+                <Label htmlFor="startDate">{renderFieldLabel('วันเริ่มเรียน *', editableFields.schedule)}</Label>
                 <div className="relative">
                   <Input
                     id="startDate"
@@ -535,6 +587,7 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
                       
                       setFormData({ ...formData, startDate: e.target.value });
                     }}
+                    disabled={!editableFields.schedule}
                     required
                   />
                   {formData.daysOfWeek.length > 0 && (
@@ -546,13 +599,14 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="totalSessions">จำนวนครั้ง *</Label>
+                <Label htmlFor="totalSessions">{renderFieldLabel('จำนวนครั้ง *', editableFields.schedule)}</Label>
                 <Input
                   id="totalSessions"
                   type="number"
                   min="1"
                   value={formData.totalSessions}
                   onChange={(e) => setFormData({ ...formData, totalSessions: parseInt(e.target.value) || 1 })}
+                  disabled={!editableFields.schedule}
                   required
                 />
               </div>
@@ -575,11 +629,11 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
             {/* Teacher and Room Selection - Moved after endDate */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t">
               <div className="space-y-2">
-                <Label htmlFor="teacher">ครูผู้สอน *</Label>
+                <Label htmlFor="teacher">{renderFieldLabel('ครูผู้สอน *', editableFields.resources)}</Label>
                 <Select
                   value={formData.teacherId}
                   onValueChange={(value) => setFormData({ ...formData, teacherId: value })}
-                  disabled={!formData.branchId}
+                  disabled={!formData.branchId || !editableFields.resources}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder={formData.branchId ? "เลือกครู" : "เลือกสาขาก่อน"} />
@@ -607,11 +661,11 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="room">ห้องเรียน *</Label>
+                <Label htmlFor="room">{renderFieldLabel('ห้องเรียน *', editableFields.resources)}</Label>
                 <Select
                   value={formData.roomId}
                   onValueChange={(value) => setFormData({ ...formData, roomId: value })}
-                  disabled={!formData.branchId}
+                  disabled={!formData.branchId || !editableFields.resources}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder={formData.branchId ? "เลือกห้อง" : "เลือกสาขาก่อน"} />
@@ -640,7 +694,7 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
             </div>
 
             {/* Room Availability Status */}
-            {formData.roomId && (
+            {formData.roomId && editableFields.schedule && (
               <div className="mt-4">
                 {checkingAvailability ? (
                   <Alert>
@@ -686,12 +740,12 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
               </div>
             )}
 
-            {/* แสดง Alert เมื่อวันเริ่มต้นเป็นวันที่ผ่านมาแล้ว */}
-            {autoStatus === 'started' && (
-              <Alert>
-                <Info className="h-4 w-4" />
-                <AlertDescription>
-                  เนื่องจากวันเริ่มต้นเป็นวันที่ผ่านมาแล้ว สถานะคลาสจะถูกกำหนดเป็น <strong>&quot;กำลังเรียน&quot;</strong> อัตโนมัติ
+            {/* แสดง Alert เมื่อวันเริ่มต้นเป็นวันที่ผ่านมาแล้วและสถานะเป็น published */}
+            {formData.status === 'published' && autoStatus === 'started' && (
+              <Alert className="border-yellow-200 bg-yellow-50">
+                <Info className="h-4 w-4 text-yellow-600" />
+                <AlertDescription className="text-yellow-800">
+                  <strong>คำแนะนำ:</strong> วันเริ่มต้นเป็นวันที่ผ่านมาแล้ว หากต้องการเปิดคลาสจริง ควรเปลี่ยนสถานะเป็น <strong>&quot;กำลังเรียน&quot;</strong>
                 </AlertDescription>
               </Alert>
             )}
@@ -706,25 +760,35 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="minStudents">นักเรียนขั้นต่ำ *</Label>
+                <Label htmlFor="minStudents">{renderFieldLabel('นักเรียนขั้นต่ำ *', editableFields.capacity)}</Label>
                 <Input
                   id="minStudents"
                   type="number"
                   min="1"
                   value={formData.minStudents}
                   onChange={(e) => setFormData({ ...formData, minStudents: parseInt(e.target.value) || 1 })}
+                  disabled={!editableFields.capacity}
                   required
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="maxStudents">นักเรียนสูงสุด *</Label>
+                <Label htmlFor="maxStudents">{renderFieldLabel('นักเรียนสูงสุด *', editableFields.capacity)}</Label>
                 <Input
                   id="maxStudents"
                   type="number"
                   min="1"
                   value={formData.maxStudents}
-                  onChange={(e) => setFormData({ ...formData, maxStudents: parseInt(e.target.value) || 1 })}
+                  onChange={(e) => {
+                    const newMax = parseInt(e.target.value) || 1;
+                    // ถ้ามีนักเรียนแล้ว ห้ามลดจำนวนต่ำกว่าจำนวนที่มีอยู่
+                    if (isEdit && formData.enrolledCount > 0 && newMax < formData.enrolledCount) {
+                      toast.error(`ไม่สามารถลดจำนวนต่ำกว่า ${formData.enrolledCount} (จำนวนนักเรียนปัจจุบัน)`);
+                      return;
+                    }
+                    setFormData({ ...formData, maxStudents: newMax });
+                  }}
+                  disabled={!editableFields.capacity}
                   required
                 />
               </div>
@@ -745,7 +809,7 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="totalPrice">ราคาคลาสทั้งหมด (บาท) *</Label>
+                <Label htmlFor="totalPrice">{renderFieldLabel('ราคาคลาสทั้งหมด (บาท) *', editableFields.pricing)}</Label>
                 <Input
                   id="totalPrice"
                   type="number"
@@ -756,6 +820,7 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
                     pricing: { ...formData.pricing, totalPrice: parseInt(e.target.value) || 0 }
                   })}
                   placeholder="เช่น 15900"
+                  disabled={!editableFields.pricing}
                   required
                 />
                 <p className="text-xs text-gray-500">
@@ -764,7 +829,7 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="materialFee">ค่าอุปกรณ์เพิ่มเติม (ถ้ามี)</Label>
+                <Label htmlFor="materialFee">{renderFieldLabel('ค่าอุปกรณ์เพิ่มเติม (ถ้ามี)', editableFields.pricing)}</Label>
                 <Input
                   id="materialFee"
                   type="number"
@@ -775,6 +840,7 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
                     pricing: { ...formData.pricing, materialFee: parseInt(e.target.value) || 0 }
                   })}
                   placeholder="0"
+                  disabled={!editableFields.pricing}
                 />
               </div>
             </div>
@@ -804,43 +870,51 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              <Label htmlFor="status">สถานะคลาส</Label>
+              <Label htmlFor="status">{renderFieldLabel('สถานะคลาส', editableFields.status)}</Label>
               <Select
                 value={formData.status}
                 onValueChange={(value) => setFormData({ ...formData, status: value as Class['status'] })}
-                disabled={autoStatus === 'started'}
+                disabled={!editableFields.status}
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {autoStatus !== 'started' && (
+                  <SelectItem value="draft">ร่าง</SelectItem>
+                  <SelectItem value="published">เปิดรับสมัคร</SelectItem>
+                  <SelectItem value="started">กำลังเรียน</SelectItem>
+                  {isEdit && (
                     <>
-                      <SelectItem value="draft">ร่าง</SelectItem>
-                      <SelectItem value="published">เปิดรับสมัคร</SelectItem>
-                    </>
-                  )}
-                  {(isEdit || autoStatus === 'started') && (
-                    <>
-                      <SelectItem value="started">กำลังเรียน</SelectItem>
-                      {isEdit && (
-                        <>
-                          <SelectItem value="completed">จบแล้ว</SelectItem>
-                          <SelectItem value="cancelled">ยกเลิก</SelectItem>
-                        </>
-                      )}
+                      <SelectItem value="completed">จบแล้ว</SelectItem>
+                      <SelectItem value="cancelled">ยกเลิก</SelectItem>
                     </>
                   )}
                 </SelectContent>
               </Select>
-              {autoStatus === 'started' && (
+              {formData.status === 'draft' && classData?.status === 'draft' && (
                 <p className="text-xs text-gray-500 mt-1">
-                  สถานะถูกกำหนดอัตโนมัติเนื่องจากวันเริ่มต้นเป็นวันที่ผ่านมาแล้ว
+                  สถานะ &quot;ร่าง&quot; สามารถแก้ไขข้อมูลได้ทุกอย่าง แม้วันเริ่มจะผ่านไปแล้ว
                 </p>
               )}
             </div>
           </CardContent>
         </Card>
+
+        {/* Field Restrictions Info */}
+        {isEdit && (!editableFields.schedule || !editableFields.pricing || !editableFields.resources) && (
+          <Alert className="border-blue-200 bg-blue-50">
+            <Info className="h-4 w-4 text-blue-600" />
+            <AlertDescription className="text-blue-800">
+              <p className="font-medium mb-2">ข้อจำกัดการแก้ไข:</p>
+              <ul className="list-disc list-inside space-y-1 text-sm">
+                {!editableFields.schedule && <li>ไม่สามารถแก้ไขวันที่และเวลาได้</li>}
+                {!editableFields.resources && <li>ไม่สามารถเปลี่ยนครู, ห้อง หรือสาขาได้</li>}
+                {!editableFields.pricing && <li>ไม่สามารถแก้ไขราคาได้</li>}
+                {formData.enrolledCount > 0 && <li>มีนักเรียนลงทะเบียนแล้ว {formData.enrolledCount} คน</li>}
+              </ul>
+            </AlertDescription>
+          </Alert>
+        )}
 
         {/* Action Buttons */}
         <div className="flex justify-end gap-4">
@@ -853,7 +927,7 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
           <Button
             type="submit"
             className="bg-red-500 hover:bg-red-600"
-            disabled={loading || !roomAvailability.available}
+            disabled={loading || (!roomAvailability.available && editableFields.schedule)}
           >
             {loading ? (
               <>
