@@ -8,7 +8,7 @@
       "destination": "/liff/$1"
     }
   ],
-   "crons": [
+  "crons": [
     {
       "path": "/api/cron/send-reminders",
       "schedule": "0 18 * * *"
