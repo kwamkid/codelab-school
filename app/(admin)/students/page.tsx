@@ -24,7 +24,8 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
-  ChevronsRight
+  ChevronsRight,
+  Globe
 } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
@@ -45,7 +46,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useBranch } from '@/contexts/BranchContext';
 
 type StudentWithInfo = Student & { 
   parentName: string; 
@@ -59,7 +59,6 @@ type StudentWithInfo = Student & {
 const ITEMS_PER_PAGE = 20;
 
 export default function StudentsPage() {
-  const { selectedBranchId, isAllBranches } = useBranch();
   const [allStudentsData, setAllStudentsData] = useState<StudentWithInfo[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
@@ -72,6 +71,7 @@ export default function StudentsPage() {
   const [filterStatus, setFilterStatus] = useState<string>('active');
   const [filterAllergy, setFilterAllergy] = useState<string>('all');
   const [filterEnrollment, setFilterEnrollment] = useState<string>('all');
+  const [filterBranch, setFilterBranch] = useState<string>('all'); // เพิ่ม branch filter
   const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
@@ -81,7 +81,7 @@ export default function StudentsPage() {
   // Reset page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, filterGender, filterStatus, filterAllergy, filterEnrollment, selectedBranchId]);
+  }, [searchTerm, filterGender, filterStatus, filterAllergy, filterEnrollment, filterBranch]);
 
   const loadInitialData = async () => {
     try {
@@ -187,10 +187,17 @@ export default function StudentsPage() {
     let filtered = [...allStudentsData];
     
     // Filter by selected branch if not viewing all branches
-    if (!isAllBranches && selectedBranchId) {
-      filtered = filtered.filter(student => 
-        student.enrolledBranches?.includes(selectedBranchId) || false
-      );
+    if (filterBranch !== 'all') {
+      filtered = filtered.filter(student => {
+        // 1. เรียนในสาขานี้
+        const studiesInBranch = student.enrolledBranches?.includes(filterBranch) || false;
+        
+        // 2. ผู้ปกครองสนใจสาขานี้ (สำหรับคนที่ยังไม่เรียน)
+        // ต้องดึงข้อมูล parent มาเช็ค - แต่เราไม่มีใน current data structure
+        // ดังนั้นจะใช้เฉพาะเงื่อนไขแรกก่อน
+        
+        return studiesInBranch;
+      });
     }
     
     // Apply search filter
@@ -239,7 +246,7 @@ export default function StudentsPage() {
     }
     
     return filtered;
-  }, [allStudentsData, searchTerm, filterGender, filterStatus, filterAllergy, filterEnrollment, selectedBranchId, isAllBranches, enrollmentLoading]);
+  }, [allStudentsData, searchTerm, filterGender, filterStatus, filterAllergy, filterEnrollment, filterBranch, enrollmentLoading]);
 
   // Calculate statistics
   const stats = useMemo(() => {
@@ -297,16 +304,12 @@ export default function StudentsPage() {
   return (
     <div>
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">
-          นักเรียนทั้งหมด
-          {!isAllBranches && (
-            <span className="text-red-600 text-lg ml-2">(เฉพาะสาขาที่เลือก)</span>
-          )}
+        <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
+          <Globe className="h-8 w-8 text-blue-500" />
+          นักเรียนทั้งหมด (ทุกสาขา)
         </h1>
         <p className="text-gray-600 mt-2">
-          {isAllBranches 
-            ? 'รายชื่อนักเรียนทั้งหมดในระบบ' 
-            : 'นักเรียนที่เคยเรียนหรือกำลังเรียนในสาขานี้'}
+          รายชื่อนักเรียนทั้งหมดในระบบ - สามารถกรองตามสาขาได้
         </p>
       </div>
 
@@ -315,7 +318,7 @@ export default function StudentsPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">
-              {!isAllBranches && selectedBranchId ? 'นักเรียนในสาขา' : 'นักเรียนทั้งหมด'}
+              {filterBranch !== 'all' ? 'นักเรียนในสาขา' : 'นักเรียนทั้งหมด'}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -372,7 +375,7 @@ export default function StudentsPage() {
         
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">หมดคลาสแล้ว</CardTitle>
+            <CardTitle className="text-sm font-medium">จบคอร์สแล้ว</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-orange-600">
@@ -384,7 +387,7 @@ export default function StudentsPage() {
         
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">ยังไม่เคยเรียน</CardTitle>
+            <CardTitle className="text-sm font-medium">ยังไม่ลงคอร์ส</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-gray-600">
@@ -406,6 +409,30 @@ export default function StudentsPage() {
             className="pl-10"
           />
         </div>
+        
+        {/* Branch Filter */}
+        <Select value={filterBranch} onValueChange={setFilterBranch}>
+          <SelectTrigger className="w-[200px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">
+              <div className="flex items-center gap-2">
+                <Globe className="h-4 w-4" />
+                ทุกสาขา
+              </div>
+            </SelectItem>
+            {branches.map((branch) => (
+              <SelectItem key={branch.id} value={branch.id}>
+                <div className="flex items-center gap-2">
+                  <Building2 className="h-4 w-4" />
+                  {branch.name}
+                  <span className="text-xs text-gray-500 ml-1">(เรียนในสาขา)</span>
+                </div>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         
         <Select value={filterGender} onValueChange={setFilterGender}>
           <SelectTrigger className="w-[150px]">
@@ -447,8 +474,8 @@ export default function StudentsPage() {
           <SelectContent>
             <SelectItem value="all">สถานะเรียนทั้งหมด</SelectItem>
             <SelectItem value="active">มีคลาสเรียน</SelectItem>
-            <SelectItem value="completed">หมดคลาสแล้ว</SelectItem>
-            <SelectItem value="never">ยังไม่เคยเรียน</SelectItem>
+            <SelectItem value="completed">จบคอร์สแล้ว</SelectItem>
+            <SelectItem value="never">ยังไม่ลงคอร์ส</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -459,6 +486,11 @@ export default function StudentsPage() {
           <div className="flex justify-between items-center">
             <CardTitle>
               รายชื่อนักเรียน ({filteredStudents.length} คน)
+              {filterBranch !== 'all' && (
+                <span className="text-blue-600 text-base ml-2">
+                  • กรองสาขา: {branchMap[filterBranch]} (เรียนในสาขา)
+                </span>
+              )}
             </CardTitle>
             {totalPages > 1 && (
               <div className="text-sm text-gray-500">
@@ -475,7 +507,7 @@ export default function StudentsPage() {
                 ไม่พบข้อมูลนักเรียน
               </h3>
               <p className="text-gray-600">
-                {searchTerm || filterGender !== 'all' || filterStatus !== 'active' || filterAllergy !== 'all' 
+                {searchTerm || filterGender !== 'all' || filterStatus !== 'active' || filterAllergy !== 'all' || filterBranch !== 'all'
                   ? 'ลองปรับเงื่อนไขการค้นหา' 
                   : 'ยังไม่มีนักเรียนในระบบ'}
               </p>
@@ -491,9 +523,7 @@ export default function StudentsPage() {
                       <TableHead className="w-[150px]">โรงเรียน</TableHead>
                       <TableHead className="w-[150px]">ผู้ปกครอง</TableHead>
                       <TableHead className="text-center w-[80px]">ประวัติแพ้</TableHead>
-                      <TableHead className="min-w-[200px]">
-                        {isAllBranches ? 'เรียนสาขา' : 'สถานะเรียน'}
-                      </TableHead>
+                      <TableHead className="min-w-[200px]">สาขาที่เรียน / สถานะ</TableHead>
                       <TableHead className="text-right w-[60px]">จัดการ</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -579,8 +609,8 @@ export default function StudentsPage() {
                           )}
                         </TableCell>
                         <TableCell>
-                          {isAllBranches ? (
-                            // Show enrolled branches when viewing all branches
+                          <div className="space-y-2">
+                            {/* แสดงสาขาที่เรียน */}
                             <div className="flex flex-wrap gap-1">
                               {enrollmentLoading ? (
                                 <span className="text-gray-400 text-sm">กำลังโหลด...</span>
@@ -595,11 +625,11 @@ export default function StudentsPage() {
                                   </Badge>
                                 ))
                               ) : (
-                                <span className="text-gray-400 text-sm">ยังไม่เคยเรียน</span>
+                                <span className="text-gray-400 text-sm">-</span>
                               )}
                             </div>
-                          ) : (
-                            // Show enrollment status when viewing specific branch
+                            
+                            {/* แสดงสถานะการเรียน */}
                             <div>
                               {enrollmentLoading ? (
                                 <span className="text-gray-400 text-sm">กำลังโหลด...</span>
@@ -609,7 +639,7 @@ export default function StudentsPage() {
                                     <GraduationCap className="h-3 w-3 mr-1" />
                                     กำลังเรียน {student.currentClasses.length} คลาส
                                   </Badge>
-                                  <div className="text-xs text-gray-500">
+                                  <div className="text-xs text-gray-500 max-w-[200px]">
                                     {student.currentClasses.map(classId => 
                                       classMap[classId]?.name || classId
                                     ).join(', ')}
@@ -618,13 +648,13 @@ export default function StudentsPage() {
                               ) : student.completedClasses && student.completedClasses.length > 0 ? (
                                 <Badge className="bg-orange-100 text-orange-700 text-xs">
                                   <CheckCircle2 className="h-3 w-3 mr-1" />
-                                  หมดคลาสแล้ว ({student.completedClasses.length} คลาส)
+                                  จบคอร์สแล้ว ({student.completedClasses.length} คลาส)
                                 </Badge>
                               ) : (
-                                <span className="text-gray-400 text-sm">ยังไม่เคยเรียน</span>
+                                <span className="text-gray-400 text-sm">ยังไม่ลงคอร์ส</span>
                               )}
                             </div>
-                          )}
+                          </div>
                         </TableCell>
                         <TableCell className="text-right">
                           <Link href={`/parents/${student.parentId}/students/${student.id}/edit`}>
@@ -733,6 +763,18 @@ export default function StudentsPage() {
                     <div className="flex-1">
                       <p className="font-medium">{student.nickname || student.name}</p>
                       <p className="text-sm text-red-600">แพ้: {student.allergies}</p>
+                      {/* แสดงสาขาที่เรียน */}
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {student.enrolledBranches?.map(branchId => (
+                          <Badge 
+                            key={branchId} 
+                            variant="outline"
+                            className="text-xs"
+                          >
+                            {branchMap[branchId] || branchId}
+                          </Badge>
+                        ))}
+                      </div>
                     </div>
                     {student.specialNeeds && (
                       <Badge variant="outline" className="text-xs">

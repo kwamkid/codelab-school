@@ -32,7 +32,9 @@ export function BranchSelector() {
     '/teaching-materials',
     '/teaching/slides',
     '/subjects',
-    '/users'
+    '/users',
+    '/parents',      // เพิ่ม: หน้าผู้ปกครอง
+    '/students'      // เพิ่ม: หน้านักเรียน
   ];
   const isGlobalDataPage = globalDataPages.some(page => pathname.startsWith(page));
   
@@ -94,11 +96,14 @@ export function BranchSelector() {
       <div className="flex items-center gap-2 text-sm text-gray-600">
         <Building2 className="h-4 w-4" />
         <span className="font-medium">ข้อมูลส่วนกลาง</span>
+        <Badge variant="secondary" className="text-xs">
+          ทุกสาขา
+        </Badge>
       </div>
     );
   }
 
-  // Don't show selector if user has only one branch
+  // Don't show selector if user has only one branch (for non-global pages)
   if (!isSuperAdmin() && adminUser?.branchIds && adminUser.branchIds.length === 1) {
     const branch = branches.find(b => b.id === adminUser.branchIds[0]);
     if (branch) {
