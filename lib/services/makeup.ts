@@ -16,12 +16,11 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { MakeupClass } from '@/types/models';
-import { getClassSchedule, updateClassSchedule } from './classes';
+import { getClassSchedule, updateClassSchedule, getClasses } from './classes';
 import { sendMakeupNotification } from './line-notifications';
 
 const COLLECTION_NAME = 'makeupClasses';
 
-// Get all makeup classes
 // Get all makeup classes - FIXED VERSION
 export async function getMakeupClasses(branchId?: string | null): Promise<MakeupClass[]> {
   try {
@@ -71,10 +70,9 @@ export async function getMakeupClasses(branchId?: string | null): Promise<Makeup
     
     // Filter by branch if specified
     if (branchId) {
-      // Get all classes for this branch first
-      const { getClassesByBranch } = await import('./classes');
-      const branchClasses = await getClassesByBranch(branchId);
-      const branchClassIds = new Set(branchClasses.map(c => c.id));
+      // Get all classes and filter by branch
+      const allClasses = await getClasses(branchId);
+      const branchClassIds = new Set(allClasses.map(c => c.id));
       
       // Filter makeups that belong to classes in this branch
       makeupClasses = makeupClasses.filter(makeup => 
