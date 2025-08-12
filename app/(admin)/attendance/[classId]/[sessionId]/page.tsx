@@ -41,7 +41,8 @@ import {
   UserCheck,
   AlertTriangle,
   Copy,
-  CheckCheck
+  CheckCheck,
+  MessageSquare
 } from 'lucide-react';
 
 interface StudentAttendance {
@@ -51,6 +52,7 @@ interface StudentAttendance {
   parentName: string;
   status: 'present' | 'absent' | 'late' | 'sick' | 'leave' | '';
   note: string;
+  feedback: string; // เพิ่มบรรทัดนี้
   existingMakeup?: boolean;
 }
 
@@ -121,6 +123,7 @@ export default function AttendanceCheckPage() {
           parentName: studentData.parentName,
           status: existingAttendance?.status || '', // Default to empty string instead of 'present'
           note: existingAttendance?.note || '',
+          feedback: existingAttendance?.feedback || '', // เพิ่มบรรทัดนี้
           existingMakeup: false
         } as StudentAttendance;
       });
@@ -166,6 +169,13 @@ export default function AttendanceCheckPage() {
     setHasChanges(true);
   };
 
+  const handleFeedbackChange = (studentId: string, feedback: string) => {
+  setAttendance(prev => prev.map(att => 
+    att.studentId === studentId ? { ...att, feedback } : att
+  ));
+  setHasChanges(true);
+};
+
   const handleMarkAllPresent = () => {
     setAttendance(prev => prev.map(att => ({ ...att, status: 'present' })));
     setHasChanges(true);
@@ -192,6 +202,7 @@ export default function AttendanceCheckPage() {
         studentId: att.studentId,
         status: att.status as 'present' | 'absent' | 'late' | 'sick' | 'leave',
         note: att.note,
+        feedback: att.feedback, // เพิ่มบรรทัดนี้
         checkedAt: new Date(),
         checkedBy: user?.uid || 'system'
       }));
@@ -202,8 +213,8 @@ export default function AttendanceCheckPage() {
         attendance: attendanceData,
         note: globalNote,
         status: attendanceData.length > 0 ? 'completed' : 'scheduled',
-        attendanceCompletedAt: attendanceData.length > 0 ? new Date() : undefined,
-        attendanceCompletedBy: attendanceData.length > 0 ? (user?.uid || 'system') : undefined
+        // attendanceCompletedAt: attendanceData.length > 0 ? new Date() : undefined,
+        // attendanceCompletedBy: attendanceData.length > 0 ? (user?.uid || 'system') : undefined
       });
       
       // Get makeup settings
@@ -485,6 +496,25 @@ export default function AttendanceCheckPage() {
                         onChange={(e) => handleNoteChange(student.studentId, e.target.value)}
                         className="h-20"
                       />
+                    </div>
+                  )}
+
+                  {/* เพิ่มหลังจาก note textarea */}
+                  {student.status === 'present' && (
+                    <div className="mt-3 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <MessageSquare className="h-4 w-4 text-blue-500" />
+                        <Label className="text-sm font-medium">Teacher Feedback (ผู้ปกครองจะเห็น)</Label>
+                      </div>
+                      <Textarea
+                        placeholder="เขียน feedback สำหรับนักเรียน เช่น วันนี้ตั้งใจเรียนดีมาก, ทำแบบฝึกหัดได้ดี, ควรฝึกเพิ่มเรื่อง..."
+                        value={student.feedback}
+                        onChange={(e) => handleFeedbackChange(student.studentId, e.target.value)}
+                        className="min-h-[80px] text-sm"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        * Feedback นี้จะแสดงให้ผู้ปกครองเห็นผ่าน LINE
+                      </p>
                     </div>
                   )}
                 </div>

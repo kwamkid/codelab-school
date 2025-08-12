@@ -13,7 +13,8 @@ import {
   Loader2,
   MessageCircle,
   Sparkles,
-  School
+  School,
+  MessageSquare
 } from 'lucide-react'
 import { getGeneralSettings } from '@/lib/services/settings'
 import { getParentByLineId } from '@/lib/services/parents'
@@ -217,6 +218,15 @@ function LiffHome() {
       path: '/liff/profile',
       description: 'จัดการข้อมูลผู้ปกครองและนักเรียน',
       color: 'bg-green-500',
+      requireAuth: true
+    },
+    {
+      title: 'Feedback',
+      titleTh: 'ความคิดเห็นจากครู',
+      icon: MessageSquare,
+      path: '/liff/feedback',
+      description: 'ดู feedback และความคิดเห็นจากครูผู้สอน',
+      color: 'bg-blue-500',
       requireAuth: true
     },
     {

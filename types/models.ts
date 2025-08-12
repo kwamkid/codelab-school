@@ -158,6 +158,8 @@ export interface Class {
   status: 'draft' | 'published' | 'started' | 'completed' | 'cancelled';
   createdAt: Date;
 }
+
+// Update ClassSchedule interface - เพิ่ม feedback ใน attendance
 export interface ClassSchedule {
   id: string;
   classId: string;
@@ -169,14 +171,34 @@ export interface ClassSchedule {
   note?: string;
   attendance?: {
     studentId: string;
-    status: 'present' | 'absent' | 'late';
+    status: 'present' | 'absent' | 'late' | 'sick' | 'leave';
     note?: string;
-    checkedAt?: Date;      // เพิ่ม: เวลาที่เช็ค
-    checkedBy?: string;    // เพิ่ม: ใครเช็ค
+    checkedAt?: Date;
+    checkedBy?: string;
+    // เพิ่ม feedback field (optional)
+    feedback?: string; // เปลี่ยนเป็น string ธรรมดา
   }[];
   originalDate?: Date;
   rescheduledAt?: Date;
   rescheduledBy?: string;
+}
+
+// เพิ่ม interface ใหม่สำหรับ Feedback History
+export interface StudentFeedback {
+  id: string;
+  studentId: string;
+  parentId: string;
+  classId: string;
+  className: string;
+  subjectId: string;
+  subjectName: string;
+  scheduleId: string;
+  sessionNumber: number;
+  sessionDate: Date;
+  feedback: string;
+  teacherId: string;
+  teacherName: string;
+  createdAt: Date;
 }
 
 // Enrollment & Payment Types

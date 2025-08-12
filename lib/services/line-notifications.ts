@@ -310,3 +310,27 @@ export async function sendTrialConfirmation(
     return false;
   }
 }
+
+// แจ้งเตือนผู้ปกครองเมื่อมี feedback ใหม่
+export async function sendFeedbackNotification(
+  parentLineId: string,
+  studentName: string,
+  className: string,
+  teacherName: string,
+  feedback: string
+): Promise<boolean> {
+  try {
+    const message = `📝 Teacher Feedback\n\n` +
+      `นักเรียน: ${studentName}\n` +
+      `คลาส: ${className}\n` +
+      `จากครู: ${teacherName}\n\n` +
+      `"${feedback}"\n\n` +
+      `ดูทั้งหมดได้ที่เมนู Teacher Feedback`;
+      
+    const result = await sendLineMessage(parentLineId, message);
+    return result.success;
+  } catch (error) {
+    console.error('Error sending feedback notification:', error);
+    return false;
+  }
+}
