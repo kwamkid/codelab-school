@@ -21,6 +21,7 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   canAccessBranch: (branchId: string) => boolean;
   isSuperAdmin: () => boolean;
+  isBranchAdmin: () => boolean; // เพิ่ม function นี้
   canManageSettings: () => boolean;
   isTeacher: () => boolean; // เพิ่ม helper function
 }
@@ -164,6 +165,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return adminUser?.role === 'super_admin';
   };
 
+  const isBranchAdmin = () => {
+    return adminUser?.role === 'branch_admin';
+  };
+
   const canManageSettings = () => {
     if (!adminUser) return false;
     if (adminUser.role === 'super_admin') return true;
@@ -184,6 +189,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signOut,
       canAccessBranch,
       isSuperAdmin,
+      isBranchAdmin, // เพิ่ม function นี้
       canManageSettings,
       isTeacher // เพิ่ม helper function
     }}>

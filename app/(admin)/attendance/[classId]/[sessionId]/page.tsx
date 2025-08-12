@@ -500,8 +500,7 @@ export default function AttendanceCheckPage() {
                   )}
 
                   {/* เพิ่มหลังจาก note textarea */}
-                  {student.status === 'present' && (
-                    <div className="mt-3 space-y-2">
+                  {(student.status === 'present' || student.status === 'late') && (                    <div className="mt-3 space-y-2">
                       <div className="flex items-center gap-2">
                         <MessageSquare className="h-4 w-4 text-blue-500" />
                         <Label className="text-sm font-medium">Teacher Feedback (ผู้ปกครองจะเห็น)</Label>

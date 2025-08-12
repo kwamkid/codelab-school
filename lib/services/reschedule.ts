@@ -98,7 +98,7 @@ export async function rescheduleAllClasses(): Promise<{
           sessionDate: Timestamp.fromDate(newSchedules[i]),
           sessionNumber: i + 1,
           status: 'scheduled',
-          note: 'สร้างจากการ reschedule ทั้งหมด'
+          // note: 'สร้างจากการ reschedule ทั้งหมด'
         });
       }
       

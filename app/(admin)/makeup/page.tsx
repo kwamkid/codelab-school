@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { MakeupClass, Student, Class, Branch, ClassSchedule, Subject } from '@/types/models';
 import { getMakeupClasses, deleteMakeupClass } from '@/lib/services/makeup';
 import { getClasses, getClassSchedule } from '@/lib/services/classes';
@@ -27,7 +28,8 @@ import {
   MoreVertical,
   CalendarDays,
   Trash2,
-  Sparkles
+  Sparkles,
+  Loader2
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatDate, formatTime } from '@/lib/utils';
@@ -74,6 +76,7 @@ import { useMakeup } from '@/contexts/MakeupContext';
 import { useBranch } from '@/contexts/BranchContext';
 import { PermissionGuard } from '@/components/auth/permission-guard';
 import { ActionButton } from '@/components/ui/action-button';
+import { Skeleton } from '@/components/ui/skeleton';
 
 type StudentWithParent = Student & { parentName: string; parentPhone: string };
 
@@ -98,18 +101,21 @@ const statusIcons = {
   'cancelled': XCircle,
 };
 
+// Cache key constants
+const QUERY_KEYS = {
+  makeupClasses: (branchId?: string | null) => ['makeupClasses', branchId],
+  classes: (branchId?: string | null) => ['classes', branchId],
+  branches: ['branches', 'active'],
+  students: (branchId?: string | null) => ['students', 'withParents', branchId],
+  subjects: ['subjects'],
+  classSchedule: (classId: string, scheduleId: string) => ['classSchedule', classId, scheduleId],
+};
+
 export default function MakeupPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { refreshMakeupCount } = useMakeup();
   const { selectedBranchId, isAllBranches } = useBranch();
-  
-  const [makeupClasses, setMakeupClasses] = useState<MakeupClass[]>([]);
-  const [classes, setClasses] = useState<Class[]>([]);
-  const [branches, setBranches] = useState<Branch[]>([]);
-  const [students, setStudents] = useState<StudentWithParent[]>([]);
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [originalSchedules, setOriginalSchedules] = useState<Record<string, ClassSchedule | null>>({});
   
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -127,138 +133,122 @@ export default function MakeupPage() {
   const [deleteReason, setDeleteReason] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadData();
-  }, [selectedBranchId]); // Reload when branch changes
-
-  const loadData = async () => {
-    console.log('=== Starting loadData ===');
-    try {
-      const [makeupData, classesData, branchesData, studentsData, subjectsData] = await Promise.all([
-        getMakeupClasses(selectedBranchId),
-        getClasses(selectedBranchId),
-        getActiveBranches(),
-        getAllStudentsWithParents(selectedBranchId),
-        getSubjects()
-      ]);
-      
-      console.log('Makeup data loaded:', makeupData);
-      console.log('Classes data loaded:', classesData);
-      console.log('Subjects data loaded:', subjectsData);
-      
-      setMakeupClasses(makeupData);
-      setClasses(classesData);
-      setBranches(branchesData);
-      setStudents(studentsData);
-      setSubjects(subjectsData);
-      
-      // Load original schedules for each makeup
-      console.log('=== Loading schedules for makeups ===');
-      const schedules: Record<string, ClassSchedule | null> = {};
-      
-      for (const makeup of makeupData) {
-        console.log(`\nProcessing makeup ${makeup.id}:`, {
-          originalClassId: makeup.originalClassId,
-          originalScheduleId: makeup.originalScheduleId,
-          hasClassId: !!makeup.originalClassId,
-          hasScheduleId: !!makeup.originalScheduleId
-        });
-        
-        if (makeup.originalClassId && makeup.originalScheduleId) {
-          try {
-            console.log(`Calling getClassSchedule(${makeup.originalClassId}, ${makeup.originalScheduleId})`);
-            const schedule = await getClassSchedule(makeup.originalClassId, makeup.originalScheduleId);
-            console.log(`Schedule result:`, schedule);
-            schedules[makeup.id] = schedule;
-          } catch (error) {
-            console.error(`Error loading schedule for makeup ${makeup.id}:`, error);
-            schedules[makeup.id] = null;
-          }
-        } else {
-          console.log(`Skipping - missing IDs`);
-          schedules[makeup.id] = null;
-        }
-      }
-      
-      console.log('=== Final schedules object:', schedules);
-      setOriginalSchedules(schedules);
-      
-      // Refresh makeup count in sidebar
-      await refreshMakeupCount();
-    } catch (error) {
-      console.error('Error in loadData:', error);
-      toast.error('ไม่สามารถโหลดข้อมูลได้');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Helper functions
-  const getStudentInfo = (studentId: string) => {
-    return students.find(s => s.id === studentId);
-  };
-
-  const getClassInfo = (classId: string) => {
-    return classes.find(c => c.id === classId);
-  };
-
-  const getSubjectName = (subjectId: string): string => {
-    const subject = subjects.find(s => s.id === subjectId);
-    return subject?.name || '';
-  };
-
-  const getBranchName = (branchId: string) => {
-    const branch = branches.find(b => b.id === branchId);
-    return branch?.name || '-';
-  };
-
-  // Filter makeup classes
-  const filteredMakeupClasses = makeupClasses.filter(makeup => {
-    // Search filter
-    if (searchTerm) {
-      const student = getStudentInfo(makeup.studentId);
-      const cls = getClassInfo(makeup.originalClassId);
-      const searchLower = searchTerm.toLowerCase();
-      
-      const matchesSearch = 
-        student?.name.toLowerCase().includes(searchLower) ||
-        student?.nickname.toLowerCase().includes(searchLower) ||
-        student?.parentName.toLowerCase().includes(searchLower) ||
-        cls?.name.toLowerCase().includes(searchLower) ||
-        makeup.reason.toLowerCase().includes(searchLower);
-      
-      if (!matchesSearch) return false;
-    }
-    
-    // Status filter
-    if (filterStatus !== 'all' && makeup.status !== filterStatus) return false;
-    
-    // Class filter
-    if (filterClass !== 'all' && makeup.originalClassId !== filterClass) return false;
-    
-    // Type filter (auto-generated or manual)
-    if (filterType !== 'all') {
-      const isAutoGenerated = makeup.requestedBy === 'system';
-      if (filterType === 'auto' && !isAutoGenerated) return false;
-      if (filterType === 'manual' && isAutoGenerated) return false;
-    }
-    
-    return true;
+  // Optimized queries with React Query
+  const { data: makeupClasses = [], isLoading: loadingMakeup } = useQuery({
+    queryKey: QUERY_KEYS.makeupClasses(selectedBranchId),
+    queryFn: () => getMakeupClasses(selectedBranchId),
+    staleTime: 30000, // 30 seconds
   });
 
-  // Calculate statistics
-  const autoGeneratedMakeups = makeupClasses.filter(m => m.requestedBy === 'system');
-  const pendingAutoGenerated = autoGeneratedMakeups.filter(m => m.status === 'pending');
+  const { data: classes = [], isLoading: loadingClasses } = useQuery({
+    queryKey: QUERY_KEYS.classes(selectedBranchId),
+    queryFn: () => getClasses(selectedBranchId),
+    staleTime: 60000, // 1 minute
+  });
+
+  const { data: branches = [] } = useQuery({
+    queryKey: QUERY_KEYS.branches,
+    queryFn: getActiveBranches,
+    staleTime: 300000, // 5 minutes
+  });
+
+  const { data: students = [] } = useQuery({
+    queryKey: QUERY_KEYS.students(selectedBranchId),
+    queryFn: () => getAllStudentsWithParents(selectedBranchId),
+    staleTime: 60000, // 1 minute
+  });
+
+  const { data: subjects = [] } = useQuery({
+    queryKey: QUERY_KEYS.subjects,
+    queryFn: getSubjects,
+    staleTime: 300000, // 5 minutes
+  });
+
+  // Create lookup maps for better performance
+  const studentsMap = useMemo(() => 
+    new Map(students.map(s => [s.id, s])), 
+    [students]
+  );
   
-  const stats = {
-    total: makeupClasses.length,
-    pending: makeupClasses.filter(m => m.status === 'pending').length,
-    scheduled: makeupClasses.filter(m => m.status === 'scheduled').length,
-    completed: makeupClasses.filter(m => m.status === 'completed').length,
-    cancelled: makeupClasses.filter(m => m.status === 'cancelled').length,
-    autoGenerated: autoGeneratedMakeups.length,
-    pendingAutoGenerated: pendingAutoGenerated.length,
-  };
+  const classesMap = useMemo(() => 
+    new Map(classes.map(c => [c.id, c])), 
+    [classes]
+  );
+  
+  const subjectsMap = useMemo(() => 
+    new Map(subjects.map(s => [s.id, s])), 
+    [subjects]
+  );
+  
+  const branchesMap = useMemo(() => 
+    new Map(branches.map(b => [b.id, b])), 
+    [branches]
+  );
+
+  // Helper functions using maps
+  const getStudentInfo = (studentId: string) => studentsMap.get(studentId);
+  const getClassInfo = (classId: string) => classesMap.get(classId);
+  const getSubjectName = (subjectId: string): string => subjectsMap.get(subjectId)?.name || '';
+  const getBranchName = (branchId: string) => branchesMap.get(branchId)?.name || '-';
+
+  // Filter makeup classes
+  const filteredMakeupClasses = useMemo(() => {
+    return makeupClasses.filter(makeup => {
+      // Search filter
+      if (searchTerm) {
+        const student = getStudentInfo(makeup.studentId);
+        const cls = getClassInfo(makeup.originalClassId);
+        const searchLower = searchTerm.toLowerCase();
+        
+        const matchesSearch = 
+          student?.name.toLowerCase().includes(searchLower) ||
+          student?.nickname.toLowerCase().includes(searchLower) ||
+          student?.parentName.toLowerCase().includes(searchLower) ||
+          cls?.name.toLowerCase().includes(searchLower) ||
+          makeup.reason.toLowerCase().includes(searchLower);
+        
+        if (!matchesSearch) return false;
+      }
+      
+      // Status filter
+      if (filterStatus !== 'all' && makeup.status !== filterStatus) return false;
+      
+      // Class filter
+      if (filterClass !== 'all' && makeup.originalClassId !== filterClass) return false;
+      
+      // Type filter (auto-generated or manual)
+      if (filterType !== 'all') {
+        const isAutoGenerated = makeup.requestedBy === 'system';
+        if (filterType === 'auto' && !isAutoGenerated) return false;
+        if (filterType === 'manual' && isAutoGenerated) return false;
+      }
+      
+      return true;
+    });
+  }, [makeupClasses, searchTerm, filterStatus, filterClass, filterType, getStudentInfo, getClassInfo]);
+
+  // Calculate statistics
+  const stats = useMemo(() => {
+    const autoGeneratedMakeups = makeupClasses.filter(m => m.requestedBy === 'system');
+    const pendingAutoGenerated = autoGeneratedMakeups.filter(m => m.status === 'pending');
+    
+    return {
+      total: makeupClasses.length,
+      pending: makeupClasses.filter(m => m.status === 'pending').length,
+      scheduled: makeupClasses.filter(m => m.status === 'scheduled').length,
+      completed: makeupClasses.filter(m => m.status === 'completed').length,
+      cancelled: makeupClasses.filter(m => m.status === 'cancelled').length,
+      autoGenerated: autoGeneratedMakeups.length,
+      pendingAutoGenerated: pendingAutoGenerated.length,
+    };
+  }, [makeupClasses]);
+
+  // Refresh makeup count when data changes
+  useEffect(() => {
+    if (!loadingMakeup) {
+      refreshMakeupCount();
+    }
+  }, [makeupClasses, loadingMakeup, refreshMakeupCount]);
 
   const handleSchedule = (makeup: MakeupClass) => {
     setSelectedMakeup(makeup);
@@ -292,7 +282,9 @@ export default function MakeupPage() {
       await deleteMakeupClass(selectedMakeup.id, currentUser.uid, deleteReason);
       toast.success('ลบ Makeup Class เรียบร้อยแล้ว');
       setShowDeleteDialog(false);
-      await loadData();
+      
+      // Invalidate queries to refresh data
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.makeupClasses(selectedBranchId) });
     } catch (error: any) {
       console.error('Error deleting makeup:', error);
       if (error.message === 'Cannot delete completed makeup class') {
@@ -305,13 +297,48 @@ export default function MakeupPage() {
     }
   };
 
-  if (loading) {
+  // Loading state
+  if (loadingMakeup || loadingClasses) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-red-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
-          <p className="mt-4 text-gray-600">กำลังโหลดข้อมูล...</p>
+      <div className="space-y-6">
+        {/* Header Skeleton */}
+        <div className="flex justify-between items-center">
+          <div>
+            <Skeleton className="h-8 w-64 mb-2" />
+            <Skeleton className="h-4 w-96" />
+          </div>
+          <Skeleton className="h-10 w-40" />
         </div>
+
+        {/* Stats Skeleton */}
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+          {[...Array(6)].map((_, i) => (
+            <Card key={i}>
+              <CardHeader className="pb-2">
+                <Skeleton className="h-4 w-20" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-8 w-12" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        {/* Table Skeleton */}
+        <Card>
+          <CardHeader>
+            <Skeleton className="h-6 w-48" />
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="flex items-center space-x-4">
+                  <Skeleton className="h-12 w-full" />
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -338,11 +365,11 @@ export default function MakeupPage() {
       </div>
 
       {/* Alert for auto-generated makeups */}
-      {pendingAutoGenerated.length > 0 && (
+      {stats.pendingAutoGenerated > 0 && (
         <Alert className="mb-6 border-orange-200 bg-orange-50">
           <Sparkles className="h-4 w-4 text-orange-600" />
           <AlertDescription>
-            <strong className="text-orange-800">มี {pendingAutoGenerated.length} Makeup Class ที่สร้างอัตโนมัติ</strong>
+            <strong className="text-orange-800">มี {stats.pendingAutoGenerated} Makeup Class ที่สร้างอัตโนมัติ</strong>
             <span className="text-orange-700 ml-1">
               จากการสมัครเรียนหลังคลาสเริ่มแล้ว รอจัดตารางเรียนชดเชย
             </span>
@@ -486,15 +513,15 @@ export default function MakeupPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>วันที่ขอ</TableHead>
-                    <TableHead>นักเรียน</TableHead>
-                    <TableHead>คลาสเดิม</TableHead>
-                    <TableHead>วันที่ขาด</TableHead>
-                    {isAllBranches && <TableHead>สาขา</TableHead>}
-                    <TableHead>เหตุผล</TableHead>
-                    <TableHead>วันที่นัด</TableHead>
-                    <TableHead className="text-center">สถานะ</TableHead>
-                    <TableHead className="w-[50px]"></TableHead>
+                    <TableHead className="w-[100px]">วันที่ขอ</TableHead>
+                    <TableHead className="min-w-[120px]">นักเรียน</TableHead>
+                    <TableHead className="min-w-[140px]">คลาสเดิม</TableHead>
+                    <TableHead className="w-[90px]">วันที่ขาด</TableHead>
+                    {isAllBranches && <TableHead className="w-[100px]">สาขา</TableHead>}
+                    <TableHead className="max-w-[200px]">เหตุผล</TableHead>
+                    <TableHead className="w-[110px]">วันที่นัด</TableHead>
+                    <TableHead className="text-center w-[100px]">สถานะ</TableHead>
+                    <TableHead className="w-[40px]"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -502,101 +529,81 @@ export default function MakeupPage() {
                     const student = getStudentInfo(makeup.studentId);
                     const cls = getClassInfo(makeup.originalClassId);
                     const StatusIcon = statusIcons[makeup.status];
-                    const originalSchedule = originalSchedules[makeup.id];
                     const isAutoGenerated = makeup.requestedBy === 'system';
                     
                     return (
                       <TableRow key={makeup.id} className={isAutoGenerated ? 'bg-orange-50' : ''}>
-                        <TableCell className="whitespace-nowrap">
-                          <div>
+                        <TableCell className="whitespace-nowrap align-top">
+                          <div className="text-sm">
                             {formatDate(makeup.requestDate)}
-                            {isAutoGenerated && (
-                              <Badge variant="outline" className="ml-2 text-xs border-orange-300 text-orange-700">
-                                <Sparkles className="h-3 w-3 mr-1" />
-                                Auto
-                              </Badge>
-                            )}
                           </div>
+                          {isAutoGenerated && (
+                            <Badge variant="outline" className="mt-1 text-xs border-orange-300 text-orange-700">
+                              <Sparkles className="h-3 w-3 mr-1" />
+                              Auto
+                            </Badge>
+                          )}
                         </TableCell>
-                        <TableCell>
-                          <div>
-                            <p className="font-medium">{student?.nickname || student?.name || '-'}</p>
+                        <TableCell className="align-top">
+                          <div className="min-w-[120px]">
+                            <p className="font-medium text-sm">{student?.nickname || student?.name || '-'}</p>
                             <p className="text-xs text-gray-500">{student?.parentName || '-'}</p>
                           </div>
                         </TableCell>
-                        <TableCell>
-                          <div>
-                            <p className="font-medium">{cls?.name || '-'}</p>
+                        <TableCell className="align-top">
+                          <div className="min-w-[140px]">
+                            <p className="font-medium text-sm">{cls?.name || '-'}</p>
                             <p className="text-xs text-gray-500">{cls?.code || '-'}</p>
                           </div>
                         </TableCell>
-                        <TableCell className="whitespace-nowrap">
-                          {(() => {
-                            const originalSchedule = originalSchedules[makeup.id];
-                            
-                            if (originalSchedule) {
-                              return (
-                                <div>
-                                  <p className="font-medium text-red-600">
-                                    ครั้งที่ {originalSchedule.sessionNumber}
-                                  </p>
-                                  <p className="text-xs text-gray-500">
-                                    {formatDate(originalSchedule.sessionDate)}
-                                  </p>
-                                </div>
-                              );
-                            }
-                            
-                            if (makeup.originalSessionNumber || makeup.originalSessionDate) {
-                              return (
-                                <div>
-                                  {makeup.originalSessionNumber && (
-                                    <p className="font-medium text-red-600">
-                                      ครั้งที่ {makeup.originalSessionNumber}
-                                    </p>
-                                  )}
-                                  {makeup.originalSessionDate && (
-                                    <p className="text-xs text-gray-500">
-                                      {formatDate(makeup.originalSessionDate)}
-                                    </p>
-                                  )}
-                                </div>
-                              );
-                            }
-                            
-                            return <span className="text-gray-400">ไม่มีข้อมูล</span>;
-                          })()}
+                        <TableCell className="whitespace-nowrap align-top">
+                          {makeup.originalSessionNumber ? (
+                            <div className="text-sm">
+                              <p className="font-medium text-red-600">
+                                ครั้งที่ {makeup.originalSessionNumber}
+                              </p>
+                              {makeup.originalSessionDate && (
+                                <p className="text-xs text-gray-500">
+                                  {formatDate(makeup.originalSessionDate)}
+                                </p>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-gray-400 text-sm">กำลังโหลด...</span>
+                          )}
                         </TableCell>
                         {isAllBranches && (
-                          <TableCell>{cls ? getBranchName(cls.branchId) : '-'}</TableCell>
+                          <TableCell className="align-top text-sm">{cls ? getBranchName(cls.branchId) : '-'}</TableCell>
                         )}
-                        <TableCell>
-                          <p className="text-sm line-clamp-1">{makeup.reason}</p>
+                        <TableCell className="align-top">
+                          <div className="text-sm truncate max-w-[200px]" title={makeup.reason}>
+                            {makeup.reason}
+                          </div>
                           {isAutoGenerated && (
                             <p className="text-xs text-orange-600 mt-1">
                               (สร้างอัตโนมัติ)
                             </p>
                           )}
                         </TableCell>
-                        <TableCell className="whitespace-nowrap">
+                        <TableCell className="whitespace-nowrap align-top">
                           {makeup.makeupSchedule ? (
-                            <div>
+                            <div className="text-sm">
                               <p>{formatDate(makeup.makeupSchedule.date)}</p>
                               <p className="text-xs text-gray-500">
                                 {makeup.makeupSchedule.startTime} - {makeup.makeupSchedule.endTime}
                               </p>
                             </div>
                           ) : (
-                            <span className="text-gray-400">-</span>
+                            <span className="text-gray-400 text-sm">-</span>
                           )}
                         </TableCell>
-                        <TableCell className="text-center">
-                          <Badge className={statusColors[makeup.status]}>
+                        <TableCell className="text-center align-top">
+                          <Badge className={`${statusColors[makeup.status]} text-xs`}>
                             <StatusIcon className="h-3 w-3 mr-1" />
                             {statusLabels[makeup.status]}
                           </Badge>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="align-top">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
@@ -725,7 +732,8 @@ export default function MakeupPage() {
           }}
           onSuccess={async () => {
             setShowScheduleDialog(false);
-            await loadData();
+            // Invalidate and refetch
+            await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.makeupClasses(selectedBranchId) });
           }}
         />
       )}
@@ -738,7 +746,8 @@ export default function MakeupPage() {
         students={students}
         onCreated={async () => {
           setShowCreateDialog(false);
-          await loadData();
+          // Invalidate and refetch
+          await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.makeupClasses(selectedBranchId) });
           toast.success('สร้าง Makeup Request เรียบร้อยแล้ว');
         }}
       />

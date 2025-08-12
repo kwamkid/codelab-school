@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState, useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Class, Branch, Subject, Teacher } from '@/types/models';
 import { getClasses, deleteClass, batchUpdateClassStatuses } from '@/lib/services/classes';
 import { getActiveBranches } from '@/lib/services/branches';
@@ -65,6 +66,7 @@ import { useBranch } from '@/contexts/BranchContext';
 import { ActionButton } from '@/components/ui/action-button';
 import { PermissionGuard } from '@/components/auth/permission-guard';
 import { useAuth } from '@/hooks/useAuth';
+import { Skeleton } from '@/components/ui/skeleton';
 
 const statusColors = {
   'draft': 'bg-gray-100 text-gray-700',
@@ -82,14 +84,19 @@ const statusLabels = {
   'cancelled': 'ยกเลิก',
 };
 
+// Cache key constants
+const QUERY_KEYS = {
+  classes: (branchId?: string | null) => ['classes', branchId],
+  branches: ['branches', 'active'],
+  subjects: ['subjects', 'active'],
+  teachers: (branchId?: string | null) => ['teachers', 'active', branchId],
+};
+
 export default function ClassesPage() {
   const { selectedBranchId, isAllBranches } = useBranch();
   const { isSuperAdmin } = useAuth();
-  const [classes, setClasses] = useState<Class[]>([]);
-  const [branches, setBranches] = useState<Branch[]>([]);
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [teachers, setTeachers] = useState<Teacher[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [updatingStatus, setUpdatingStatus] = useState(false);
@@ -102,37 +109,95 @@ export default function ClassesPage() {
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedSubject, setSelectedSubject] = useState<string>('all');
 
-  useEffect(() => {
-    loadData();
-  }, [selectedBranchId]); // Reload when branch changes
+  // Optimized queries with React Query
+  const { data: classes = [], isLoading: loadingClasses } = useQuery({
+    queryKey: QUERY_KEYS.classes(selectedBranchId),
+    queryFn: () => getClasses(selectedBranchId),
+    staleTime: 60000, // 1 minute
+  });
 
-  const loadData = async () => {
-    try {
-      const [classesData, branchesData, subjectsData, teachersData] = await Promise.all([
-        getClasses(selectedBranchId), // Pass branch filter
-        getActiveBranches(),
-        getActiveSubjects(),
-        getActiveTeachers(selectedBranchId) // Pass branch filter for teachers too
-      ]);
-      
-      setClasses(classesData);
-      setBranches(branchesData);
-      setSubjects(subjectsData);
-      setTeachers(teachersData);
-    } catch (error) {
-      console.error('Error loading data:', error);
-      toast.error('ไม่สามารถโหลดข้อมูลได้');
-    } finally {
-      setLoading(false);
-    }
+  const { data: branches = [] } = useQuery({
+    queryKey: QUERY_KEYS.branches,
+    queryFn: getActiveBranches,
+    staleTime: 300000, // 5 minutes
+  });
+
+  const { data: subjects = [] } = useQuery({
+    queryKey: QUERY_KEYS.subjects,
+    queryFn: getActiveSubjects,
+    staleTime: 300000, // 5 minutes
+  });
+
+  const { data: teachers = [] } = useQuery({
+    queryKey: QUERY_KEYS.teachers(selectedBranchId),
+    queryFn: () => getActiveTeachers(selectedBranchId),
+    staleTime: 60000, // 1 minute
+  });
+
+  // Create lookup maps for better performance
+  const branchesMap = useMemo(() => 
+    new Map(branches.map(b => [b.id, b])), 
+    [branches]
+  );
+  
+  const subjectsMap = useMemo(() => 
+    new Map(subjects.map(s => [s.id, s])), 
+    [subjects]
+  );
+  
+  const teachersMap = useMemo(() => 
+    new Map(teachers.map(t => [t.id, t])), 
+    [teachers]
+  );
+
+  // Helper functions using maps
+  const getBranchName = (branchId: string) => branchesMap.get(branchId)?.name || 'Unknown';
+  const getSubjectName = (subjectId: string) => subjectsMap.get(subjectId)?.name || 'Unknown';
+  const getSubjectColor = (subjectId: string) => subjectsMap.get(subjectId)?.color || '#gray';
+  const getTeacherName = (teacherId: string) => {
+    const teacher = teachersMap.get(teacherId);
+    return teacher?.nickname || teacher?.name || 'Unknown';
   };
+
+  // Filter classes with memoization
+  const filteredClasses = useMemo(() => {
+    return classes.filter(cls => {
+      // Search filter
+      if (searchTerm) {
+        const search = searchTerm.toLowerCase();
+        const matchesSearch = 
+          cls.name.toLowerCase().includes(search) ||
+          cls.code.toLowerCase().includes(search) ||
+          getSubjectName(cls.subjectId).toLowerCase().includes(search) ||
+          getTeacherName(cls.teacherId).toLowerCase().includes(search) ||
+          getBranchName(cls.branchId).toLowerCase().includes(search);
+        
+        if (!matchesSearch) return false;
+      }
+
+      // Other filters
+      if (selectedStatus !== 'all' && cls.status !== selectedStatus) return false;
+      if (selectedSubject !== 'all' && cls.subjectId !== selectedSubject) return false;
+      return true;
+    });
+  }, [classes, searchTerm, selectedStatus, selectedSubject, getSubjectName, getTeacherName, getBranchName]);
+
+  // Calculate statistics with memoization
+  const stats = useMemo(() => ({
+    total: classes.length,
+    published: classes.filter(c => c.status === 'published').length,
+    started: classes.filter(c => c.status === 'started').length,
+    totalSeats: classes.reduce((sum, c) => sum + c.maxStudents, 0),
+    enrolledSeats: classes.reduce((sum, c) => sum + c.enrolledCount, 0),
+  }), [classes]);
 
   const handleDeleteClass = async (classId: string, className: string) => {
     setDeletingId(classId);
     try {
       await deleteClass(classId);
       toast.success(`ลบคลาส ${className} เรียบร้อยแล้ว`);
-      loadData(); // Reload data
+      // Invalidate query to refresh data
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.classes(selectedBranchId) });
     } catch (error: any) {
       console.error('Error deleting class:', error);
       if (error.message === 'Cannot delete class with enrolled students') {
@@ -155,8 +220,8 @@ export default function ClassesPage() {
       
       if (result.updated > 0) {
         toast.success(`อัปเดตสถานะคลาสสำเร็จ ${result.updated} คลาส`);
-        // Reload data to show updated statuses
-        await loadData();
+        // Invalidate query to refresh data
+        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.classes(selectedBranchId) });
       } else {
         toast.info('ไม่มีคลาสที่ต้องอัปเดตสถานะ');
       }
@@ -172,66 +237,60 @@ export default function ClassesPage() {
     }
   };
 
-  const getBranchName = (branchId: string) => {
-    const branch = branches.find(b => b.id === branchId);
-    return branch?.name || 'Unknown';
-  };
-
-  const getSubjectName = (subjectId: string) => {
-    const subject = subjects.find(s => s.id === subjectId);
-    return subject?.name || 'Unknown';
-  };
-
-  const getSubjectColor = (subjectId: string) => {
-    const subject = subjects.find(s => s.id === subjectId);
-    return subject?.color || '#gray';
-  };
-
-  const getTeacherName = (teacherId: string) => {
-    const teacher = teachers.find(t => t.id === teacherId);
-    return teacher?.nickname || teacher?.name || 'Unknown';
-  };
-
-  // Filter classes
-  const filteredClasses = classes.filter(cls => {
-    // Search filter
-    if (searchTerm) {
-      const search = searchTerm.toLowerCase();
-      const matchesSearch = 
-        cls.name.toLowerCase().includes(search) ||
-        cls.code.toLowerCase().includes(search) ||
-        getSubjectName(cls.subjectId).toLowerCase().includes(search) ||
-        getTeacherName(cls.teacherId).toLowerCase().includes(search) ||
-        getBranchName(cls.branchId).toLowerCase().includes(search);
-      
-      if (!matchesSearch) return false;
-    }
-
-    // Other filters
-    if (selectedStatus !== 'all' && cls.status !== selectedStatus) return false;
-    if (selectedSubject !== 'all' && cls.subjectId !== selectedSubject) return false;
-    return true;
-  });
-
-  if (loading) {
+  // Loading state
+  if (loadingClasses) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-red-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
-          <p className="mt-4 text-gray-600">กำลังโหลดข้อมูล...</p>
+      <div className="space-y-6">
+        {/* Header Skeleton */}
+        <div className="flex justify-between items-center">
+          <div>
+            <Skeleton className="h-8 w-48 mb-2" />
+            <Skeleton className="h-4 w-64" />
+          </div>
+          <div className="flex gap-2">
+            <Skeleton className="h-10 w-32" />
+            <Skeleton className="h-10 w-32" />
+          </div>
         </div>
+
+        {/* Stats Skeleton */}
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          {[...Array(5)].map((_, i) => (
+            <Card key={i}>
+              <CardHeader className="pb-2">
+                <Skeleton className="h-4 w-20" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-8 w-12" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        {/* Filters Skeleton */}
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex flex-col md:flex-row gap-4">
+              <Skeleton className="h-10 flex-1" />
+              <Skeleton className="h-10 w-[200px]" />
+              <Skeleton className="h-10 w-[200px]" />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Table Skeleton */}
+        <Card>
+          <CardContent className="p-0">
+            <div className="p-6 space-y-3">
+              {[...Array(5)].map((_, i) => (
+                <Skeleton key={i} className="h-16 w-full" />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }
-
-  // Calculate statistics
-  const stats = {
-    total: classes.length,
-    published: classes.filter(c => c.status === 'published').length,
-    started: classes.filter(c => c.status === 'started').length,
-    totalSeats: classes.reduce((sum, c) => sum + c.maxStudents, 0),
-    enrolledSeats: classes.reduce((sum, c) => sum + c.enrolledCount, 0),
-  };
 
   return (
     <div>
@@ -429,16 +488,16 @@ export default function ClassesPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>คลาส</TableHead>
-                    <TableHead>วิชา</TableHead>
-                    {isAllBranches && <TableHead>สาขา</TableHead>}
-                    <TableHead>ครู</TableHead>
-                    <TableHead>วัน/เวลา</TableHead>
-                    <TableHead className="text-center">ระยะเวลา</TableHead>
-                    <TableHead className="text-center">นักเรียน</TableHead>
-                    <TableHead className="text-right">ราคา</TableHead>
-                    <TableHead className="text-center">สถานะ</TableHead>
-                    <TableHead className="text-center">จัดการ</TableHead>
+                    <TableHead className="w-[180px]">คลาส</TableHead>
+                    <TableHead className="w-[100px]">วิชา</TableHead>
+                    {isAllBranches && <TableHead className="w-[100px]">สาขา</TableHead>}
+                    <TableHead className="w-[80px]">ครู</TableHead>
+                    <TableHead className="w-[100px]">วัน/เวลา</TableHead>
+                    <TableHead className="text-center w-[120px]">ระยะเวลา</TableHead>
+                    <TableHead className="text-center w-[70px]">นักเรียน</TableHead>
+                    <TableHead className="text-right w-[90px]">ราคา</TableHead>
+                    <TableHead className="text-center w-[90px]">สถานะ</TableHead>
+                    <TableHead className="text-center w-[40px]"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -447,51 +506,59 @@ export default function ClassesPage() {
                     
                     return (
                       <TableRow key={cls.id}>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
+                        <TableCell className="align-top">
+                          <div className="flex items-start gap-2">
                             <div 
-                              className="w-3 h-3 rounded-full flex-shrink-0" 
+                              className="w-3 h-3 rounded-full flex-shrink-0 mt-1" 
                               style={{ backgroundColor: getSubjectColor(cls.subjectId) }}
                             />
-                            <div>
-                              <div className="font-medium">{cls.name}</div>
-                              <div className="text-sm text-gray-500">{cls.code}</div>
+                            <div className="min-w-0">
+                              <div className="font-medium truncate" title={cls.name}>{cls.name}</div>
+                              <div className="text-xs text-gray-500">{cls.code}</div>
                             </div>
                           </div>
                         </TableCell>
-                        <TableCell>{getSubjectName(cls.subjectId)}</TableCell>
-                        {isAllBranches && <TableCell>{getBranchName(cls.branchId)}</TableCell>}
-                        <TableCell>{getTeacherName(cls.teacherId)}</TableCell>
-                        <TableCell>
+                        <TableCell className="align-top">
+                          <div className="break-words">{getSubjectName(cls.subjectId)}</div>
+                        </TableCell>
+                        {isAllBranches && (
+                          <TableCell className="align-top">
+                            <div className="break-words">{getBranchName(cls.branchId)}</div>
+                          </TableCell>
+                        )}
+                        <TableCell className="align-top">{getTeacherName(cls.teacherId)}</TableCell>
+                        <TableCell className="align-top">
                           <div>
-                            <div className="text-sm">{cls.daysOfWeek.map(d => getDayName(d)).join(', ')}</div>
-                            <div className="text-sm text-gray-500">{cls.startTime} - {cls.endTime}</div>
+                            <div className="leading-tight break-words">
+                              {cls.daysOfWeek.map(d => getDayName(d)).join(', ')}
+                            </div>
+                            <div className="text-xs text-gray-500">{cls.startTime}-{cls.endTime}</div>
                           </div>
                         </TableCell>
-                        <TableCell className="text-center">
+                        <TableCell className="text-center align-top">
                           <div>
-                            <div className="text-sm">{formatDate(cls.startDate)}</div>
-                            <div className="text-sm text-gray-500">ถึง {formatDate(cls.endDate)}</div>
-                            <div className="text-sm font-medium">{cls.totalSessions} ครั้ง</div>
+                            <div className="text-sm">{formatDate(cls.startDate, 'short')}</div>
+                            <div className="text-xs text-gray-500">-{formatDate(cls.endDate, 'short')}</div>
+                            <div className="font-medium">{cls.totalSessions} ครั้ง</div>
                           </div>
                         </TableCell>
-                        <TableCell className="text-center">
+                        <TableCell className="text-center align-top">
                           <span className={cls.enrolledCount >= cls.maxStudents ? 'text-red-600 font-medium' : ''}>
                             {cls.enrolledCount}/{cls.maxStudents}
                           </span>
                         </TableCell>
-                        <TableCell className="text-right font-medium text-green-600">
+                        <TableCell className="text-right font-medium text-green-600 align-top">
                           {formatCurrency(cls.pricing.totalPrice)}
                         </TableCell>
-                        <TableCell className="text-center">
+                        <TableCell className="text-center align-top">
                           <Badge 
-                            className={statusColors[cls.status as keyof typeof statusColors] || 'bg-gray-100 text-gray-700'}
+                            className={`${statusColors[cls.status as keyof typeof statusColors] || 'bg-gray-100 text-gray-700'}`}
                             variant={!cls.status ? 'destructive' : 'default'}
                           >
                             {statusLabels[cls.status as keyof typeof statusLabels] || 'ไม่ระบุ'}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-center">
+                        <TableCell className="text-center align-top">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="ghost" className="h-8 w-8 p-0">
@@ -538,9 +605,10 @@ export default function ClassesPage() {
                                         <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
                                         <AlertDialogAction 
                                           onClick={() => handleDeleteClass(cls.id, cls.name)}
+                                          disabled={deletingId === cls.id}
                                           className="bg-red-500 hover:bg-red-600"
                                         >
-                                          ลบคลาส
+                                          {deletingId === cls.id ? 'กำลังลบ...' : 'ลบคลาส'}
                                         </AlertDialogAction>
                                       </AlertDialogFooter>
                                     </AlertDialogContent>
