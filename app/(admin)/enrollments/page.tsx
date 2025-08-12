@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState, useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Enrollment, Parent, Student, Class, Branch } from '@/types/models';
 import { getEnrollments, deleteEnrollment, updateEnrollment, cancelEnrollment } from '@/lib/services/enrollments';
 import { getParents } from '@/lib/services/parents';
 import { getClasses } from '@/lib/services/classes';
-import { getBranches } from '@/lib/services/branches';
+import { getActiveBranches } from '@/lib/services/branches';
 import { getAllStudentsWithParents } from '@/lib/services/parents';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -76,6 +77,9 @@ import {
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useBranch } from '@/contexts/BranchContext';
+import { PermissionGuard } from '@/components/auth/permission-guard';
+import { ActionButton } from '@/components/ui/action-button';
+import { Skeleton } from '@/components/ui/skeleton';
 
 type StudentWithParent = Student & { parentName: string; parentPhone: string; parentId: string };
 
@@ -105,13 +109,18 @@ const paymentStatusLabels = {
   'paid': 'ชำระแล้ว',
 };
 
+// Cache key constants
+const QUERY_KEYS = {
+  enrollments: (branchId?: string | null) => ['enrollments', branchId],
+  students: (branchId?: string | null) => ['students', 'withParents', branchId],
+  classes: (branchId?: string | null) => ['classes', branchId],
+  branches: ['branches', 'active'],
+};
+
 export default function EnrollmentsPage() {
   const { selectedBranchId, isAllBranches } = useBranch();
-  const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
-  const [students, setStudents] = useState<StudentWithParent[]>([]);
-  const [classes, setClasses] = useState<Class[]>([]);
-  const [branches, setBranches] = useState<Branch[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedPaymentStatus, setSelectedPaymentStatus] = useState<string>('all');
@@ -132,44 +141,51 @@ export default function EnrollmentsPage() {
   const [cancelReason, setCancelReason] = useState('');
   const [cancelling, setCancelling] = useState(false);
 
-  useEffect(() => {
-    loadData();
-  }, [selectedBranchId]); // Reload when branch changes
+  // Optimized queries with React Query
+  const { data: enrollments = [], isLoading: loadingEnrollments } = useQuery({
+    queryKey: QUERY_KEYS.enrollments(selectedBranchId),
+    queryFn: () => getEnrollments(selectedBranchId),
+    staleTime: 60000, // 1 minute
+  });
 
-  const loadData = async () => {
-    try {
-      const [enrollmentsData, studentsData, classesData, branchesData] = await Promise.all([
-        getEnrollments(selectedBranchId),
-        getAllStudentsWithParents(selectedBranchId),
-        getClasses(selectedBranchId),
-        getBranches()
-      ]);
-      
-      setEnrollments(enrollmentsData);
-      setStudents(studentsData);
-      setClasses(classesData);
-      setBranches(branchesData);
-    } catch (error) {
-      console.error('Error loading data:', error);
-      toast.error('ไม่สามารถโหลดข้อมูลได้');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { data: students = [], isLoading: loadingStudents } = useQuery({
+    queryKey: QUERY_KEYS.students(selectedBranchId),
+    queryFn: () => getAllStudentsWithParents(selectedBranchId),
+    staleTime: 60000, // 1 minute
+  });
 
-  // Helper functions to get related data
-  const getStudentInfo = (studentId: string) => {
-    return students.find(s => s.id === studentId);
-  };
+  const { data: classes = [], isLoading: loadingClasses } = useQuery({
+    queryKey: QUERY_KEYS.classes(selectedBranchId),
+    queryFn: () => getClasses(selectedBranchId),
+    staleTime: 60000, // 1 minute
+  });
 
-  const getClassInfo = (classId: string) => {
-    return classes.find(c => c.id === classId);
-  };
+  const { data: branches = [] } = useQuery({
+    queryKey: QUERY_KEYS.branches,
+    queryFn: getActiveBranches,
+    staleTime: 300000, // 5 minutes
+  });
 
-  const getBranchName = (branchId: string) => {
-    const branch = branches.find(b => b.id === branchId);
-    return branch?.name || 'Unknown';
-  };
+  // Create lookup maps for better performance
+  const studentsMap = useMemo(() => 
+    new Map(students.map(s => [s.id, s])), 
+    [students]
+  );
+  
+  const classesMap = useMemo(() => 
+    new Map(classes.map(c => [c.id, c])), 
+    [classes]
+  );
+  
+  const branchesMap = useMemo(() => 
+    new Map(branches.map(b => [b.id, b])), 
+    [branches]
+  );
+
+  // Helper functions using maps
+  const getStudentInfo = (studentId: string) => studentsMap.get(studentId);
+  const getClassInfo = (classId: string) => classesMap.get(classId);
+  const getBranchName = (branchId: string) => branchesMap.get(branchId)?.name || 'Unknown';
 
   // Handle delete enrollment
   const handleDeleteEnrollment = async (enrollmentId: string) => {
@@ -177,7 +193,8 @@ export default function EnrollmentsPage() {
     try {
       await deleteEnrollment(enrollmentId);
       toast.success('ลบการลงทะเบียนเรียบร้อยแล้ว');
-      loadData(); // Reload data
+      // Invalidate query to refresh data
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.enrollments(selectedBranchId) });
     } catch (error) {
       console.error('Error deleting enrollment:', error);
       toast.error('ไม่สามารถลบการลงทะเบียนได้');
@@ -214,7 +231,8 @@ export default function EnrollmentsPage() {
       await updateEnrollment(selectedEnrollment.id, updateData);
       toast.success('อัพเดทการชำระเงินเรียบร้อยแล้ว');
       setShowPaymentDialog(false);
-      loadData(); // Reload data
+      // Invalidate query to refresh data
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.enrollments(selectedBranchId) });
     } catch (error) {
       console.error('Error updating payment:', error);
       toast.error('ไม่สามารถอัพเดทการชำระเงินได้');
@@ -236,7 +254,8 @@ export default function EnrollmentsPage() {
       toast.success('ยกเลิกการลงทะเบียนเรียบร้อยแล้ว');
       setShowCancelDialog(false);
       setCancelReason('');
-      loadData(); // Reload data
+      // Invalidate query to refresh data
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.enrollments(selectedBranchId) });
     } catch (error) {
       console.error('Error cancelling enrollment:', error);
       toast.error('ไม่สามารถยกเลิกการลงทะเบียนได้');
@@ -251,34 +270,36 @@ export default function EnrollmentsPage() {
     toast.info('ฟังก์ชันพิมพ์ใบเสร็จจะเพิ่มในภายหลัง');
   };
 
-  // Filter enrollments
-  const filteredEnrollments = enrollments.filter(enrollment => {
-    // Status filter
-    if (selectedStatus !== 'all' && enrollment.status !== selectedStatus) return false;
-    
-    // Payment status filter
-    if (selectedPaymentStatus !== 'all' && enrollment.payment.status !== selectedPaymentStatus) return false;
-    
-    // Search filter
-    if (searchTerm) {
-      const student = getStudentInfo(enrollment.studentId);
-      const classInfo = getClassInfo(enrollment.classId);
-      const searchLower = searchTerm.toLowerCase();
+  // Filter enrollments with memoization
+  const filteredEnrollments = useMemo(() => {
+    return enrollments.filter(enrollment => {
+      // Status filter
+      if (selectedStatus !== 'all' && enrollment.status !== selectedStatus) return false;
       
-      return (
-        student?.name.toLowerCase().includes(searchLower) ||
-        student?.nickname.toLowerCase().includes(searchLower) ||
-        student?.parentName.toLowerCase().includes(searchLower) ||
-        classInfo?.name.toLowerCase().includes(searchLower) ||
-        classInfo?.code.toLowerCase().includes(searchLower)
-      );
-    }
-    
-    return true;
-  });
+      // Payment status filter
+      if (selectedPaymentStatus !== 'all' && enrollment.payment.status !== selectedPaymentStatus) return false;
+      
+      // Search filter
+      if (searchTerm) {
+        const student = getStudentInfo(enrollment.studentId);
+        const classInfo = getClassInfo(enrollment.classId);
+        const searchLower = searchTerm.toLowerCase();
+        
+        return (
+          student?.name.toLowerCase().includes(searchLower) ||
+          student?.nickname.toLowerCase().includes(searchLower) ||
+          student?.parentName.toLowerCase().includes(searchLower) ||
+          classInfo?.name.toLowerCase().includes(searchLower) ||
+          classInfo?.code.toLowerCase().includes(searchLower)
+        );
+      }
+      
+      return true;
+    });
+  }, [enrollments, selectedStatus, selectedPaymentStatus, searchTerm, getStudentInfo, getClassInfo]);
 
-  // Calculate statistics
-  const stats = {
+  // Calculate statistics with memoization
+  const stats = useMemo(() => ({
     total: enrollments.length,
     active: enrollments.filter(e => e.status === 'active').length,
     totalRevenue: enrollments
@@ -287,15 +308,60 @@ export default function EnrollmentsPage() {
     pendingPayments: enrollments
       .filter(e => e.payment.status === 'pending')
       .reduce((sum, e) => sum + e.pricing.finalPrice, 0),
-  };
+  }), [enrollments]);
 
-  if (loading) {
+  // Loading state
+  const isLoading = loadingEnrollments || loadingStudents || loadingClasses;
+
+  if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-red-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
-          <p className="mt-4 text-gray-600">กำลังโหลดข้อมูล...</p>
+      <div className="space-y-6">
+        {/* Header Skeleton */}
+        <div className="flex justify-between items-center">
+          <div>
+            <Skeleton className="h-8 w-64 mb-2" />
+            <Skeleton className="h-4 w-96" />
+          </div>
+          <Skeleton className="h-10 w-40" />
         </div>
+
+        {/* Stats Skeleton */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => (
+            <Card key={i}>
+              <CardHeader className="pb-2">
+                <Skeleton className="h-4 w-24" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-8 w-20" />
+                <Skeleton className="h-3 w-32 mt-1" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        {/* Filters Skeleton */}
+        <div className="flex flex-col md:flex-row gap-4">
+          <Skeleton className="h-10 flex-1" />
+          <Skeleton className="h-10 w-[150px]" />
+          <Skeleton className="h-10 w-[150px]" />
+        </div>
+
+        {/* Table Skeleton */}
+        <Card>
+          <CardHeader>
+            <Skeleton className="h-6 w-48" />
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="flex items-center space-x-4">
+                  <Skeleton className="h-12 flex-1" />
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -310,12 +376,14 @@ export default function EnrollmentsPage() {
           </h1>
           <p className="text-gray-600 mt-2">จัดการข้อมูลการลงทะเบียนเรียนทั้งหมด</p>
         </div>
-        <Link href="/enrollments/new">
-          <Button className="bg-red-500 hover:bg-red-600">
-            <Plus className="h-4 w-4 mr-2" />
-            ลงทะเบียนใหม่
-          </Button>
-        </Link>
+        <PermissionGuard requiredRole={['super_admin', 'branch_admin']}>
+          <Link href="/enrollments/new">
+            <ActionButton action="create" className="bg-red-500 hover:bg-red-600">
+              <Plus className="h-4 w-4 mr-2" />
+              ลงทะเบียนใหม่
+            </ActionButton>
+          </Link>
+        </PermissionGuard>
       </div>
 
       {/* Summary Cards */}
@@ -429,12 +497,14 @@ export default function EnrollmentsPage() {
                   : 'เริ่มต้นด้วยการลงทะเบียนนักเรียนคนแรก'}
               </p>
               {enrollments.length === 0 && (
-                <Link href="/enrollments/new">
-                  <Button className="bg-red-500 hover:bg-red-600">
-                    <Plus className="h-4 w-4 mr-2" />
-                    ลงทะเบียนใหม่
-                  </Button>
-                </Link>
+                <PermissionGuard requiredRole={['super_admin', 'branch_admin']}>
+                  <Link href="/enrollments/new">
+                    <ActionButton action="create" className="bg-red-500 hover:bg-red-600">
+                      <Plus className="h-4 w-4 mr-2" />
+                      ลงทะเบียนใหม่
+                    </ActionButton>
+                  </Link>
+                </PermissionGuard>
               )}
             </div>
           ) : (
@@ -519,88 +589,90 @@ export default function EnrollmentsPage() {
                                 </DropdownMenuItem>
                               )}
                               
-                              {enrollment.payment.status !== 'paid' && (
-                                <DropdownMenuItem
-                                  onClick={() => {
-                                    setSelectedEnrollment(enrollment);
-                                    setQuickPayment({
-                                      status: enrollment.payment.status,
-                                      paidAmount: enrollment.payment.paidAmount,
-                                      receiptNumber: enrollment.payment.receiptNumber || ''
-                                    });
-                                    setShowPaymentDialog(true);
-                                  }}
-                                  className="text-green-600"
-                                >
-                                  <CreditCard className="h-4 w-4 mr-2" />
-                                  อัพเดทการชำระ
-                                </DropdownMenuItem>
-                              )}
-                              
-                              <Link href={`/enrollments/${enrollment.id}/edit`}>
-                                <DropdownMenuItem>
-                                  <Edit className="h-4 w-4 mr-2" />
-                                  แก้ไข
-                                </DropdownMenuItem>
-                              </Link>
-                              
-                              {/* Cancel enrollment for active status */}
-                              {enrollment.status === 'active' && (
-                                <>
-                                  <DropdownMenuSeparator />
+                              <PermissionGuard requiredRole={['super_admin', 'branch_admin']}>
+                                {enrollment.payment.status !== 'paid' && (
                                   <DropdownMenuItem
                                     onClick={() => {
                                       setSelectedEnrollment(enrollment);
-                                      setCancelReason('');
-                                      setShowCancelDialog(true);
+                                      setQuickPayment({
+                                        status: enrollment.payment.status,
+                                        paidAmount: enrollment.payment.paidAmount,
+                                        receiptNumber: enrollment.payment.receiptNumber || ''
+                                      });
+                                      setShowPaymentDialog(true);
                                     }}
-                                    className="text-orange-600"
+                                    className="text-green-600"
                                   >
-                                    <XCircle className="h-4 w-4 mr-2" />
-                                    ยกเลิกการลงทะเบียน
+                                    <CreditCard className="h-4 w-4 mr-2" />
+                                    อัพเดทการชำระ
                                   </DropdownMenuItem>
-                                </>
-                              )}
-                              
-                              <DropdownMenuSeparator />
-                              
-                              <AlertDialog>
-                                <AlertDialogTrigger asChild>
-                                  <DropdownMenuItem 
-                                    className="text-red-600"
-                                    onSelect={(e) => e.preventDefault()}
-                                  >
-                                    <Trash2 className="h-4 w-4 mr-2" />
-                                    ลบ
+                                )}
+                                
+                                <Link href={`/enrollments/${enrollment.id}/edit`}>
+                                  <DropdownMenuItem>
+                                    <Edit className="h-4 w-4 mr-2" />
+                                    แก้ไข
                                   </DropdownMenuItem>
-                                </AlertDialogTrigger>
-                                <AlertDialogContent>
-                                  <AlertDialogHeader>
-                                    <AlertDialogTitle>ยืนยันการลบ</AlertDialogTitle>
-                                    <AlertDialogDescription>
-                                      คุณแน่ใจหรือไม่ที่จะลบการลงทะเบียนของ {student?.nickname}?
-                                      การกระทำนี้ไม่สามารถย้อนกลับได้
-                                    </AlertDialogDescription>
-                                  </AlertDialogHeader>
-                                  <AlertDialogFooter>
-                                    <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
-                                    <AlertDialogAction 
-                                      onClick={() => handleDeleteEnrollment(enrollment.id)}
-                                      className="bg-red-500 hover:bg-red-600"
-                                      disabled={deletingId === enrollment.id}
+                                </Link>
+                                
+                                {/* Cancel enrollment for active status */}
+                                {enrollment.status === 'active' && (
+                                  <>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                      onClick={() => {
+                                        setSelectedEnrollment(enrollment);
+                                        setCancelReason('');
+                                        setShowCancelDialog(true);
+                                      }}
+                                      className="text-orange-600"
                                     >
-                                      {deletingId === enrollment.id ? (
-                                        <>
-                                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                          กำลังลบ...
-                                        </>
-                                      ) : (
-                                        'ลบ'
-                                      )}
-                                    </AlertDialogAction>
-                                  </AlertDialogFooter>
-                                </AlertDialogContent>
-                              </AlertDialog>
+                                      <XCircle className="h-4 w-4 mr-2" />
+                                      ยกเลิกการลงทะเบียน
+                                    </DropdownMenuItem>
+                                  </>
+                                )}
+                                
+                                <DropdownMenuSeparator />
+                                
+                                <AlertDialog>
+                                  <AlertDialogTrigger asChild>
+                                    <DropdownMenuItem 
+                                      className="text-red-600"
+                                      onSelect={(e) => e.preventDefault()}
+                                    >
+                                      <Trash2 className="h-4 w-4 mr-2" />
+                                      ลบ
+                                    </DropdownMenuItem>
+                                  </AlertDialogTrigger>
+                                  <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                      <AlertDialogTitle>ยืนยันการลบ</AlertDialogTitle>
+                                      <AlertDialogDescription>
+                                        คุณแน่ใจหรือไม่ที่จะลบการลงทะเบียนของ {student?.nickname}?
+                                        การกระทำนี้ไม่สามารถย้อนกลับได้
+                                      </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                      <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+                                      <AlertDialogAction 
+                                        onClick={() => handleDeleteEnrollment(enrollment.id)}
+                                        className="bg-red-500 hover:bg-red-600"
+                                        disabled={deletingId === enrollment.id}
+                                      >
+                                        {deletingId === enrollment.id ? (
+                                          <>
+                                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                            กำลังลบ...
+                                          </>
+                                        ) : (
+                                          'ลบ'
+                                        )}
+                                      </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                  </AlertDialogContent>
+                                </AlertDialog>
+                              </PermissionGuard>
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </TableCell>
