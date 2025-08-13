@@ -2,7 +2,8 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -57,11 +58,13 @@ import {
   deleteTrialBooking, 
   cancelTrialBooking 
 } from '@/lib/services/trial-bookings';
-import { getBranches } from '@/lib/services/branches';
+import { getActiveBranches } from '@/lib/services/branches';
 import { formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
-import { useLoading } from '@/contexts/LoadingContext';
 import { useBranch } from '@/contexts/BranchContext';
+import { PermissionGuard } from '@/components/auth/permission-guard';
+import { ActionButton } from '@/components/ui/action-button';
+import { Skeleton } from '@/components/ui/skeleton';
 
 const statusConfig = {
   new: { label: 'ใหม่', color: 'bg-blue-100 text-blue-700', icon: AlertCircle },
@@ -78,64 +81,53 @@ const sourceConfig = {
   phone: { label: 'โทรศัพท์', color: 'bg-purple-100 text-purple-700' }
 };
 
+// Cache key constants
+const QUERY_KEYS = {
+  trialBookings: (branchId?: string | null) => ['trialBookings', branchId],
+  trialStats: (branchId?: string | null) => ['trialStats', branchId],
+  branches: ['branches', 'active'],
+};
+
 export default function TrialBookingsPage() {
   const router = useRouter();
-  const [bookings, setBookings] = useState<TrialBooking[]>([]);
-  const [filteredBookings, setFilteredBookings] = useState<TrialBooking[]>([]);
-  const [branches, setBranches] = useState<Branch[]>([]);
-  const { setLoading } = useLoading();
+  const queryClient = useQueryClient();
   const { selectedBranchId, isAllBranches } = useBranch();
+  
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
-  const [stats, setStats] = useState<any>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [bookingToDelete, setBookingToDelete] = useState<TrialBooking | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [bookingToCancel, setBookingToCancel] = useState<TrialBooking | null>(null);
 
-  useEffect(() => {
-    loadBookings();
-    loadStats();
-    loadBranches();
-  }, [selectedBranchId]); // เพิ่ม dependency
+  // Optimized queries with React Query
+  const { data: bookings = [], isLoading: loadingBookings } = useQuery({
+    queryKey: QUERY_KEYS.trialBookings(selectedBranchId),
+    queryFn: () => getTrialBookings(selectedBranchId),
+    staleTime: 60000, // 1 minute
+  });
 
-  useEffect(() => {
-    filterBookings();
-  }, [bookings, searchTerm, selectedStatus]);
+  const { data: stats, isLoading: loadingStats } = useQuery({
+    queryKey: QUERY_KEYS.trialStats(selectedBranchId),
+    queryFn: () => getTrialBookingStats(selectedBranchId),
+    staleTime: 60000, // 1 minute
+  });
 
-  const loadBranches = async () => {
-    try {
-      const data = await getBranches();
-      setBranches(data);
-    } catch (error) {
-      console.error('Error loading branches:', error);
-    }
-  };
+  const { data: branches = [] } = useQuery({
+    queryKey: QUERY_KEYS.branches,
+    queryFn: getActiveBranches,
+    staleTime: 300000, // 5 minutes
+  });
 
-  const loadBookings = async () => {
-    try {
-      setLoading(true);
-      const data = await getTrialBookings(selectedBranchId);
-      setBookings(data);
-    } catch (error) {
-      console.error('Error loading bookings:', error);
-      toast.error('ไม่สามารถโหลดข้อมูลได้');
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Create lookup map for branches
+  const branchesMap = useMemo(() => 
+    new Map(branches.map(b => [b.id, b])), 
+    [branches]
+  );
 
-  const loadStats = async () => {
-    try {
-      const data = await getTrialBookingStats(selectedBranchId);
-      setStats(data);
-    } catch (error) {
-      console.error('Error loading stats:', error);
-    }
-  };
-
-  const filterBookings = () => {
+  // Filter bookings with memoization
+  const filteredBookings = useMemo(() => {
     let filtered = [...bookings];
 
     // Filter by status
@@ -153,8 +145,29 @@ export default function TrialBookingsPage() {
       );
     }
 
-    setFilteredBookings(filtered);
-  };
+    return filtered;
+  }, [bookings, searchTerm, selectedStatus]);
+
+  // Status counts with memoization
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = {
+      all: bookings.length,
+      new: 0,
+      contacted: 0,
+      scheduled: 0,
+      completed: 0,
+      converted: 0,
+      cancelled: 0
+    };
+
+    bookings.forEach(booking => {
+      if (booking.status in counts) {
+        counts[booking.status]++;
+      }
+    });
+
+    return counts;
+  }, [bookings]);
 
   const getStatusBadge = (status: TrialBooking['status']) => {
     const config = statusConfig[status];
@@ -181,7 +194,7 @@ export default function TrialBookingsPage() {
       return <Badge variant="outline" className="text-gray-500">ไม่ระบุสาขา</Badge>;
     }
     
-    const branch = branches.find(b => b.id === branchId);
+    const branch = branchesMap.get(branchId);
     return (
       <Badge variant="outline" className="bg-gray-50">
         <Building2 className="h-3 w-3 mr-1" />
@@ -202,8 +215,10 @@ export default function TrialBookingsPage() {
     try {
       await deleteTrialBooking(bookingToDelete.id);
       toast.success('ลบข้อมูลการจองเรียบร้อย');
-      loadBookings();
-      loadStats();
+      
+      // Invalidate queries to refresh data
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.trialBookings(selectedBranchId) });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.trialStats(selectedBranchId) });
     } catch (error) {
       console.error('Error deleting booking:', error);
       toast.error('ไม่สามารถลบข้อมูลได้');
@@ -222,14 +237,72 @@ export default function TrialBookingsPage() {
   const handleCancelConfirm = async (reason: string) => {
     if (!bookingToCancel) return;
     
-    await cancelTrialBooking(bookingToCancel.id, reason);
-    
-    toast.success('ยกเลิกการจองเรียบร้อย');
-    loadBookings();
-    loadStats();
-    setCancelDialogOpen(false);
-    setBookingToCancel(null);
+    try {
+      await cancelTrialBooking(bookingToCancel.id, reason);
+      toast.success('ยกเลิกการจองเรียบร้อย');
+      
+      // Invalidate queries to refresh data
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.trialBookings(selectedBranchId) });
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.trialStats(selectedBranchId) });
+    } catch (error) {
+      console.error('Error cancelling booking:', error);
+      toast.error('ไม่สามารถยกเลิกการจองได้');
+    } finally {
+      setCancelDialogOpen(false);
+      setBookingToCancel(null);
+    }
   };
+
+  // Loading state
+  const isLoading = loadingBookings || loadingStats;
+
+  if (isLoading) {
+    return (
+      <div className="p-6 max-w-7xl mx-auto space-y-6">
+        {/* Header Skeleton */}
+        <div className="flex justify-between items-center">
+          <div>
+            <Skeleton className="h-10 w-64 mb-2" />
+            <Skeleton className="h-5 w-80" />
+          </div>
+          <Skeleton className="h-10 w-40" />
+        </div>
+
+        {/* Stats Skeleton */}
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          {[...Array(5)].map((_, i) => (
+            <Card key={i}>
+              <CardContent className="p-4">
+                <Skeleton className="h-8 w-16 mb-2" />
+                <Skeleton className="h-4 w-20" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        {/* Filters Skeleton */}
+        <Card>
+          <CardContent className="p-4">
+            <Skeleton className="h-10 w-full" />
+          </CardContent>
+        </Card>
+
+        {/* Tabs Skeleton */}
+        <div className="space-y-4">
+          <Skeleton className="h-10 w-full max-w-2xl" />
+          <Card>
+            <CardContent className="p-6">
+              <div className="space-y-3">
+                {[...Array(5)].map((_, i) => (
+                  <Skeleton key={i} className="h-20 w-full" />
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
@@ -245,13 +318,15 @@ export default function TrialBookingsPage() {
           </h1>
           <p className="text-gray-600 mt-2">จัดการการจองทดลองเรียนทั้งหมด</p>
         </div>
-        <Button 
-          onClick={() => router.push('/trial/new')}
-          className="bg-red-500 hover:bg-red-600"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          เพิ่มการจอง (Walk-in)
-        </Button>
+        <PermissionGuard requiredRole={['super_admin', 'branch_admin']}>
+          <Button 
+            onClick={() => router.push('/trial/new')}
+            className="bg-red-500 hover:bg-red-600"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            เพิ่มการจอง (Walk-in)
+          </Button>
+        </PermissionGuard>
       </div>
 
       {/* Stats */}
@@ -321,21 +396,21 @@ export default function TrialBookingsPage() {
       {/* Tabs */}
       <Tabs value={selectedStatus} onValueChange={setSelectedStatus}>
         <TabsList>
-          <TabsTrigger value="all">ทั้งหมด ({bookings.length})</TabsTrigger>
+          <TabsTrigger value="all">ทั้งหมด ({statusCounts.all})</TabsTrigger>
           <TabsTrigger value="new">
-            ใหม่ ({bookings.filter(b => b.status === 'new').length})
+            ใหม่ ({statusCounts.new})
           </TabsTrigger>
           <TabsTrigger value="contacted">
-            ติดต่อแล้ว ({bookings.filter(b => b.status === 'contacted').length})
+            ติดต่อแล้ว ({statusCounts.contacted})
           </TabsTrigger>
           <TabsTrigger value="scheduled">
-            นัดหมายแล้ว ({bookings.filter(b => b.status === 'scheduled').length})
+            นัดหมายแล้ว ({statusCounts.scheduled})
           </TabsTrigger>
           <TabsTrigger value="completed">
-            เรียนแล้ว ({bookings.filter(b => b.status === 'completed').length})
+            เรียนแล้ว ({statusCounts.completed})
           </TabsTrigger>
           <TabsTrigger value="converted">
-            ลงทะเบียน ({bookings.filter(b => b.status === 'converted').length})
+            ลงทะเบียน ({statusCounts.converted})
           </TabsTrigger>
         </TabsList>
 
@@ -431,29 +506,31 @@ export default function TrialBookingsPage() {
                                 </Button>
                               </Link>
                               
-                              {/* แสดงปุ่มยกเลิกสำหรับสถานะ new, contacted, scheduled */}
-                             {(booking.status === 'new' || booking.status === 'contacted' || booking.status === 'scheduled') && (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleCancelClick(booking)}
-                                  className="text-red-600 hover:text-red-700"
-                                >
-                                  <XCircle className="h-4 w-4" />
-                                </Button>
-                              )}
-                              
-                              {/* แสดงปุ่มลบสำหรับสถานะ new และ cancelled เท่านั้น */}
-                              {(booking.status === 'new' || booking.status === 'cancelled') && (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleDeleteClick(booking)}
-                                  className="text-gray-600 hover:text-gray-700"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              )}
+                              <PermissionGuard requiredRole={['super_admin', 'branch_admin']}>
+                                {/* แสดงปุ่มยกเลิกสำหรับสถานะ new, contacted, scheduled */}
+                                {(booking.status === 'new' || booking.status === 'contacted' || booking.status === 'scheduled') && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleCancelClick(booking)}
+                                    className="text-red-600 hover:text-red-700"
+                                  >
+                                    <XCircle className="h-4 w-4" />
+                                  </Button>
+                                )}
+                                
+                                {/* แสดงปุ่มลบสำหรับสถานะ new และ cancelled เท่านั้น */}
+                                {(booking.status === 'new' || booking.status === 'cancelled') && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleDeleteClick(booking)}
+                                    className="text-gray-600 hover:text-gray-700"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                )}
+                              </PermissionGuard>
                             </div>
                           </TableCell>
                         </TableRow>
@@ -490,7 +567,8 @@ export default function TrialBookingsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-         {/* Cancel Booking Dialog */}
+
+      {/* Cancel Booking Dialog */}
       <CancelBookingDialog
         isOpen={cancelDialogOpen}
         onClose={() => {

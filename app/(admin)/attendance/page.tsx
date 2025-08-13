@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { PageLoading } from '@/components/ui/loading';
 import {
   Select,
   SelectContent,
@@ -25,9 +25,9 @@ import {
 import { useAuth } from '@/hooks/useAuth';
 import { useBranch } from '@/contexts/BranchContext';
 import { getClasses, getClassSchedules } from '@/lib/services/classes';
-import { getSubjects } from '@/lib/services/subjects';
-import { getTeachersByBranch, getTeachers } from '@/lib/services/teachers';
-import { getBranch, getBranches } from '@/lib/services/branches';
+import { getActiveSubjects } from '@/lib/services/subjects';
+import { getActiveTeachers } from '@/lib/services/teachers';
+import { getActiveBranches } from '@/lib/services/branches';
 import { getRoomsByBranch } from '@/lib/services/rooms';
 import { Class, ClassSchedule, Subject, Teacher, Branch, Room } from '@/types/models';
 import { formatTime, getDayName, formatDate } from '@/lib/utils';
@@ -49,6 +49,7 @@ import {
   ClipboardCheck,
   Building2
 } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface ClassWithDetails extends Class {
   subject?: Subject;
@@ -58,98 +59,71 @@ interface ClassWithDetails extends Class {
   todaySchedule?: ClassSchedule;
 }
 
-// Cache for room data
-const roomCache = new Map<string, Room[]>();
+// Cache key constants
+const QUERY_KEYS = {
+  subjects: ['subjects', 'active'],
+  teachers: ['teachers', 'active'],
+  branches: ['branches', 'active'],
+  classes: (branchId?: string | null, teacherId?: string) => ['classes', branchId, teacherId],
+  classSchedules: (classId: string) => ['classSchedules', classId],
+  rooms: (branchId: string) => ['rooms', branchId],
+  attendanceData: (date: string, branchId?: string | null) => ['attendance', date, branchId],
+};
 
-export default function AttendancePage() {
-  const router = useRouter();
-  const { user, isTeacher, adminUser, canAccessBranch, isSuperAdmin } = useAuth();
-  const { selectedBranchId, isAllBranches } = useBranch();
-  const [loading, setLoading] = useState(true);
-  const [allClasses, setAllClasses] = useState<ClassWithDetails[]>([]);
-  const [branches, setBranches] = useState<Branch[]>([]);
-  const [roomsByBranch, setRoomsByBranch] = useState<Map<string, Room[]>>(new Map());
+// Custom hook to fetch attendance data for a specific date
+const useAttendanceData = (selectedDate: Date, selectedBranchId: string | null, isAllBranches: boolean) => {
+  const { user, adminUser, isTeacher, isSuperAdmin, canAccessBranch } = useAuth();
   
-  // Master data states (loaded once)
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [allTeachers, setAllTeachers] = useState<Teacher[]>([]);
-  
-  // Filter states
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedSubject, setSelectedSubject] = useState<string>('all');
-  const [selectedTeacher, setSelectedTeacher] = useState<string>('all');
-
-  // Load master data once on mount
-  useEffect(() => {
-    loadMasterData();
-  }, []);
-
-  // Load classes when date or branch changes
-  useEffect(() => {
-    if (subjects.length > 0 && allTeachers.length > 0) {
-      loadClassesForDate();
-    }
-  }, [selectedBranchId, selectedDate, subjects, allTeachers]);
-
-  const loadMasterData = async () => {
-    try {
-      // Load all master data in parallel
-      const [subjectsData, teachersData, branchesData] = await Promise.all([
-        getSubjects(),
-        getTeachers(),
-        getBranches()
-      ]);
-
-      setSubjects(subjectsData.filter(s => s.isActive));
-      setAllTeachers(teachersData.filter(t => t.isActive));
-      setBranches(branchesData);
-    } catch (error) {
-      console.error('Error loading master data:', error);
-    }
-  };
-
-  const loadClassesForDate = async () => {
-    if (!user) {
-      setLoading(false);
-      return;
-    }
-    
-    try {
-      setLoading(true);
-      
-      // Get selected date's day of week
-      const dayOfWeek = selectedDate.getDay();
-      
-      // Determine which classes to load
-      let classes: Class[] = [];
+  // Fetch classes
+  const { data: classes = [] } = useQuery({
+    queryKey: QUERY_KEYS.classes(selectedBranchId, isTeacher() ? adminUser?.id : undefined),
+    queryFn: async () => {
+      if (!user) return [];
       
       if (isAllBranches && isSuperAdmin()) {
-        // Load all classes for super admin
         if (isTeacher() && adminUser) {
-          classes = await getClasses(undefined, adminUser.id);
-        } else {
-          classes = await getClasses();
+          return getClasses(undefined, adminUser.id);
         }
+        return getClasses();
       } else if (selectedBranchId) {
-        // Load classes for specific branch
-        if (!canAccessBranch(selectedBranchId)) {
-          setAllClasses([]);
-          setLoading(false);
-          return;
-        }
-        
+        if (!canAccessBranch(selectedBranchId)) return [];
         if (isTeacher() && adminUser) {
-          classes = await getClasses(selectedBranchId, adminUser.id);
-        } else {
-          classes = await getClasses(selectedBranchId);
+          return getClasses(selectedBranchId, adminUser.id);
         }
-      } else {
-        // No branch selected
-        setAllClasses([]);
-        setLoading(false);
-        return;
+        return getClasses(selectedBranchId);
       }
+      return [];
+    },
+    enabled: !!user && (!!selectedBranchId || isAllBranches),
+    staleTime: 60000, // 1 minute
+  });
+  
+  // Fetch subjects
+  const { data: subjects = [] } = useQuery({
+    queryKey: QUERY_KEYS.subjects,
+    queryFn: () => getActiveSubjects(),
+    staleTime: 300000, // 5 minutes
+  });
+  
+  // Fetch teachers
+  const { data: teachers = [] } = useQuery({
+    queryKey: QUERY_KEYS.teachers,
+    queryFn: () => getActiveTeachers(),
+    staleTime: 300000, // 5 minutes
+  });
+  
+  // Fetch branches
+  const { data: branches = [] } = useQuery({
+    queryKey: QUERY_KEYS.branches,
+    queryFn: () => getActiveBranches(),
+    staleTime: 300000, // 5 minutes
+  });
+  
+  // Process attendance data
+  const { data: attendanceData, isLoading } = useQuery({
+    queryKey: QUERY_KEYS.attendanceData(selectedDate.toISOString(), selectedBranchId),
+    queryFn: async () => {
+      const dayOfWeek = selectedDate.getDay();
       
       // Filter active classes that have selected day in their schedule
       const activeClasses = classes.filter(cls => 
@@ -157,18 +131,14 @@ export default function AttendancePage() {
         cls.daysOfWeek.includes(dayOfWeek)
       );
       
-      if (activeClasses.length === 0) {
-        setAllClasses([]);
-        setLoading(false);
-        return;
-      }
+      if (activeClasses.length === 0) return [];
       
       // Create maps for quick lookup
       const subjectMap = new Map(subjects.map(s => [s.id, s]));
-      const teacherMap = new Map(allTeachers.map(t => [t.id, t]));
+      const teacherMap = new Map(teachers.map(t => [t.id, t]));
       const branchMap = new Map(branches.map(b => [b.id, b]));
       
-      // Batch load schedules for all classes
+      // Batch load schedules
       const schedulePromises = activeClasses.map(cls => 
         getClassSchedules(cls.id).then(schedules => ({
           classId: cls.id,
@@ -179,34 +149,24 @@ export default function AttendancePage() {
       const allSchedules = await Promise.all(schedulePromises);
       const scheduleMap = new Map(allSchedules.map(({ classId, schedules }) => [classId, schedules]));
       
-      // Get unique branch IDs that need room data
+      // Get unique branch IDs
       const uniqueBranchIds = [...new Set(activeClasses.map(cls => cls.branchId))];
       
-      // Load rooms for branches (with cache)
+      // Load rooms for branches
       const roomPromises = uniqueBranchIds.map(async (branchId) => {
-        if (roomCache.has(branchId)) {
-          return { branchId, rooms: roomCache.get(branchId)! };
-        }
-        
         const rooms = await getRoomsByBranch(branchId);
-        roomCache.set(branchId, rooms);
         return { branchId, rooms };
       });
       
       const roomResults = await Promise.all(roomPromises);
-      const newRoomsByBranch = new Map(roomResults.map(({ branchId, rooms }) => [branchId, rooms]));
-      setRoomsByBranch(newRoomsByBranch);
+      const roomsByBranch = new Map(roomResults.map(({ branchId, rooms }) => [branchId, rooms]));
       
       // Build class details
       const classesWithDetails: ClassWithDetails[] = [];
       
       for (const cls of activeClasses) {
-        // Skip if user doesn't have access to branch
-        if (!isSuperAdmin() && !canAccessBranch(cls.branchId)) {
-          continue;
-        }
+        if (!isSuperAdmin() && !canAccessBranch(cls.branchId)) continue;
         
-        // Get schedule for selected date
         const schedules = scheduleMap.get(cls.id) || [];
         const selectedSchedule = schedules.find(schedule => {
           const scheduleDate = new Date(schedule.sessionDate);
@@ -214,11 +174,10 @@ export default function AttendancePage() {
         });
         
         if (selectedSchedule) {
-          // Get details from maps (instant lookup)
           const subject = subjectMap.get(cls.subjectId);
           const teacher = teacherMap.get(cls.teacherId);
           const branch = branchMap.get(cls.branchId);
-          const branchRooms = newRoomsByBranch.get(cls.branchId) || [];
+          const branchRooms = roomsByBranch.get(cls.branchId) || [];
           const room = branchRooms.find(r => r.id === cls.roomId);
           
           classesWithDetails.push({
@@ -232,7 +191,7 @@ export default function AttendancePage() {
         }
       }
       
-      // Sort
+      // Sort by branch (if showing all) and time
       classesWithDetails.sort((a, b) => {
         if (isAllBranches) {
           const branchCompare = (a.branch?.name || '').localeCompare(b.branch?.name || '');
@@ -244,35 +203,59 @@ export default function AttendancePage() {
         return timeA - timeB;
       });
       
-      setAllClasses(classesWithDetails);
-      
-    } catch (error) {
-      console.error('Error loading classes:', error);
-    } finally {
-      setLoading(false);
-    }
+      return classesWithDetails;
+    },
+    enabled: classes.length > 0 && subjects.length > 0 && teachers.length > 0 && branches.length > 0,
+    staleTime: 30000, // 30 seconds
+  });
+  
+  return {
+    classes: attendanceData || [],
+    subjects,
+    teachers,
+    branches,
+    isLoading: isLoading || !attendanceData,
   };
+};
 
+export default function AttendancePage() {
+  const router = useRouter();
+  const { user, isTeacher, adminUser } = useAuth();
+  const { selectedBranchId, isAllBranches } = useBranch();
+  
+  // Filter states
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedSubject, setSelectedSubject] = useState<string>('all');
+  const [selectedTeacher, setSelectedTeacher] = useState<string>('all');
+  
+  // Fetch attendance data
+  const { classes, subjects, teachers, isLoading } = useAttendanceData(
+    selectedDate,
+    selectedBranchId,
+    isAllBranches
+  );
+  
   // Filter teachers based on selection and role
   const availableTeachers = useMemo(() => {
-    let teachers = allTeachers;
+    let filteredTeachers = teachers;
     
     // Filter by branch if specific branch selected
     if (selectedBranchId && !isAllBranches) {
-      teachers = teachers.filter(t => t.availableBranches.includes(selectedBranchId));
+      filteredTeachers = filteredTeachers.filter(t => t.availableBranches.includes(selectedBranchId));
     }
     
     // If teacher role, only show themselves
     if (isTeacher() && adminUser) {
-      teachers = teachers.filter(t => t.id === adminUser.id);
+      filteredTeachers = filteredTeachers.filter(t => t.id === adminUser.id);
     }
     
-    return teachers;
-  }, [allTeachers, selectedBranchId, isAllBranches, isTeacher, adminUser]);
-
+    return filteredTeachers;
+  }, [teachers, selectedBranchId, isAllBranches, isTeacher, adminUser]);
+  
   // Apply filters with memoization
   const filteredClasses = useMemo(() => {
-    let filtered = [...allClasses];
+    let filtered = [...classes];
     
     // Search filter
     if (searchTerm) {
@@ -298,8 +281,8 @@ export default function AttendancePage() {
     }
     
     return filtered;
-  }, [allClasses, searchTerm, selectedSubject, selectedTeacher]);
-
+  }, [classes, searchTerm, selectedSubject, selectedTeacher]);
+  
   const getAttendanceStatus = (schedule?: ClassSchedule) => {
     if (!schedule) return { status: 'pending', label: 'ยังไม่เช็คชื่อ', variant: 'secondary' as const };
     
@@ -315,7 +298,6 @@ export default function AttendancePage() {
         };
       }
       
-      // แสดงจำนวนที่มาเรียน
       return { 
         status: 'completed', 
         label: `มาเรียน ${attendanceCount} คน`, 
@@ -329,22 +311,21 @@ export default function AttendancePage() {
     
     return { status: 'pending', label: 'ยังไม่เช็คชื่อ', variant: 'secondary' as const };
   };
-
+  
   const handleClassClick = (classId: string) => {
     router.push(`/attendance/${classId}`);
   };
-
+  
   const clearFilters = () => {
     setSearchTerm('');
     setSelectedSubject('all');
     setSelectedTeacher('all');
     setSelectedDate(new Date());
   };
-
+  
   const hasActiveFilters = searchTerm || selectedSubject !== 'all' || selectedTeacher !== 'all';
-
   const isToday = selectedDate.toDateString() === new Date().toDateString();
-
+  
   // Format date for input
   const formatDateForInput = (date: Date): string => {
     const year = date.getFullYear();
@@ -352,7 +333,7 @@ export default function AttendancePage() {
     const day = String(date.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
   };
-
+  
   // Handle date change from input
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
@@ -364,9 +345,48 @@ export default function AttendancePage() {
     
     setSelectedDate(newDate);
   };
-
-  if (loading) return <PageLoading />;
-
+  
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        {/* Header Skeleton */}
+        <div>
+          <Skeleton className="h-8 w-48 mb-2" />
+          <Skeleton className="h-5 w-64" />
+        </div>
+        
+        {/* Filters Skeleton */}
+        <Card>
+          <CardHeader className="pb-3">
+            <Skeleton className="h-5 w-24" />
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+              {[...Array(5)].map((_, i) => (
+                <div key={i}>
+                  <Skeleton className="h-4 w-16 mb-2" />
+                  <Skeleton className="h-9 w-full" />
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+        
+        {/* Table Skeleton */}
+        <Card>
+          <CardContent className="p-0">
+            <div className="p-6 space-y-3">
+              {[...Array(5)].map((_, i) => (
+                <Skeleton key={i} className="h-20 w-full" />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+  
   // Show empty state if no branch selected and not super admin viewing all branches
   if (!selectedBranchId && !isAllBranches) {
     return (
@@ -389,7 +409,7 @@ export default function AttendancePage() {
       </div>
     );
   }
-
+  
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -401,7 +421,7 @@ export default function AttendancePage() {
           </p>
         </div>
       </div>
-
+      
       {/* Filters */}
       <Card>
         <CardHeader className="pb-3">
@@ -493,7 +513,7 @@ export default function AttendancePage() {
           </div>
         </CardContent>
       </Card>
-
+      
       {filteredClasses.length === 0 ? (
         <Card>
           <CardContent className="py-12">

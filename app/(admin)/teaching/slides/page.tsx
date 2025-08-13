@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
+import { useQuery } from '@tanstack/react-query';
 import { getActiveSubjects } from '@/lib/services/subjects';
 import { getTeachingMaterials } from '@/lib/services/teaching-materials';
 import { Subject } from '@/types/models';
@@ -18,49 +19,89 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from 'sonner';
+import { Skeleton } from '@/components/ui/skeleton';
 
-export default function TeachingSlidesPage() {
-  const router = useRouter();
-  const { user } = useAuth();
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [materialCounts, setMaterialCounts] = useState<Record<string, number>>({});
-  const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+// Cache key constants
+const QUERY_KEYS = {
+  subjects: ['subjects', 'active'],
+  materials: (subjectId: string) => ['teaching-materials', subjectId],
+  allMaterials: ['teaching-materials', 'counts'],
+};
 
-  useEffect(() => {
-    loadData();
-  }, [user]);
-
-  const loadData = async () => {
-    if (!user) return;
-    
-    try {
-      setLoading(true);
-      
-      // Get all active subjects
-      const subjectsData = await getActiveSubjects();
+// Custom hook to fetch material counts
+const useMaterialCounts = (subjects: Subject[], enabled: boolean) => {
+  return useQuery({
+    queryKey: QUERY_KEYS.allMaterials,
+    queryFn: async () => {
       const counts: Record<string, number> = {};
       
-      // Count materials for each subject
-      for (const subject of subjectsData) {
+      // Fetch materials for all subjects in parallel
+      const promises = subjects.map(async (subject) => {
         try {
           const materials = await getTeachingMaterials(subject.id);
           counts[subject.id] = materials.filter(m => m.isActive).length;
         } catch (error) {
           counts[subject.id] = 0;
         }
-      }
+      });
       
-      setSubjects(subjectsData);
-      setMaterialCounts(counts);
-    } catch (error) {
-      console.error('Error loading data:', error);
-      toast.error('ไม่สามารถโหลดข้อมูลได้');
-    } finally {
-      setLoading(false);
-    }
-  };
+      await Promise.all(promises);
+      return counts;
+    },
+    enabled: enabled && subjects.length > 0,
+    staleTime: 300000, // 5 minutes
+  });
+};
+
+export default function TeachingSlidesPage() {
+  const router = useRouter();
+  const { user } = useAuth();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+
+  // Fetch subjects using React Query
+  const { data: subjects = [], isLoading: loadingSubjects } = useQuery({
+    queryKey: QUERY_KEYS.subjects,
+    queryFn: getActiveSubjects,
+    enabled: !!user,
+    staleTime: 300000, // 5 minutes
+  });
+
+  // Fetch material counts
+  const { data: materialCounts = {}, isLoading: loadingCounts } = useMaterialCounts(subjects, !!user);
+
+  // Get unique categories with memoization
+  const categories = useMemo(() => {
+    const uniqueCategories = new Set(subjects.map(s => s.category));
+    return ['all', ...Array.from(uniqueCategories)];
+  }, [subjects]);
+
+  // Filter and sort subjects with memoization
+  const filteredSubjects = useMemo(() => {
+    return subjects
+      .filter(subject => {
+        const matchSearch = 
+          subject.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          subject.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          subject.description.toLowerCase().includes(searchTerm.toLowerCase());
+        
+        const matchCategory = selectedCategory === 'all' || subject.category === selectedCategory;
+        
+        return matchSearch && matchCategory;
+      })
+      .sort((a, b) => a.name.localeCompare(b.name, 'th'));
+  }, [subjects, searchTerm, selectedCategory]);
+
+  // Group subjects by category with memoization
+  const subjectsByCategory = useMemo(() => {
+    return filteredSubjects.reduce((acc, subject) => {
+      if (!acc[subject.category]) {
+        acc[subject.category] = [];
+      }
+      acc[subject.category].push(subject);
+      return acc;
+    }, {} as Record<string, Subject[]>);
+  }, [filteredSubjects]);
 
   const getLevelBadgeColor = (level: string) => {
     switch (level) {
@@ -75,38 +116,49 @@ export default function TeachingSlidesPage() {
     }
   };
 
-  // Get unique categories
-  const categories = ['all', ...new Set(subjects.map(s => s.category))];
+  // Loading state
+  const isLoading = loadingSubjects || loadingCounts;
 
-  // Filter and sort subjects
-  const filteredSubjects = subjects
-    .filter(subject => {
-      const matchSearch = 
-        subject.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        subject.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        subject.description.toLowerCase().includes(searchTerm.toLowerCase());
-      
-      const matchCategory = selectedCategory === 'all' || subject.category === selectedCategory;
-      
-      return matchSearch && matchCategory;
-    })
-    .sort((a, b) => a.name.localeCompare(b.name, 'th'));
-
-  // Group subjects by category
-  const subjectsByCategory = filteredSubjects.reduce((acc, subject) => {
-    if (!acc[subject.category]) {
-      acc[subject.category] = [];
-    }
-    acc[subject.category].push(subject);
-    return acc;
-  }, {} as Record<string, Subject[]>);
-
-  if (loading) {
+  if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <Loader2 className="h-12 w-12 animate-spin text-red-600 mx-auto" />
-          <p className="text-gray-600 mt-4">กำลังโหลดข้อมูล...</p>
+      <div className="space-y-6">
+        {/* Header Skeleton */}
+        <div>
+          <Skeleton className="h-8 w-64 mb-2" />
+          <Skeleton className="h-5 w-48" />
+        </div>
+
+        {/* Filters Skeleton */}
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex flex-col md:flex-row gap-3">
+              <Skeleton className="h-10 w-full md:w-[200px]" />
+              <Skeleton className="h-10 flex-1" />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Grid Skeleton */}
+        <div className="space-y-6">
+          {[...Array(2)].map((_, categoryIndex) => (
+            <div key={categoryIndex}>
+              <Skeleton className="h-6 w-32 mb-3" />
+              <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                {[...Array(5)].map((_, i) => (
+                  <Card key={i}>
+                    <CardContent className="p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <Skeleton className="h-8 w-8" />
+                        <Skeleton className="h-5 w-16" />
+                      </div>
+                      <Skeleton className="h-4 w-full mb-1" />
+                      <Skeleton className="h-3 w-2/3" />
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     );
