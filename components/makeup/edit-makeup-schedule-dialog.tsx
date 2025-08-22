@@ -5,7 +5,7 @@ import { MakeupClass, Student, Class, Teacher, Room } from '@/types/models';
 import { scheduleMakeupClass } from '@/lib/services/makeup';
 import { getActiveTeachers } from '@/lib/services/teachers';
 import { getActiveRoomsByBranch } from '@/lib/services/rooms';
-import { checkAvailability } from '@/lib/utils/availability';
+import { checkAvailability, AvailabilityWarning } from '@/lib/utils/availability';
 import {
   Dialog,
   DialogContent,
@@ -16,7 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Calendar, Clock, User, MapPin, Save, X, AlertCircle, CalendarDays } from 'lucide-react';
+import { Calendar, Clock, User, MapPin, Save, X, AlertCircle, CalendarDays, AlertTriangle, CheckCircle2, Users } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
@@ -57,6 +57,7 @@ export default function EditMakeupScheduleDialog({
   const [rooms, setRooms] = useState<Room[]>([]);
   const [changeReason, setChangeReason] = useState('');
   const [availabilityMessage, setAvailabilityMessage] = useState('');
+  const [availabilityWarnings, setAvailabilityWarnings] = useState<AvailabilityWarning[]>([]);
   
   const [formData, setFormData] = useState({
     date: '',
@@ -124,6 +125,7 @@ export default function EditMakeupScheduleDialog({
     
     setCheckingAvailability(true);
     setAvailabilityMessage('');
+    setAvailabilityWarnings([]);
     
     try {
       const date = new Date(formData.date);
@@ -135,14 +137,18 @@ export default function EditMakeupScheduleDialog({
         roomId: formData.roomId,
         teacherId: formData.teacherId,
         excludeId: makeup.id,
-        excludeType: 'makeup'
+        excludeType: 'makeup',
+        allowConflicts: true // เพิ่ม flag นี้
       });
       
       setIsAvailable(result.available);
+      setAvailabilityWarnings(result.warnings || []);
       
-      if (!result.available && result.reasons.length > 0) {
-        // Show first issue
-        setAvailabilityMessage(result.reasons[0].message);
+      // Check for holiday issue
+      const holidayIssue = result.reasons.find(r => r.type === 'holiday');
+      if (holidayIssue) {
+        setIsAvailable(false);
+        setAvailabilityMessage(holidayIssue.message);
       } else {
         setAvailabilityMessage('');
       }
@@ -168,9 +174,18 @@ export default function EditMakeupScheduleDialog({
       return;
     }
     
-    if (isAvailable === false) {
-      toast.error(availabilityMessage || 'ไม่สามารถจัดตารางในช่วงเวลานี้ได้');
+    if (isAvailable === false && availabilityMessage.includes('วันหยุด')) {
+      toast.error('ไม่สามารถจัด Makeup Class ในวันหยุดได้');
       return;
+    }
+    
+    // ถ้ามี warnings ให้แสดงข้อความยืนยัน
+    if (availabilityWarnings.length > 0) {
+      const confirmMessage = `มีคลาส/กิจกรรมอื่นในช่วงเวลานี้:\n${availabilityWarnings.map(w => `- ${w.message}`).join('\n')}\n\nคุณต้องการเปลี่ยนวันนัด Makeup Class หรือไม่?`;
+      
+      if (!confirm(confirmMessage)) {
+        return;
+      }
     }
     
     const currentUser = auth.currentUser;
@@ -227,6 +242,14 @@ export default function EditMakeupScheduleDialog({
            formData.endTime !== schedule.endTime ||
            formData.teacherId !== schedule.teacherId ||
            formData.roomId !== schedule.roomId;
+  };
+
+  // Helper function to group warnings by type
+  const getGroupedWarnings = () => {
+    const roomWarnings = availabilityWarnings.filter(w => w.type === 'room_conflict');
+    const teacherWarnings = availabilityWarnings.filter(w => w.type === 'teacher_conflict');
+    
+    return { roomWarnings, teacherWarnings };
   };
 
   return (
@@ -364,20 +387,80 @@ export default function EditMakeupScheduleDialog({
             </div>
           </div>
 
-          {/* Availability Status */}
+          {/* Availability Status - Updated */}
           {isAvailable !== null && hasChanged() && (
-            <Alert className={isAvailable ? 'border-green-200' : 'border-red-200'}>
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>
-                {checkingAvailability ? (
-                  'กำลังตรวจสอบ...'
-                ) : isAvailable ? (
-                  'ครูและห้องเรียนว่างในช่วงเวลานี้'
-                ) : (
-                  availabilityMessage || 'ไม่สามารถจัดตารางในช่วงเวลานี้ได้'
-                )}
-              </AlertDescription>
-            </Alert>
+            <>
+              {/* Holiday Issue */}
+              {isAvailable === false && availabilityMessage.includes('วันหยุด') && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    {availabilityMessage}
+                  </AlertDescription>
+                </Alert>
+              )}
+              
+              {/* Warnings */}
+              {availabilityWarnings.length > 0 && !availabilityMessage.includes('วันหยุด') && (
+                <div className="space-y-3">
+                  {(() => {
+                    const { roomWarnings, teacherWarnings } = getGroupedWarnings();
+                    return (
+                      <>
+                        {roomWarnings.length > 0 && (
+                          <Alert className="border-amber-200 bg-amber-50">
+                            <AlertTriangle className="h-4 w-4 text-amber-600" />
+                            <AlertDescription>
+                              <div className="space-y-1">
+                                <p className="font-medium text-amber-800 text-sm">ห้องเรียนมีการใช้งาน:</p>
+                                {roomWarnings.map((warning, index) => (
+                                  <div key={index} className="flex items-start gap-2 text-sm text-amber-700">
+                                    {warning.details.conflictType === 'makeup' && 
+                                     warning.message.includes('คน') ? (
+                                      <Users className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                                    ) : (
+                                      <Clock className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                                    )}
+                                    <span className="text-xs">{warning.message}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </AlertDescription>
+                          </Alert>
+                        )}
+                        
+                        {teacherWarnings.length > 0 && (
+                          <Alert className="border-amber-200 bg-amber-50">
+                            <AlertTriangle className="h-4 w-4 text-amber-600" />
+                            <AlertDescription>
+                              <div className="space-y-1">
+                                <p className="font-medium text-amber-800 text-sm">ครูมีคลาสอื่น:</p>
+                                {teacherWarnings.map((warning, index) => (
+                                  <div key={index} className="flex items-start gap-2 text-sm text-amber-700">
+                                    <User className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                                    <span className="text-xs">{warning.message}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </AlertDescription>
+                          </Alert>
+                        )}
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+              
+              {/* Success */}
+              {isAvailable && availabilityWarnings.length === 0 && (
+                <Alert className="border-green-200 bg-green-50">
+                  <CheckCircle2 className="h-4 w-4 text-green-600" />
+                  <AlertDescription className="text-green-800">
+                    เวลานี้สามารถจัดได้
+                  </AlertDescription>
+                </Alert>
+              )}
+            </>
           )}
 
           {/* Show branch indicator if viewing specific branch */}
@@ -410,7 +493,7 @@ export default function EditMakeupScheduleDialog({
               !formData.endTime ||
               !formData.teacherId || 
               !formData.roomId || 
-              isAvailable === false ||
+              (isAvailable === false && availabilityMessage.includes('วันหยุด')) ||
               !changeReason.trim() ||
               !hasChanged() ||
               checkingAvailability
@@ -419,6 +502,11 @@ export default function EditMakeupScheduleDialog({
           >
             {loading ? (
               <>กำลังบันทึก...</>
+            ) : availabilityWarnings.length > 0 ? (
+              <>
+                <Save className="h-4 w-4 mr-2" />
+                ยืนยันการเปลี่ยนแปลง
+              </>
             ) : (
               <>
                 <Save className="h-4 w-4 mr-2" />
