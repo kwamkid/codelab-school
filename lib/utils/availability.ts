@@ -60,7 +60,7 @@ export interface AvailabilityCheckParams {
 
 /**
  * Comprehensive availability check for scheduling
- * แก้ไขให้ return warnings แทน errors สำหรับ makeup class
+ * แก้ไขให้ return warnings แทน errors สำหรับ makeup และ trial
  */
 export async function checkAvailability(
   params: AvailabilityCheckParams
@@ -75,44 +75,76 @@ export async function checkAvailability(
       issues.push(holidayCheck);
     }
     
-    // 2. Check room availability - เปลี่ยนเป็น warnings สำหรับ makeup
+    // 2. Check room availability
     const roomWarnings = await checkRoomAvailability(params);
-    if (params.allowConflicts || params.excludeType === 'makeup') {
-      // สำหรับ makeup ให้เป็น warnings
-      warnings.push(...roomWarnings.map(issue => ({
-        type: issue.type as 'room_conflict',
-        message: issue.message,
-        details: {
-          conflictType: issue.details?.conflictType || 'class' as 'class' | 'makeup' | 'trial',
-          conflictName: issue.details?.conflictName || '',
-          conflictTime: issue.details?.conflictTime || ''
+    
+    // แยกเป็น issues หรือ warnings ตามประเภท
+    for (const warning of roomWarnings) {
+      // ถ้าเป็น trial หรือ makeup ให้เป็น warning
+      if (params.excludeType === 'trial' || params.excludeType === 'makeup' || params.allowConflicts) {
+        warnings.push({
+          type: warning.type as 'room_conflict',
+          message: warning.message,
+          details: {
+            conflictType: warning.details?.conflictType || 'class' as 'class' | 'makeup' | 'trial',
+            conflictName: warning.details?.conflictName || '',
+            conflictTime: warning.details?.conflictTime || ''
+          }
+        });
+      } else {
+        // สำหรับ class ปกติ ถ้าชนกับ trial ให้เป็น warning, ถ้าชนกับ class/makeup ให้เป็น issue
+        if (warning.details?.conflictType === 'trial') {
+          warnings.push({
+            type: warning.type as 'room_conflict',
+            message: warning.message,
+            details: {
+              conflictType: 'trial',
+              conflictName: warning.details?.conflictName || '',
+              conflictTime: warning.details?.conflictTime || ''
+            }
+          });
+        } else {
+          issues.push(warning);
         }
-      })));
-    } else {
-      // สำหรับอื่นๆ ยังคงเป็น issues
-      issues.push(...roomWarnings);
+      }
     }
     
-    // 3. Check teacher availability - เปลี่ยนเป็น warnings สำหรับ makeup
+    // 3. Check teacher availability
     const teacherWarnings = await checkTeacherAvailability(params);
-    if (params.allowConflicts || params.excludeType === 'makeup') {
-      // สำหรับ makeup ให้เป็น warnings
-      warnings.push(...teacherWarnings.map(issue => ({
-        type: issue.type as 'teacher_conflict',
-        message: issue.message,
-        details: {
-          conflictType: issue.details?.conflictType || 'class' as 'class' | 'makeup' | 'trial',
-          conflictName: issue.details?.conflictName || '',
-          conflictTime: issue.details?.conflictTime || ''
+    
+    // แยกเป็น issues หรือ warnings ตามประเภท (เหมือนกับ room)
+    for (const warning of teacherWarnings) {
+      // ถ้าเป็น trial หรือ makeup ให้เป็น warning
+      if (params.excludeType === 'trial' || params.excludeType === 'makeup' || params.allowConflicts) {
+        warnings.push({
+          type: warning.type as 'teacher_conflict',
+          message: warning.message,
+          details: {
+            conflictType: warning.details?.conflictType || 'class' as 'class' | 'makeup' | 'trial',
+            conflictName: warning.details?.conflictName || '',
+            conflictTime: warning.details?.conflictTime || ''
+          }
+        });
+      } else {
+        // สำหรับ class ปกติ ถ้าชนกับ trial ให้เป็น warning, ถ้าชนกับ class/makeup ให้เป็น issue
+        if (warning.details?.conflictType === 'trial') {
+          warnings.push({
+            type: warning.type as 'teacher_conflict',
+            message: warning.message,
+            details: {
+              conflictType: 'trial',
+              conflictName: warning.details?.conflictName || '',
+              conflictTime: warning.details?.conflictTime || ''
+            }
+          });
+        } else {
+          issues.push(warning);
         }
-      })));
-    } else {
-      // สำหรับอื่นๆ ยังคงเป็น issues
-      issues.push(...teacherWarnings);
+      }
     }
     
     return {
-      available: issues.length === 0, // available ถ้าไม่มี issues (holidays)
+      available: issues.length === 0, // available ถ้าไม่มี issues
       reasons: issues,
       warnings: warnings.length > 0 ? warnings : undefined
     };
@@ -162,7 +194,7 @@ async function checkHolidayConflict(
 
 /**
  * Check room availability - แก้ให้ return AvailabilityIssue[] เหมือนเดิม
- * แต่ caller จะเปลี่ยนเป็น warnings ถ้าเป็น makeup
+ * แต่ caller จะเปลี่ยนเป็น warnings ถ้าเป็น makeup/trial
  */
 async function checkRoomAvailability(
   params: AvailabilityCheckParams
@@ -170,7 +202,7 @@ async function checkRoomAvailability(
   const issues: AvailabilityIssue[] = [];
   const { date, startTime, endTime, branchId, roomId, excludeId, excludeType } = params;
   
-  // Get room name first - แก้ไขตรงนี้
+  // Get room name first
   const { getRoomsByBranch } = await import('@/lib/services/rooms');
   const rooms = await getRoomsByBranch(branchId);
   const room = rooms.find(r => r.id === roomId);
@@ -233,103 +265,107 @@ async function checkRoomAvailability(
     });
   }
   
-  // 2. Check makeup classes
-  const makeupClasses = await getMakeupClasses();
-  
-  // Filter makeup classes for the same branch, room, and date
-  const relevantMakeups = makeupClasses.filter(makeup => 
-    makeup.status === 'scheduled' &&
-    makeup.makeupSchedule &&
-    makeup.makeupSchedule.branchId === branchId &&
-    makeup.makeupSchedule.roomId === roomId &&
-    new Date(makeup.makeupSchedule.date).toDateString() === date.toDateString() &&
-    !(excludeType === 'makeup' && makeup.id === excludeId)
-  );
-  
-  // Group makeups by time slot for better display
-  const makeupsByTimeSlot = new Map<string, typeof relevantMakeups>();
-  
-  for (const makeup of relevantMakeups) {
-    if (makeup.makeupSchedule) {
-      // Check time overlap
-      if (startTime < makeup.makeupSchedule.endTime && endTime > makeup.makeupSchedule.startTime) {
-        const timeKey = `${makeup.makeupSchedule.startTime}-${makeup.makeupSchedule.endTime}`;
-        if (!makeupsByTimeSlot.has(timeKey)) {
-          makeupsByTimeSlot.set(timeKey, []);
-        }
-        makeupsByTimeSlot.get(timeKey)!.push(makeup);
-      }
-    }
-  }
-  
-  // Create issues for makeup conflicts
-  for (const [timeSlot, makeups] of makeupsByTimeSlot) {
-    const { getStudent } = await import('@/lib/services/parents');
-    const studentNames = await Promise.all(
-      makeups.map(async (makeup) => {
-        const student = await getStudent(makeup.parentId, makeup.studentId);
-        return student?.nickname || student?.name || 'นักเรียน';
-      })
+  // 2. Check makeup classes - ไม่ตรวจสอบถ้าเป็น makeup
+  if (excludeType !== 'makeup') {
+    const makeupClasses = await getMakeupClasses();
+    
+    // Filter makeup classes for the same branch, room, and date
+    const relevantMakeups = makeupClasses.filter(makeup => 
+      makeup.status === 'scheduled' &&
+      makeup.makeupSchedule &&
+      makeup.makeupSchedule.branchId === branchId &&
+      makeup.makeupSchedule.roomId === roomId &&
+      new Date(makeup.makeupSchedule.date).toDateString() === date.toDateString() &&
+      !(excludeType === 'makeup' && makeup.id === excludeId)
     );
     
-    const message = makeups.length === 1
-      ? `ห้อง ${roomName} มี Makeup Class ของ ${studentNames[0]} เวลา ${timeSlot}`
-      : `ห้อง ${roomName} มี Makeup Class ${makeups.length} คน (${studentNames.join(', ')}) เวลา ${timeSlot}`;
+    // Group makeups by time slot for better display
+    const makeupsByTimeSlot = new Map<string, typeof relevantMakeups>();
     
-    issues.push({
-      type: 'room_conflict',
-      message,
-      details: {
-        conflictType: 'makeup',
-        conflictName: studentNames.join(', '),
-        conflictTime: timeSlot
+    for (const makeup of relevantMakeups) {
+      if (makeup.makeupSchedule) {
+        // Check time overlap
+        if (startTime < makeup.makeupSchedule.endTime && endTime > makeup.makeupSchedule.startTime) {
+          const timeKey = `${makeup.makeupSchedule.startTime}-${makeup.makeupSchedule.endTime}`;
+          if (!makeupsByTimeSlot.has(timeKey)) {
+            makeupsByTimeSlot.set(timeKey, []);
+          }
+          makeupsByTimeSlot.get(timeKey)!.push(makeup);
+        }
       }
-    });
-  }
-  
-  // 3. Check trial sessions
-  const trialSessions = await getTrialSessions();
-  
-  // Filter trial sessions for the same branch, room, and date
-  const relevantTrials = trialSessions.filter(trial =>
-    trial.status === 'scheduled' &&
-    trial.branchId === branchId &&
-    trial.roomId === roomId &&
-    new Date(trial.scheduledDate).toDateString() === date.toDateString() &&
-    !(excludeType === 'trial' && trial.id === excludeId)
-  );
-  
-  // Group trials by time slot
-  const trialsByTimeSlot = new Map<string, typeof relevantTrials>();
-  
-  for (const trial of relevantTrials) {
-    // Check time overlap
-    if (startTime < trial.endTime && endTime > trial.startTime) {
-      const timeKey = `${trial.startTime}-${trial.endTime}`;
-      if (!trialsByTimeSlot.has(timeKey)) {
-        trialsByTimeSlot.set(timeKey, []);
-      }
-      trialsByTimeSlot.get(timeKey)!.push(trial);
+    }
+    
+    // Create issues for makeup conflicts
+    for (const [timeSlot, makeups] of makeupsByTimeSlot) {
+      const { getStudent } = await import('@/lib/services/parents');
+      const studentNames = await Promise.all(
+        makeups.map(async (makeup) => {
+          const student = await getStudent(makeup.parentId, makeup.studentId);
+          return student?.nickname || student?.name || 'นักเรียน';
+        })
+      );
+      
+      const message = makeups.length === 1
+        ? `ห้อง ${roomName} มี Makeup Class ของ ${studentNames[0]} เวลา ${timeSlot}`
+        : `ห้อง ${roomName} มี Makeup Class ${makeups.length} คน (${studentNames.join(', ')}) เวลา ${timeSlot}`;
+      
+      issues.push({
+        type: 'room_conflict',
+        message,
+        details: {
+          conflictType: 'makeup',
+          conflictName: studentNames.join(', '),
+          conflictTime: timeSlot
+        }
+      });
     }
   }
   
-  // Create issues for trial conflicts
-  for (const [timeSlot, trials] of trialsByTimeSlot) {
-    const studentNames = trials.map(t => t.studentName);
+  // 3. Check trial sessions - ไม่ตรวจสอบถ้าเป็น trial
+  if (excludeType !== 'trial') {
+    const trialSessions = await getTrialSessions();
     
-    const message = trials.length === 1
-      ? `ห้อง ${roomName} มีทดลองเรียนของ ${studentNames[0]} เวลา ${timeSlot}`
-      : `ห้อง ${roomName} มีทดลองเรียน ${trials.length} คน (${studentNames.join(', ')}) เวลา ${timeSlot}`;
+    // Filter trial sessions for the same branch, room, and date
+    const relevantTrials = trialSessions.filter(trial =>
+      trial.status === 'scheduled' &&
+      trial.branchId === branchId &&
+      trial.roomId === roomId &&
+      new Date(trial.scheduledDate).toDateString() === date.toDateString() &&
+      !(excludeType === 'trial' && trial.id === excludeId)
+    );
     
-    issues.push({
-      type: 'room_conflict',
-      message,
-      details: {
-        conflictType: 'trial',
-        conflictName: studentNames.join(', '),
-        conflictTime: timeSlot
+    // Group trials by time slot
+    const trialsByTimeSlot = new Map<string, typeof relevantTrials>();
+    
+    for (const trial of relevantTrials) {
+      // Check time overlap
+      if (startTime < trial.endTime && endTime > trial.startTime) {
+        const timeKey = `${trial.startTime}-${trial.endTime}`;
+        if (!trialsByTimeSlot.has(timeKey)) {
+          trialsByTimeSlot.set(timeKey, []);
+        }
+        trialsByTimeSlot.get(timeKey)!.push(trial);
       }
-    });
+    }
+    
+    // Create issues for trial conflicts
+    for (const [timeSlot, trials] of trialsByTimeSlot) {
+      const studentNames = trials.map(t => t.studentName);
+      
+      const message = trials.length === 1
+        ? `ห้อง ${roomName} มีทดลองเรียนของ ${studentNames[0]} เวลา ${timeSlot}`
+        : `ห้อง ${roomName} มีทดลองเรียน ${trials.length} คน (${studentNames.join(', ')}) เวลา ${timeSlot}`;
+      
+      issues.push({
+        type: 'room_conflict',
+        message,
+        details: {
+          conflictType: 'trial',
+          conflictName: studentNames.join(', '),
+          conflictTime: timeSlot
+        }
+      });
+    }
   }
   
   return issues;
