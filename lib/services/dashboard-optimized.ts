@@ -13,12 +13,13 @@ import { db } from '@/lib/firebase/client';
 import { EventInput } from '@fullcalendar/core';
 import { Holiday, MakeupClass, TrialSession, Class, Subject, Teacher, Branch, Room } from '@/types/models';
 
+// ย้าย CalendarEvent interface มาจาก dashboard.ts
 export interface CalendarEvent extends EventInput {
   classId: string;
   extendedProps: {
     type: 'class' | 'makeup' | 'trial' | 'holiday';
-    className?: string;         // เพิ่ม: ชื่อคลาส
-    classCode?: string;        // เพิ่ม: รหัสคลาส
+    className?: string;
+    classCode?: string;
     branchId: string;
     branchName: string;
     roomName: string;
@@ -37,6 +38,15 @@ export interface CalendarEvent extends EventInput {
     studentNickname?: string;
     originalClassName?: string;
     makeupStatus?: 'pending' | 'scheduled' | 'completed' | 'cancelled';
+    makeupCount?: number; // จำนวนนักเรียน makeup ใน slot เดียวกัน
+    makeupDetails?: Array<{ // รายละเอียดของแต่ละคน
+      id: string;
+      studentName: string;
+      studentNickname: string;
+      originalClassName: string;
+      status: string;
+      attendance?: any;
+    }>;
     // For trial
     trialStudentName?: string;
     trialSubjectName?: string;
@@ -343,7 +353,7 @@ export async function getOptimizedCalendarEvents(
       });
     });
 
-    // 3. Get makeup classes in range
+    // 3. Get makeup classes in range - GROUP BY TIME SLOT
     let makeupQuery = query(
       collection(db, 'makeupClasses'),
       where('status', 'in', ['scheduled', 'completed']),
@@ -402,7 +412,9 @@ export async function getOptimizedCalendarEvents(
       return null;
     };
     
-    // Process makeup events
+    // Group makeup classes by time slot, room, and teacher
+    const makeupGroups = new Map<string, any[]>();
+    
     for (const doc of makeupSnapshot.docs) {
       const makeupData = doc.data();
       const makeup: MakeupClass = {
@@ -434,25 +446,34 @@ export async function getOptimizedCalendarEvents(
         originalSessionDate: makeupData.originalSessionDate?.toDate()
       };
       
-      const originalClass = classInfoMap.get(makeup.originalClassId);
+      if (!makeup.makeupSchedule) continue;
       
-      if (!originalClass || !makeup.makeupSchedule) continue;
+      // Create unique key for grouping (same date, time, room, and teacher)
+      const makeupDate = makeup.makeupSchedule.date;
+      const dateKey = makeupDate.toISOString().split('T')[0];
+      const key = `${makeup.makeupSchedule.branchId}-${makeup.makeupSchedule.roomId}-${dateKey}-${makeup.makeupSchedule.startTime}-${makeup.makeupSchedule.endTime}-${makeup.makeupSchedule.teacherId}`;
       
-      const teacher = teachers.get(makeup.makeupSchedule.teacherId);
-      const branch = branches.get(makeup.makeupSchedule.branchId);
-      const room = rooms.get(`${makeup.makeupSchedule.branchId}-${makeup.makeupSchedule.roomId}`);
-      const subject = subjects.get(originalClass.subjectId);
+      if (!makeupGroups.has(key)) {
+        makeupGroups.set(key, []);
+      }
+      
+      makeupGroups.get(key)!.push(makeup);
+    }
+    
+    // Process each group of makeup classes
+    for (const [key, groupedMakeups] of makeupGroups) {
+      if (groupedMakeups.length === 0) continue;
+      
+      const firstMakeup = groupedMakeups[0];
+      const teacher = teachers.get(firstMakeup.makeupSchedule!.teacherId);
+      const branch = branches.get(firstMakeup.makeupSchedule!.branchId);
+      const room = rooms.get(`${firstMakeup.makeupSchedule!.branchId}-${firstMakeup.makeupSchedule!.roomId}`);
       
       if (!teacher || !branch) continue;
       
-      // Get student info
-      const student = await getStudentInfo(makeup.studentId, makeup.parentId);
-      const studentName = student?.name || makeupData.studentName || 'ไม่ระบุชื่อ';
-      const studentNickname = student?.nickname || makeupData.studentNickname || 'นักเรียน';
-      
-      const makeupDate = makeup.makeupSchedule.date;
-      const [startHour, startMinute] = makeup.makeupSchedule.startTime.split(':').map(Number);
-      const [endHour, endMinute] = makeup.makeupSchedule.endTime.split(':').map(Number);
+      const makeupDate = firstMakeup.makeupSchedule!.date;
+      const [startHour, startMinute] = firstMakeup.makeupSchedule!.startTime.split(':').map(Number);
+      const [endHour, endMinute] = firstMakeup.makeupSchedule!.endTime.split(':').map(Number);
       
       const eventStart = new Date(makeupDate);
       eventStart.setHours(startHour, startMinute, 0, 0);
@@ -460,20 +481,51 @@ export async function getOptimizedCalendarEvents(
       const eventEnd = new Date(makeupDate);
       eventEnd.setHours(endHour, endMinute, 0, 0);
       
+      // Determine color based on time and attendance
       let backgroundColor = '#E9D5FF';
       let borderColor = '#D8B4FE';
       let textColor = '#6B21A8';
       
-      if (eventEnd < now || makeup.attendance || makeup.status === 'completed') {
+      // Check if all makeups have been completed
+      const allCompleted = groupedMakeups.every(makeup => 
+        eventEnd < now || makeup.attendance || makeup.status === 'completed'
+      );
+      
+      if (allCompleted) {
         backgroundColor = '#D1FAE5';
         borderColor = '#A7F3D0';
         textColor = '#065F46';
       }
       
+      // Create makeup details for each student
+      const makeupDetails = await Promise.all(groupedMakeups.map(async makeup => {
+        const originalClass = classInfoMap.get(makeup.originalClassId);
+        const student = await getStudentInfo(makeup.studentId, makeup.parentId);
+        const studentName = student?.name || makeupData.studentName || 'ไม่ระบุชื่อ';
+        const studentNickname = student?.nickname || makeupData.studentNickname || 'นักเรียน';
+        
+        return {
+          id: makeup.id,
+          studentName: studentName,
+          studentNickname: studentNickname,
+          originalClassName: originalClass?.name || '',
+          status: makeup.status,
+          attendance: makeup.attendance
+        };
+      }));
+      
+      // Create title based on number of students
+      const title = groupedMakeups.length === 1 
+        ? `[Makeup] ${makeupDetails[0].studentNickname} - ${makeupDetails[0].originalClassName}`
+        : `[Makeup ${groupedMakeups.length} คน] ${makeupDetails.map(d => d.studentNickname).join(', ')}`;
+      
+      // Get unique original classes
+      const uniqueClasses = [...new Set(makeupDetails.map(d => d.originalClassName))];
+      
       events.push({
-        id: `makeup-${makeup.id}`,
-        classId: makeup.originalClassId,
-        title: `[Makeup] ${studentNickname} - ${originalClass.name}`,
+        id: `makeup-group-${key}`,
+        classId: firstMakeup.originalClassId,
+        title,
         start: eventStart,
         end: eventEnd,
         backgroundColor,
@@ -481,15 +533,17 @@ export async function getOptimizedCalendarEvents(
         textColor,
         extendedProps: {
           type: 'makeup',
-          branchId: makeup.makeupSchedule.branchId,
+          branchId: firstMakeup.makeupSchedule!.branchId,
           branchName: branch.name,
-          roomName: room?.name || makeup.makeupSchedule.roomId,
+          roomName: room?.name || firstMakeup.makeupSchedule!.roomId,
           teacherName: teacher.nickname || teacher.name,
-          subjectColor: subject?.color,
-          studentName: studentName,
-          studentNickname: studentNickname,
-          originalClassName: originalClass.name,
-          makeupStatus: makeup.status
+          subjectColor: '#9333EA', // Purple color for makeup
+          studentName: makeupDetails.map(d => d.studentName).join(', '),
+          studentNickname: makeupDetails.map(d => d.studentNickname).join(', '),
+          originalClassName: uniqueClasses.join(', '),
+          makeupStatus: groupedMakeups.every(m => m.status === 'completed') ? 'completed' : 'scheduled',
+          makeupCount: groupedMakeups.length,
+          makeupDetails: makeupDetails
         }
       });
     }

@@ -8,7 +8,7 @@ import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import listPlugin from '@fullcalendar/list';
 import interactionPlugin from '@fullcalendar/interaction';
-import { CalendarEvent } from '@/lib/services/dashboard';
+import { CalendarEvent } from '@/lib/services/dashboard-optimized'; // เปลี่ยนจาก dashboard เป็น dashboard-optimized
 import { DatesSetArg, EventClickArg, EventContentArg } from '@fullcalendar/core';
 import { Clock, Users, MapPin, User, Calendar } from 'lucide-react';
 
@@ -188,6 +188,19 @@ const DashboardCalendar = forwardRef<FullCalendar, DashboardCalendarProps>(({
                   {props.enrolled}/{props.maxStudents}
                 </span>
               )}
+              {/* แสดงจำนวนนักเรียนสำหรับ makeup/trial ที่มีหลายคน */}
+              {isMakeup && props.makeupCount && props.makeupCount > 1 && (
+                <span className="flex items-center gap-1 text-purple-600">
+                  <Users className="h-3 w-3" />
+                  {props.makeupCount} คน
+                </span>
+              )}
+              {isTrial && props.trialCount && props.trialCount > 1 && (
+                <span className="flex items-center gap-1 text-orange-600">
+                  <Users className="h-3 w-3" />
+                  {props.trialCount} คน
+                </span>
+              )}
             </div>
           </div>
           {props.sessionNumber && !isMakeup && !isTrial && (
@@ -214,9 +227,17 @@ const DashboardCalendar = forwardRef<FullCalendar, DashboardCalendarProps>(({
             {eventInfo.timeText.split(' - ')[0]} {/* Start time only */}
             {' '}
             {isMakeup ? (
-              <span>[M] {props.studentNickname}</span>
+              props.makeupCount && props.makeupCount > 1 ? (
+                <span>[M] {props.makeupCount} คน</span>
+              ) : (
+                <span>[M] {props.studentNickname}</span>
+              )
             ) : isTrial ? (
-              <span>[T] {props.trialStudentName}</span>
+              props.trialCount && props.trialCount > 1 ? (
+                <span>[T] {props.trialCount} คน</span>
+              ) : (
+                <span>[T] {props.trialStudentName}</span>
+              )
             ) : (
               <span>{eventInfo.event.title.split(' - ')[0]}</span>
             )}
@@ -239,11 +260,31 @@ const DashboardCalendar = forwardRef<FullCalendar, DashboardCalendarProps>(({
                     style={{ backgroundColor: props.subjectColor }}
                   />
                 )}
-                <span className="text-purple-800">[Makeup] {props.studentNickname}</span>
+                <span className="text-purple-800">
+                  {props.makeupCount && props.makeupCount > 1 ? (
+                    `[Makeup ${props.makeupCount} คน]`
+                  ) : (
+                    `[Makeup] ${props.studentNickname}`
+                  )}
+                </span>
               </div>
-              <div className="text-xs text-purple-700">
-                {props.originalClassName}
-              </div>
+              {/* แสดงรายชื่อถ้ามีหลายคน */}
+              {props.makeupCount && props.makeupCount > 1 && props.makeupDetails ? (
+                <div className="text-xs text-purple-700 space-y-0.5">
+                  {props.makeupDetails.slice(0, 2).map((detail, idx) => (
+                    <div key={idx} className="truncate">
+                      {detail.studentNickname} - {detail.originalClassName}
+                    </div>
+                  ))}
+                  {props.makeupDetails.length > 2 && (
+                    <div className="text-purple-600">และอีก {props.makeupDetails.length - 2} คน...</div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-xs text-purple-700">
+                  {props.originalClassName}
+                </div>
+              )}
               <div className="text-xs text-purple-600 mt-1">
                 {props.teacherName}
               </div>
@@ -258,7 +299,13 @@ const DashboardCalendar = forwardRef<FullCalendar, DashboardCalendarProps>(({
                     style={{ backgroundColor: props.subjectColor }}
                   />
                 )}
-                <span className="text-orange-800">[ทดลอง] {props.trialStudentName}</span>
+                <span className="text-orange-800">
+                  {props.trialCount && props.trialCount > 1 ? (
+                    `[ทดลอง ${props.trialCount} คน]`
+                  ) : (
+                    `[ทดลอง] ${props.trialStudentName}`
+                  )}
+                </span>
               </div>
               <div className="text-xs text-orange-700">
                 {props.trialSubjectName}
@@ -337,9 +384,13 @@ const DashboardCalendar = forwardRef<FullCalendar, DashboardCalendarProps>(({
           textColor: event.textColor,
           // Add tooltip content
           title: event.extendedProps.type === 'makeup' 
-            ? `[Makeup] ${event.extendedProps.studentNickname} - ${event.extendedProps.originalClassName}`
+            ? event.extendedProps.makeupCount && event.extendedProps.makeupCount > 1
+              ? `[Makeup ${event.extendedProps.makeupCount} คน] ${event.extendedProps.studentNickname}`
+              : `[Makeup] ${event.extendedProps.studentNickname} - ${event.extendedProps.originalClassName}`
             : event.extendedProps.type === 'trial'
-            ? `[ทดลอง] ${event.extendedProps.trialStudentName} - ${event.extendedProps.trialSubjectName}`
+            ? event.extendedProps.trialCount && event.extendedProps.trialCount > 1
+              ? `[ทดลอง ${event.extendedProps.trialCount} คน]`
+              : `[ทดลอง] ${event.extendedProps.trialStudentName} - ${event.extendedProps.trialSubjectName}`
             : event.extendedProps.type === 'holiday'
             ? `วันหยุด: ${event.title}`
             : event.title,
@@ -385,27 +436,63 @@ const DashboardCalendar = forwardRef<FullCalendar, DashboardCalendarProps>(({
           let tooltipContent = '';
           
           if (props.type === 'makeup') {
-            tooltipContent = `
-              <div class="text-xs">
-                <div class="font-semibold">[Makeup] ${props.studentNickname}</div>
-                <div>คลาสเดิม: ${props.originalClassName}</div>
-                <div>เวลา: ${props.tooltip.time}</div>
-                <div>ห้อง: ${props.tooltip.room}</div>
-                <div>ครู: ${props.tooltip.teacher}</div>
-                <div>สาขา: ${props.tooltip.branch}</div>
-              </div>
-            `;
+            if (props.makeupCount && props.makeupCount > 1 && props.makeupDetails) {
+              // Makeup แบบหลายคน
+              tooltipContent = `
+                <div class="text-xs">
+                  <div class="font-semibold">[Makeup ${props.makeupCount} คน]</div>
+                  <div>เวลา: ${props.tooltip.time}</div>
+                  <div>ห้อง: ${props.tooltip.room}</div>
+                  <div>ครู: ${props.tooltip.teacher}</div>
+                  <div>สาขา: ${props.tooltip.branch}</div>
+                  <div class="mt-1 border-t pt-1">รายชื่อนักเรียน:</div>
+                  ${props.makeupDetails.map((detail: any, idx: number) => `
+                    <div class="ml-2">${idx + 1}. ${detail.studentNickname} (${detail.originalClassName})</div>
+                  `).join('')}
+                </div>
+              `;
+            } else {
+              // Makeup คนเดียว
+              tooltipContent = `
+                <div class="text-xs">
+                  <div class="font-semibold">[Makeup] ${props.studentNickname}</div>
+                  <div>คลาสเดิม: ${props.originalClassName}</div>
+                  <div>เวลา: ${props.tooltip.time}</div>
+                  <div>ห้อง: ${props.tooltip.room}</div>
+                  <div>ครู: ${props.tooltip.teacher}</div>
+                  <div>สาขา: ${props.tooltip.branch}</div>
+                </div>
+              `;
+            }
           } else if (props.type === 'trial') {
-            tooltipContent = `
-              <div class="text-xs">
-                <div class="font-semibold">[ทดลอง] ${props.trialStudentName}</div>
-                <div>วิชา: ${props.trialSubjectName}</div>
-                <div>เวลา: ${props.tooltip.time}</div>
-                <div>ห้อง: ${props.tooltip.room}</div>
-                <div>ครู: ${props.tooltip.teacher}</div>
-                <div>สาขา: ${props.tooltip.branch}</div>
-              </div>
-            `;
+            if (props.trialCount && props.trialCount > 1 && props.trialDetails) {
+              // Trial แบบหลายคน
+              tooltipContent = `
+                <div class="text-xs">
+                  <div class="font-semibold">[ทดลอง ${props.trialCount} คน]</div>
+                  <div>เวลา: ${props.tooltip.time}</div>
+                  <div>ห้อง: ${props.tooltip.room}</div>
+                  <div>ครู: ${props.tooltip.teacher}</div>
+                  <div>สาขา: ${props.tooltip.branch}</div>
+                  <div class="mt-1 border-t pt-1">รายชื่อนักเรียน:</div>
+                  ${props.trialDetails.map((detail: any, idx: number) => `
+                    <div class="ml-2">${idx + 1}. ${detail.studentName} (${detail.subjectName})</div>
+                  `).join('')}
+                </div>
+              `;
+            } else {
+              // Trial คนเดียว
+              tooltipContent = `
+                <div class="text-xs">
+                  <div class="font-semibold">[ทดลอง] ${props.trialStudentName}</div>
+                  <div>วิชา: ${props.trialSubjectName}</div>
+                  <div>เวลา: ${props.tooltip.time}</div>
+                  <div>ห้อง: ${props.tooltip.room}</div>
+                  <div>ครู: ${props.tooltip.teacher}</div>
+                  <div>สาขา: ${props.tooltip.branch}</div>
+                </div>
+              `;
+            }
           } else {
             const statusText = props.isFullyAttended ? ' (เช็คชื่อครบ)' : 
                              props.status === 'past_incomplete' ? ' (ยังไม่เช็คชื่อ)' : '';
@@ -441,6 +528,8 @@ const DashboardCalendar = forwardRef<FullCalendar, DashboardCalendarProps>(({
             tooltip.style.pointerEvents = 'none';
             tooltip.style.whiteSpace = 'nowrap';
             tooltip.style.lineHeight = '1.4';
+            tooltip.style.maxWidth = '300px';
+            tooltip.style.whiteSpace = 'normal';
             
             document.body.appendChild(tooltip);
             
@@ -828,7 +917,7 @@ const DashboardCalendar = forwardRef<FullCalendar, DashboardCalendarProps>(({
         
         /* Tooltip styles */
         .fc-tooltip {
-          max-width: 250px;
+          max-width: 300px;
           box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
         }
         

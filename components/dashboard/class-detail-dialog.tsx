@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { CalendarEvent } from '@/lib/services/dashboard';
+import { CalendarEvent } from '@/lib/services/dashboard-optimized'; // เปลี่ยนจาก dashboard เป็น dashboard-optimized
 import { formatDate } from '@/lib/utils';
 import { 
   Calendar, 
@@ -176,6 +176,9 @@ export default function ClassDetailDialog({
   // Get title based on event type - ใช้ event.title โดยตรง
   const getEventTitle = () => {
     if (isMakeup) {
+      if (event.extendedProps.makeupCount && event.extendedProps.makeupCount > 1) {
+        return `Makeup Class ${event.extendedProps.makeupCount} คน`;
+      }
       return `${event.extendedProps.originalClassName} - Makeup`;
     } else if (isTrial) {
       return event.extendedProps.trialSubjectName || 'ทดลองเรียน';
@@ -226,6 +229,9 @@ export default function ClassDetailDialog({
                     // Try className first, then classCode, then show debug info
                     return props.className || props.classCode || `Class ID: ${event.classId}`;
                   } else if (isMakeup) {
+                    if (props.makeupCount && props.makeupCount > 1) {
+                      return `${props.makeupCount} นักเรียนเรียนชดเชย`;
+                    }
                     return `Makeup Class - ${props.studentNickname || 'นักเรียน'}`;
                   } else if (isTrial) {
                     return 'ทดลองเรียน';
@@ -301,10 +307,36 @@ export default function ClassDetailDialog({
           {isMakeup && (
             <div className="p-4 bg-purple-50 rounded-lg space-y-2">
               <h3 className="font-medium text-purple-900">ข้อมูล Makeup Class</h3>
-              <div className="text-sm text-purple-700">
-                <p>นักเรียน: {event.extendedProps.studentNickname} ({event.extendedProps.studentName})</p>
-                <p>คลาสเดิม: {event.extendedProps.originalClassName}</p>
-              </div>
+              
+              {/* แสดงจำนวนนักเรียนถ้ามีหลายคน */}
+              {event.extendedProps.makeupCount && event.extendedProps.makeupCount > 1 && (
+                <div className="flex items-center gap-2 text-purple-700 mb-3">
+                  <Users className="h-4 w-4" />
+                  <span className="font-medium">มีนักเรียนเรียนชดเชย {event.extendedProps.makeupCount} คนในช่วงเวลานี้</span>
+                </div>
+              )}
+              
+              {/* แสดงรายละเอียดนักเรียน */}
+              {event.extendedProps.makeupDetails && event.extendedProps.makeupDetails.length > 1 ? (
+                <div className="space-y-2">
+                  {event.extendedProps.makeupDetails.map((detail, index) => (
+                    <div key={detail.id} className="text-sm text-purple-700 p-2 bg-purple-100 rounded">
+                      <p className="font-medium">{index + 1}. {detail.studentNickname} ({detail.studentName})</p>
+                      <p className="text-xs">คลาสเดิม: {detail.originalClassName}</p>
+                      {detail.attendance && (
+                        <p className="text-xs mt-1">
+                          สถานะ: {detail.attendance.status === 'present' ? 'เข้าเรียน' : 'ขาดเรียน'}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-sm text-purple-700">
+                  <p>นักเรียน: {event.extendedProps.studentNickname} ({event.extendedProps.studentName})</p>
+                  <p>คลาสเดิม: {event.extendedProps.originalClassName}</p>
+                </div>
+              )}
             </div>
           )}
 
