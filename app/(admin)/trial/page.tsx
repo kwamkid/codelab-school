@@ -4,7 +4,7 @@
 
 import { useState, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -27,15 +27,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { Pagination, usePagination } from '@/components/ui/pagination';
 import { 
   TestTube, 
   Plus, 
   Phone,
   Mail,
-  Users,
   Calendar,
   Search,
-  ChevronRight,
   AlertCircle,
   Check,
   X,
@@ -63,7 +62,6 @@ import { formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useBranch } from '@/contexts/BranchContext';
 import { PermissionGuard } from '@/components/auth/permission-guard';
-import { ActionButton } from '@/components/ui/action-button';
 import { Skeleton } from '@/components/ui/skeleton';
 
 const statusConfig = {
@@ -100,6 +98,17 @@ export default function TrialBookingsPage() {
   const [deleting, setDeleting] = useState(false);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [bookingToCancel, setBookingToCancel] = useState<TrialBooking | null>(null);
+  
+  // ใช้ usePagination hook
+  const {
+    currentPage,
+    pageSize,
+    handlePageChange,
+    handlePageSizeChange,
+    resetPagination,
+    getPaginatedData,
+    totalPages,
+  } = usePagination(20);
 
   // Optimized queries with React Query
   const { data: bookings = [], isLoading: loadingBookings } = useQuery({
@@ -147,6 +156,15 @@ export default function TrialBookingsPage() {
 
     return filtered;
   }, [bookings, searchTerm, selectedStatus]);
+
+  // Get paginated data
+  const paginatedBookings = getPaginatedData(filteredBookings);
+  const calculatedTotalPages = totalPages(filteredBookings.length);
+
+  // Reset pagination when filters change
+  useMemo(() => {
+    resetPagination();
+  }, [searchTerm, selectedStatus, selectedBranchId, resetPagination]);
 
   // Status counts with memoization
   const statusCounts = useMemo(() => {
@@ -425,119 +443,131 @@ export default function TrialBookingsPage() {
                   </p>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>วันที่/เวลา</TableHead>
-                        <TableHead>ช่องทาง</TableHead>
-                        {isAllBranches && <TableHead>สาขา</TableHead>}
-                        <TableHead>ผู้ปกครอง</TableHead>
-                        <TableHead>นักเรียน</TableHead>
-                        <TableHead>สถานะ</TableHead>
-                        <TableHead className="text-center">จัดการ</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredBookings.map((booking) => (
-                        <TableRow key={booking.id}>
-                          <TableCell>
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-1 font-medium">
-                                <Calendar className="h-3 w-3 text-gray-400" />
-                                {formatDate(booking.createdAt)}
-                              </div>
-                              <div className="flex items-center gap-1 text-xs text-gray-500">
-                                <Clock className="h-3 w-3" />
-                                {formatDate(booking.createdAt, 'time')}
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            {getSourceBadge(booking.source)}
-                          </TableCell>
-                          {isAllBranches && (
-                            <TableCell>
-                              {getBranchBadge(booking.branchId)}
-                            </TableCell>
-                          )}
-                          <TableCell>
-                            <div>
-                              <div className="font-medium">{booking.parentName}</div>
-                              <div className="text-sm text-gray-600 flex items-center gap-2 mt-1">
-                                <Phone className="h-3 w-3" />
-                                {booking.parentPhone}
-                              </div>
-                              {booking.parentEmail && (
-                                <div className="text-sm text-gray-600 flex items-center gap-2 mt-1">
-                                  <Mail className="h-3 w-3" />
-                                  {booking.parentEmail}
-                                </div>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="space-y-2">
-                              {booking.students.map((student, idx) => (
-                                <div key={idx} className="text-sm">
-                                  <div className="font-medium">{student.name}</div>
-                                  {student.schoolName && (
-                                    <div className="text-gray-600">
-                                      {student.schoolName}
-                                      {student.gradeLevel && ` (${student.gradeLevel})`}
-                                    </div>
-                                  )}
-                                  <div className="text-gray-500">
-                                    สนใจ {student.subjectInterests.length} วิชา
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            {getStatusBadge(booking.status)}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center justify-center gap-2">
-                              <Link href={`/trial/${booking.id}`}>
-                                <Button variant="outline" size="sm">
-                                  <Eye className="h-4 w-4" />
-                                  <span className="ml-2 hidden sm:inline">ดูรายละเอียด</span>
-                                </Button>
-                              </Link>
-                              
-                              <PermissionGuard requiredRole={['super_admin', 'branch_admin']}>
-                                {/* แสดงปุ่มยกเลิกสำหรับสถานะ new, contacted, scheduled */}
-                                {(booking.status === 'new' || booking.status === 'contacted' || booking.status === 'scheduled') && (
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => handleCancelClick(booking)}
-                                    className="text-red-600 hover:text-red-700"
-                                  >
-                                    <XCircle className="h-4 w-4" />
-                                  </Button>
-                                )}
-                                
-                                {/* แสดงปุ่มลบสำหรับสถานะ new และ cancelled เท่านั้น */}
-                                {(booking.status === 'new' || booking.status === 'cancelled') && (
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => handleDeleteClick(booking)}
-                                    className="text-gray-600 hover:text-gray-700"
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </Button>
-                                )}
-                              </PermissionGuard>
-                            </div>
-                          </TableCell>
+                <>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>วันที่/เวลา</TableHead>
+                          <TableHead>ช่องทาง</TableHead>
+                          {isAllBranches && <TableHead>สาขา</TableHead>}
+                          <TableHead>ผู้ปกครอง</TableHead>
+                          <TableHead>นักเรียน</TableHead>
+                          <TableHead>สถานะ</TableHead>
+                          <TableHead className="text-center">จัดการ</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                      </TableHeader>
+                      <TableBody>
+                        {paginatedBookings.map((booking) => (
+                          <TableRow key={booking.id}>
+                            <TableCell>
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-1 font-medium">
+                                  <Calendar className="h-3 w-3 text-gray-400" />
+                                  {formatDate(booking.createdAt)}
+                                </div>
+                                <div className="flex items-center gap-1 text-xs text-gray-500">
+                                  <Clock className="h-3 w-3" />
+                                  {formatDate(booking.createdAt, 'time')}
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              {getSourceBadge(booking.source)}
+                            </TableCell>
+                            {isAllBranches && (
+                              <TableCell>
+                                {getBranchBadge(booking.branchId)}
+                              </TableCell>
+                            )}
+                            <TableCell>
+                              <div>
+                                <div className="font-medium">{booking.parentName}</div>
+                                <div className="text-sm text-gray-600 flex items-center gap-2 mt-1">
+                                  <Phone className="h-3 w-3" />
+                                  {booking.parentPhone}
+                                </div>
+                                {booking.parentEmail && (
+                                  <div className="text-sm text-gray-600 flex items-center gap-2 mt-1">
+                                    <Mail className="h-3 w-3" />
+                                    {booking.parentEmail}
+                                  </div>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="space-y-2">
+                                {booking.students.map((student, idx) => (
+                                  <div key={idx} className="text-sm">
+                                    <div className="font-medium">{student.name}</div>
+                                    {student.schoolName && (
+                                      <div className="text-gray-600">
+                                        {student.schoolName}
+                                        {student.gradeLevel && ` (${student.gradeLevel})`}
+                                      </div>
+                                    )}
+                                    <div className="text-gray-500">
+                                      สนใจ {student.subjectInterests.length} วิชา
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              {getStatusBadge(booking.status)}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center justify-center gap-2">
+                                <Link href={`/trial/${booking.id}`}>
+                                  <Button variant="outline" size="sm">
+                                    <Eye className="h-4 w-4" />
+                                    <span className="ml-2 hidden sm:inline">ดูรายละเอียด</span>
+                                  </Button>
+                                </Link>
+                                
+                                <PermissionGuard requiredRole={['super_admin', 'branch_admin']}>
+                                  {/* แสดงปุ่มยกเลิกสำหรับสถานะ new, contacted, scheduled */}
+                                  {(booking.status === 'new' || booking.status === 'contacted' || booking.status === 'scheduled') && (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => handleCancelClick(booking)}
+                                      className="text-red-600 hover:text-red-700"
+                                    >
+                                      <XCircle className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                  
+                                  {/* แสดงปุ่มลบสำหรับสถานะ new และ cancelled เท่านั้น */}
+                                  {(booking.status === 'new' || booking.status === 'cancelled') && (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => handleDeleteClick(booking)}
+                                      className="text-gray-600 hover:text-gray-700"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                </PermissionGuard>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  {/* Pagination Component */}
+                  <Pagination
+                    currentPage={currentPage}
+                    totalPages={calculatedTotalPages}
+                    pageSize={pageSize}
+                    totalItems={filteredBookings.length}
+                    onPageChange={handlePageChange}
+                    onPageSizeChange={handlePageSizeChange}
+                  />
+                </>
               )}
             </CardContent>
           </Card>
