@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Student, Enrollment, Branch, Class } from '@/types/models';
 import { getAllStudentsWithParents } from '@/lib/services/parents';
 import { getActiveBranches } from '@/lib/services/branches';
@@ -9,6 +10,7 @@ import { getClasses } from '@/lib/services/classes';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Pagination, usePagination } from '@/components/ui/pagination';
 import { 
   Search, 
   User,
@@ -21,10 +23,6 @@ import {
   Building2,
   GraduationCap,
   CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
   Globe
 } from 'lucide-react';
 import Link from 'next/link';
@@ -46,6 +44,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Skeleton } from '@/components/ui/skeleton';
 
 type StudentWithInfo = Student & { 
   parentName: string; 
@@ -56,151 +55,175 @@ type StudentWithInfo = Student & {
   enrolledBranches?: string[];
 };
 
-const ITEMS_PER_PAGE = 20;
+// Cache keys
+const QUERY_KEYS = {
+  students: ['students'],
+  branches: ['branches', 'active'],
+  classes: ['classes'],
+};
 
 export default function StudentsPage() {
   const [allStudentsData, setAllStudentsData] = useState<StudentWithInfo[]>([]);
-  const [branches, setBranches] = useState<Branch[]>([]);
-  const [classes, setClasses] = useState<Class[]>([]);
-  const [branchMap, setBranchMap] = useState<Record<string, string>>({});
-  const [classMap, setClassMap] = useState<Record<string, Class>>({});
-  const [loading, setLoading] = useState(true);
   const [enrollmentLoading, setEnrollmentLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterGender, setFilterGender] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('active');
   const [filterAllergy, setFilterAllergy] = useState<string>('all');
   const [filterEnrollment, setFilterEnrollment] = useState<string>('all');
-  const [filterBranch, setFilterBranch] = useState<string>('all'); // เพิ่ม branch filter
-  const [currentPage, setCurrentPage] = useState(1);
+  const [filterBranch, setFilterBranch] = useState<string>('all');
 
+  // Pagination
+  const {
+    currentPage,
+    pageSize,
+    handlePageChange,
+    handlePageSizeChange,
+    resetPagination,
+    getPaginatedData,
+    totalPages,
+  } = usePagination(20);
+
+  // React Query: Load students
+  const { data: students = [], isLoading: loadingStudents } = useQuery({
+    queryKey: QUERY_KEYS.students,
+    queryFn: getAllStudentsWithParents,
+    staleTime: 60000, // 1 minute
+  });
+
+  // React Query: Load branches
+  const { data: branches = [] } = useQuery({
+    queryKey: QUERY_KEYS.branches,
+    queryFn: getActiveBranches,
+    staleTime: 300000, // 5 minutes
+  });
+
+  // React Query: Load classes
+  const { data: classes = [] } = useQuery({
+    queryKey: QUERY_KEYS.classes,
+    queryFn: getClasses,
+    staleTime: 120000, // 2 minutes
+  });
+
+  // Create maps
+  const branchMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    branches.forEach(branch => {
+      map[branch.id] = branch.name;
+    });
+    return map;
+  }, [branches]);
+
+  const classMap = useMemo(() => {
+    const map: Record<string, Class> = {};
+    classes.forEach(cls => {
+      map[cls.id] = cls;
+    });
+    return map;
+  }, [classes]);
+
+  // Initialize students data
   useEffect(() => {
-    loadInitialData();
-  }, []);
+    if (students.length > 0) {
+      setAllStudentsData(students);
+    }
+  }, [students]);
 
   // Reset page when filters change
+  useMemo(() => {
+    resetPagination();
+  }, [searchTerm, filterGender, filterStatus, filterAllergy, filterEnrollment, filterBranch, resetPagination]);
+
+  // Load enrollment data for current page only (Lazy Loading)
   useEffect(() => {
-    setCurrentPage(1);
-  }, [searchTerm, filterGender, filterStatus, filterAllergy, filterEnrollment, filterBranch]);
-
-  const loadInitialData = async () => {
-    try {
-      setLoading(true);
-      
-      // Load all necessary data in parallel
-      const [branchesData, studentsData, classesData] = await Promise.all([
-        getActiveBranches(),
-        getAllStudentsWithParents(),
-        getClasses()
-      ]);
-      
-      setBranches(branchesData);
-      setClasses(classesData);
-      
-      // Create maps for quick lookup
-      const branchMapping: Record<string, string> = {};
-      branchesData.forEach(branch => {
-        branchMapping[branch.id] = branch.name;
-      });
-      setBranchMap(branchMapping);
-      
-      const classMapping: Record<string, Class> = {};
-      classesData.forEach(cls => {
-        classMapping[cls.id] = cls;
-      });
-      setClassMap(classMapping);
-      
-      // Set initial students data
-      setAllStudentsData(studentsData);
-      setLoading(false);
-      
-      // Load enrollment data for all students
-      await loadAllEnrollmentData(studentsData, classMapping);
-    } catch (error) {
-      console.error('Error loading initial data:', error);
-      toast.error('ไม่สามารถโหลดข้อมูลได้');
-      setLoading(false);
+    if (paginatedStudents.length === 0) {
+      setEnrollmentLoading(false);
+      return;
     }
-  };
 
-  const loadAllEnrollmentData = async (
-    students: StudentWithInfo[],
-    classMapping: Record<string, Class>
-  ) => {
-    try {
+    const loadPageEnrollments = async () => {
       setEnrollmentLoading(true);
       
-      // Load enrollments for all students
-      const studentsWithEnrollments = await Promise.all(
-        students.map(async (student) => {
-          try {
-            const enrollments = await getEnrollmentsByStudent(student.id);
-            
-            // Process enrollment data
-            const currentClasses: string[] = [];
-            const completedClasses: string[] = [];
-            const enrolledBranchIds = new Set<string>();
-            
-            enrollments.forEach(enrollment => {
-              enrolledBranchIds.add(enrollment.branchId);
-              
-              const classData = classMapping[enrollment.classId];
-              if (classData) {
-                if (enrollment.status === 'active' && classData.status !== 'completed') {
-                  currentClasses.push(enrollment.classId);
-                } else if (enrollment.status === 'completed' || classData.status === 'completed') {
-                  completedClasses.push(enrollment.classId);
-                }
-              }
-            });
-            
-            return {
-              ...student,
-              enrollments,
-              currentClasses,
-              completedClasses,
-              enrolledBranches: Array.from(enrolledBranchIds)
-            };
-          } catch (error) {
-            console.error(`Error loading enrollments for student ${student.id}:`, error);
-            return {
-              ...student,
-              enrollments: [],
-              currentClasses: [],
-              completedClasses: [],
-              enrolledBranches: []
-            };
-          }
-        })
-      );
-      
-      setAllStudentsData(studentsWithEnrollments);
-      setEnrollmentLoading(false);
-    } catch (error) {
-      console.error('Error loading enrollment data:', error);
-      setEnrollmentLoading(false);
-    }
-  };
+      try {
+        const studentsWithEnrollments = await Promise.all(
+          paginatedStudents.map(async (student) => {
+            // Check if already loaded
+            if (student.enrollments !== undefined) {
+              return student;
+            }
 
-  // Filter students based on criteria
+            try {
+              const enrollments = await getEnrollmentsByStudent(student.id);
+              
+              const currentClasses: string[] = [];
+              const completedClasses: string[] = [];
+              const enrolledBranchIds = new Set<string>();
+              
+              enrollments.forEach(enrollment => {
+                enrolledBranchIds.add(enrollment.branchId);
+                
+                const classData = classMap[enrollment.classId];
+                if (classData) {
+                  if (enrollment.status === 'active' && classData.status !== 'completed') {
+                    currentClasses.push(enrollment.classId);
+                  } else if (enrollment.status === 'completed' || classData.status === 'completed') {
+                    completedClasses.push(enrollment.classId);
+                  }
+                }
+              });
+              
+              return {
+                ...student,
+                enrollments,
+                currentClasses,
+                completedClasses,
+                enrolledBranches: Array.from(enrolledBranchIds)
+              };
+            } catch (error) {
+              console.error(`Error loading enrollments for student ${student.id}:`, error);
+              return {
+                ...student,
+                enrollments: [],
+                currentClasses: [],
+                completedClasses: [],
+                enrolledBranches: []
+              };
+            }
+          })
+        );
+
+        // Update only the students on current page
+        setAllStudentsData(prevData => {
+          const newData = [...prevData];
+          studentsWithEnrollments.forEach(updatedStudent => {
+            const index = newData.findIndex(s => s.id === updatedStudent.id);
+            if (index !== -1) {
+              newData[index] = updatedStudent;
+            }
+          });
+          return newData;
+        });
+        
+        setEnrollmentLoading(false);
+      } catch (error) {
+        console.error('Error loading page enrollments:', error);
+        setEnrollmentLoading(false);
+      }
+    };
+
+    loadPageEnrollments();
+  }, [paginatedStudents.map(s => s.id).join(','), classMap]);
+
+  // Filter students
   const filteredStudents = useMemo(() => {
     let filtered = [...allStudentsData];
     
-    // Filter by selected branch if not viewing all branches
     if (filterBranch !== 'all') {
       filtered = filtered.filter(student => {
-        // 1. เรียนในสาขานี้
         const studiesInBranch = student.enrolledBranches?.includes(filterBranch) || false;
-        
-        // 2. ผู้ปกครองสนใจสาขานี้ (สำหรับคนที่ยังไม่เรียน)
-        // ต้องดึงข้อมูล parent มาเช็ค - แต่เราไม่มีใน current data structure
-        // ดังนั้นจะใช้เฉพาะเงื่อนไขแรกก่อน
-        
         return studiesInBranch;
       });
     }
     
-    // Apply search filter
     if (searchTerm) {
       const searchLower = searchTerm.toLowerCase();
       filtered = filtered.filter(student => 
@@ -212,26 +235,22 @@ export default function StudentsPage() {
       );
     }
     
-    // Apply gender filter
     if (filterGender !== 'all') {
       filtered = filtered.filter(student => student.gender === filterGender);
     }
     
-    // Apply status filter
     if (filterStatus !== 'all') {
       filtered = filtered.filter(student => 
         filterStatus === 'active' ? student.isActive : !student.isActive
       );
     }
     
-    // Apply allergy filter
     if (filterAllergy !== 'all') {
       filtered = filtered.filter(student => 
         filterAllergy === 'yes' ? !!student.allergies : !student.allergies
       );
     }
     
-    // Apply enrollment filter
     if (filterEnrollment !== 'all' && !enrollmentLoading) {
       filtered = filtered.filter(student => {
         const hasCurrentClasses = (student.currentClasses?.length || 0) > 0;
@@ -248,55 +267,70 @@ export default function StudentsPage() {
     return filtered;
   }, [allStudentsData, searchTerm, filterGender, filterStatus, filterAllergy, filterEnrollment, filterBranch, enrollmentLoading]);
 
-  // Calculate statistics
+  // Statistics
   const stats = useMemo(() => {
-    const studentsForStats = filteredStudents;
-    
-    const currentlyEnrolled = studentsForStats.filter(s => 
+    const currentlyEnrolled = filteredStudents.filter(s => 
       (s.currentClasses?.length || 0) > 0
     ).length;
     
-    const completedOnly = studentsForStats.filter(s => 
+    const completedOnly = filteredStudents.filter(s => 
       (s.currentClasses?.length || 0) === 0 && (s.completedClasses?.length || 0) > 0
     ).length;
     
-    const neverEnrolled = studentsForStats.filter(s => 
+    const neverEnrolled = filteredStudents.filter(s => 
       (s.enrollments?.length || 0) === 0
     ).length;
     
     return {
-      total: studentsForStats.length,
-      active: studentsForStats.filter(s => s.isActive).length,
-      male: studentsForStats.filter(s => s.gender === 'M').length,
-      female: studentsForStats.filter(s => s.gender === 'F').length,
-      withAllergies: studentsForStats.filter(s => s.allergies).length,
+      total: filteredStudents.length,
+      active: filteredStudents.filter(s => s.isActive).length,
+      male: filteredStudents.filter(s => s.gender === 'M').length,
+      female: filteredStudents.filter(s => s.gender === 'F').length,
+      withAllergies: filteredStudents.filter(s => s.allergies).length,
       currentlyEnrolled,
       completedOnly,
       neverEnrolled
     };
   }, [filteredStudents]);
 
-  // Pagination calculations
-  const totalPages = Math.ceil(filteredStudents.length / ITEMS_PER_PAGE);
-  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-  const endIndex = startIndex + ITEMS_PER_PAGE;
-  const currentStudents = filteredStudents.slice(startIndex, endIndex);
+  // Paginated data
+  const paginatedStudents = getPaginatedData(filteredStudents);
+  const calculatedTotalPages = totalPages(filteredStudents.length);
 
-  // Pagination controls
-  const goToPage = (page: number) => {
-    if (page >= 1 && page <= totalPages) {
-      setCurrentPage(page);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-  };
-
-  if (loading) {
+  // Loading state
+  if (loadingStudents) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-red-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
-          <p className="mt-4 text-gray-600">กำลังโหลดข้อมูล...</p>
+      <div className="space-y-6">
+        <div className="mb-8">
+          <Skeleton className="h-8 w-64 mb-2" />
+          <Skeleton className="h-4 w-96" />
         </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-7 gap-4">
+          {[...Array(7)].map((_, i) => (
+            <Card key={i}>
+              <CardHeader className="pb-2">
+                <Skeleton className="h-4 w-20" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-8 w-12" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        <Card>
+          <CardHeader>
+            <Skeleton className="h-6 w-48" />
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {[...Array(5)].map((_, i) => (
+                <Skeleton key={i} className="h-12 w-full" />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -410,7 +444,6 @@ export default function StudentsPage() {
           />
         </div>
         
-        {/* Branch Filter */}
         <Select value={filterBranch} onValueChange={setFilterBranch}>
           <SelectTrigger className="w-[200px]">
             <SelectValue />
@@ -492,15 +525,10 @@ export default function StudentsPage() {
                 </span>
               )}
             </CardTitle>
-            {totalPages > 1 && (
-              <div className="text-sm text-gray-500">
-                หน้า {currentPage} จาก {totalPages}
-              </div>
-            )}
           </div>
         </CardHeader>
-        <CardContent>
-          {currentStudents.length === 0 ? (
+        <CardContent className="p-0">
+          {paginatedStudents.length === 0 ? (
             <div className="text-center py-12">
               <Users className="h-12 w-12 text-gray-300 mx-auto mb-4" />
               <h3 className="text-lg font-medium text-gray-900 mb-2">
@@ -528,7 +556,7 @@ export default function StudentsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {currentStudents.map((student) => (
+                    {paginatedStudents.map((student) => (
                       <TableRow key={student.id} className={!student.isActive ? 'opacity-60' : ''}>
                         <TableCell>
                           <div className="flex items-start gap-3">
@@ -610,7 +638,6 @@ export default function StudentsPage() {
                         </TableCell>
                         <TableCell>
                           <div className="space-y-2">
-                            {/* แสดงสาขาที่เรียน */}
                             <div className="flex flex-wrap gap-1">
                               {enrollmentLoading ? (
                                 <span className="text-gray-400 text-sm">กำลังโหลด...</span>
@@ -629,7 +656,6 @@ export default function StudentsPage() {
                               )}
                             </div>
                             
-                            {/* แสดงสถานะการเรียน */}
                             <div>
                               {enrollmentLoading ? (
                                 <span className="text-gray-400 text-sm">กำลังโหลด...</span>
@@ -669,84 +695,22 @@ export default function StudentsPage() {
                 </Table>
               </div>
 
-              {/* Pagination Controls */}
-              {totalPages > 1 && (
-                <div className="flex items-center justify-between mt-6 px-2">
-                  <p className="text-sm text-gray-600">
-                    แสดง {startIndex + 1}-{Math.min(endIndex, filteredStudents.length)} จาก {filteredStudents.length} รายการ
-                  </p>
-                  
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => goToPage(1)}
-                      disabled={currentPage === 1}
-                    >
-                      <ChevronsLeft className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => goToPage(currentPage - 1)}
-                      disabled={currentPage === 1}
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                    </Button>
-                    
-                    <div className="flex items-center gap-1">
-                      {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                        let pageNum;
-                        if (totalPages <= 5) {
-                          pageNum = i + 1;
-                        } else if (currentPage <= 3) {
-                          pageNum = i + 1;
-                        } else if (currentPage >= totalPages - 2) {
-                          pageNum = totalPages - 4 + i;
-                        } else {
-                          pageNum = currentPage - 2 + i;
-                        }
-                        
-                        return (
-                          <Button
-                            key={i}
-                            variant={pageNum === currentPage ? "default" : "outline"}
-                            size="sm"
-                            onClick={() => goToPage(pageNum)}
-                            className="w-10"
-                          >
-                            {pageNum}
-                          </Button>
-                        );
-                      })}
-                    </div>
-                    
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => goToPage(currentPage + 1)}
-                      disabled={currentPage === totalPages}
-                    >
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => goToPage(totalPages)}
-                      disabled={currentPage === totalPages}
-                    >
-                      <ChevronsRight className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              )}
+              {/* Pagination */}
+              <Pagination
+                currentPage={currentPage}
+                totalPages={calculatedTotalPages}
+                pageSize={pageSize}
+                totalItems={filteredStudents.length}
+                onPageChange={handlePageChange}
+                onPageSizeChange={handlePageSizeChange}
+              />
             </>
           )}
         </CardContent>
       </Card>
 
       {/* Allergies Details */}
-      {currentStudents.some(s => s.allergies) && (
+      {paginatedStudents.some(s => s.allergies) && (
         <Card className="mt-6">
           <CardHeader>
             <CardTitle className="text-red-600 flex items-center gap-2">
@@ -756,14 +720,13 @@ export default function StudentsPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {currentStudents
+              {paginatedStudents
                 .filter(s => s.allergies)
                 .map(student => (
                   <div key={student.id} className="flex items-start gap-4 p-3 bg-red-50 rounded-lg">
                     <div className="flex-1">
                       <p className="font-medium">{student.nickname || student.name}</p>
                       <p className="text-sm text-red-600">แพ้: {student.allergies}</p>
-                      {/* แสดงสาขาที่เรียน */}
                       <div className="flex flex-wrap gap-1 mt-1">
                         {student.enrolledBranches?.map(branchId => (
                           <Badge 

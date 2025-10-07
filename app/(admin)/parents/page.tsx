@@ -1,14 +1,16 @@
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import type { Parent, Student, Enrollment, Branch } from '@/types/models';
 import { getParents, getStudentsByParent } from '@/lib/services/parents';
 import { getActiveBranches } from '@/lib/services/branches';
-import { getEnrollmentsByParent, getEnrollmentsByStudent } from '@/lib/services/enrollments';
+import { getEnrollmentsByStudent } from '@/lib/services/enrollments';
 import { getClasses } from '@/lib/services/classes';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Pagination, usePagination } from '@/components/ui/pagination';
 import { 
   Plus, 
   Search, 
@@ -18,10 +20,6 @@ import {
   Eye, 
   Edit, 
   Building2,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
   ChevronDown,
   ChevronUp,
   User,
@@ -51,6 +49,7 @@ import {
 import { formatDate, calculateAge } from '@/lib/utils';
 import { PermissionGuard } from '@/components/auth/permission-guard';
 import { ActionButton } from '@/components/ui/action-button';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface StudentWithEnrollment extends Student {
   enrollments?: Enrollment[];
@@ -64,86 +63,96 @@ interface ParentWithInfo extends Parent {
   enrollmentStatus?: 'active' | 'completed' | 'never' | 'mixed';
 }
 
-const ITEMS_PER_PAGE = 20;
+// Cache keys
+const QUERY_KEYS = {
+  parents: ['parents'],
+  branches: ['branches', 'active'],
+  classes: ['classes'],
+};
 
 export default function ParentsPage() {
   const [allParentsData, setAllParentsData] = useState<ParentWithInfo[]>([]);
-  const [branches, setBranches] = useState<Branch[]>([]);
-  const [classes, setClasses] = useState<{ [key: string]: any }>({});
-  const [branchMap, setBranchMap] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(true);
   const [enrollmentLoading, setEnrollmentLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
-  const [filterBranch, setFilterBranch] = useState<string>('all'); // เพิ่ม branch filter
-  const [currentPage, setCurrentPage] = useState(1);
+  const [filterBranch, setFilterBranch] = useState<string>('all');
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
+  // Pagination
+  const {
+    currentPage,
+    pageSize,
+    handlePageChange,
+    handlePageSizeChange,
+    resetPagination,
+    getPaginatedData,
+    totalPages,
+  } = usePagination(20);
+
+  // React Query: Load parents
+  const { data: parents = [], isLoading: loadingParents } = useQuery({
+    queryKey: QUERY_KEYS.parents,
+    queryFn: getParents,
+    staleTime: 60000, // 1 minute
+  });
+
+  // React Query: Load branches
+  const { data: branches = [] } = useQuery({
+    queryKey: QUERY_KEYS.branches,
+    queryFn: getActiveBranches,
+    staleTime: 300000, // 5 minutes
+  });
+
+  // React Query: Load classes
+  const { data: classes = [] } = useQuery({
+    queryKey: QUERY_KEYS.classes,
+    queryFn: getClasses,
+    staleTime: 120000, // 2 minutes
+  });
+
+  // Create maps
+  const branchMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    branches.forEach(branch => {
+      map[branch.id] = branch.name;
+    });
+    return map;
+  }, [branches]);
+
+  const classMap = useMemo(() => {
+    const map: Record<string, any> = {};
+    classes.forEach((cls: any) => {
+      map[cls.id] = cls;
+    });
+    return map;
+  }, [classes]);
+
+  // Load enrollment data when parents change
   useEffect(() => {
-    loadInitialData();
-  }, []);
+    if (parents.length > 0) {
+      setAllParentsData(parents);
+      loadAllParentDetails(parents, classMap);
+    }
+  }, [parents, classMap]);
 
   // Reset page when filters change
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchTerm, filterBranch, filterStatus]);
+  useMemo(() => {
+    resetPagination();
+  }, [searchTerm, filterBranch, filterStatus, resetPagination]);
 
-  const loadInitialData = async () => {
-    try {
-      setLoading(true);
-      
-      // Load all necessary data
-      const [branchesData, parentsData, classesData] = await Promise.all([
-        getActiveBranches(),
-        getParents(),
-        getClasses()
-      ]);
-      
-      setBranches(branchesData);
-      
-      // Create maps
-      const branchMapping: Record<string, string> = {};
-      branchesData.forEach(branch => {
-        branchMapping[branch.id] = branch.name;
-      });
-      setBranchMap(branchMapping);
-      
-      const classMapping: Record<string, any> = {};
-      classesData.forEach((cls: any) => {
-        classMapping[cls.id] = cls;
-      });
-      setClasses(classMapping);
-      
-      // Set initial parents data
-      setAllParentsData(parentsData);
-      setLoading(false);
-      
-      // Load additional data
-      await loadAllParentDetails(parentsData, classMapping);
-    } catch (error) {
-      console.error('Error loading initial data:', error);
-      toast.error('ไม่สามารถโหลดข้อมูลได้');
-      setLoading(false);
-    }
-  };
-
-  const loadAllParentDetails = async (parents: Parent[], classMapping: Record<string, any>) => {
+  const loadAllParentDetails = async (parentsList: Parent[], classMapping: Record<string, any>) => {
     try {
       setEnrollmentLoading(true);
       
-      // Load details for all parents
       const parentsWithDetails = await Promise.all(
-        parents.map(async (parent) => {
+        parentsList.map(async (parent) => {
           try {
-            // Load students
             const students = await getStudentsByParent(parent.id);
             
-            // Load enrollments for each student
             const studentsWithEnrollments = await Promise.all(
               students.map(async (student) => {
                 const enrollments = await getEnrollmentsByStudent(student.id);
                 
-                // Check if student has active classes
                 let hasActiveClass = false;
                 let enrollmentStatus: 'active' | 'completed' | 'never' = 'never';
                 
@@ -166,7 +175,6 @@ export default function ParentsPage() {
               })
             );
             
-            // Calculate parent enrollment status
             const activeCount = studentsWithEnrollments.filter(s => s.isActive).length;
             const statuses = studentsWithEnrollments.map(s => s.enrollmentStatus);
             
@@ -205,26 +213,20 @@ export default function ParentsPage() {
     }
   };
 
-  // Filter parents based on criteria
+  // Filter parents
   const filteredParents = useMemo(() => {
     let filtered = [...allParentsData];
     
-    // Filter by selected branch - รวมทั้งที่เรียนและสนใจ
     if (filterBranch !== 'all') {
       filtered = filtered.filter(parent => {
-        // 1. มีลูกเรียนในสาขานี้
         const hasStudentInBranch = parent.students?.some(student => 
           student.enrollments?.some(e => e.branchId === filterBranch)
         );
-        
-        // 2. สนใจสาขานี้ (preferredBranchId)
         const interestedInBranch = parent.preferredBranchId === filterBranch;
-        
         return hasStudentInBranch || interestedInBranch;
       });
     }
     
-    // Apply search filter
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(parent => 
@@ -238,7 +240,6 @@ export default function ParentsPage() {
       );
     }
     
-    // Apply status filter
     if (filterStatus !== 'all' && !enrollmentLoading) {
       filtered = filtered.filter(parent => {
         if (filterStatus === 'active') return parent.enrollmentStatus === 'active';
@@ -251,29 +252,25 @@ export default function ParentsPage() {
     return filtered;
   }, [allParentsData, searchTerm, filterBranch, filterStatus, enrollmentLoading]);
 
-  // Calculate statistics
+  // Statistics
   const stats = useMemo(() => {
-    const parentsForStats = filteredParents;
-    
-    const activeCount = parentsForStats.filter(p => p.enrollmentStatus === 'active').length;
-    const completedCount = parentsForStats.filter(p => p.enrollmentStatus === 'completed' || p.enrollmentStatus === 'mixed').length;
-    const neverCount = parentsForStats.filter(p => p.enrollmentStatus === 'never').length;
+    const activeCount = filteredParents.filter(p => p.enrollmentStatus === 'active').length;
+    const completedCount = filteredParents.filter(p => p.enrollmentStatus === 'completed' || p.enrollmentStatus === 'mixed').length;
+    const neverCount = filteredParents.filter(p => p.enrollmentStatus === 'never').length;
     
     return {
-      totalParents: parentsForStats.length,
-      totalStudents: parentsForStats.reduce((sum, p) => sum + (p.activeStudentCount || 0), 0),
-      withLineId: parentsForStats.filter(p => p.lineUserId).length,
+      totalParents: filteredParents.length,
+      totalStudents: filteredParents.reduce((sum, p) => sum + (p.activeStudentCount || 0), 0),
+      withLineId: filteredParents.filter(p => p.lineUserId).length,
       activeEnrollment: activeCount,
       completedEnrollment: completedCount,
       neverEnrolled: neverCount
     };
   }, [filteredParents]);
 
-  // Pagination calculations
-  const totalPages = Math.ceil(filteredParents.length / ITEMS_PER_PAGE);
-  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-  const endIndex = startIndex + ITEMS_PER_PAGE;
-  const currentParents = filteredParents.slice(startIndex, endIndex);
+  // Paginated data
+  const paginatedParents = getPaginatedData(filteredParents);
+  const calculatedTotalPages = totalPages(filteredParents.length);
 
   // Toggle row expansion
   const toggleRow = (parentId: string) => {
@@ -286,21 +283,43 @@ export default function ParentsPage() {
     setExpandedRows(newExpanded);
   };
 
-  // Pagination controls
-  const goToPage = (page: number) => {
-    if (page >= 1 && page <= totalPages) {
-      setCurrentPage(page);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-  };
-
-  if (loading) {
+  // Loading state
+  if (loadingParents) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-red-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
-          <p className="mt-4 text-gray-600">กำลังโหลดข้อมูล...</p>
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <div>
+            <Skeleton className="h-8 w-64 mb-2" />
+            <Skeleton className="h-4 w-96" />
+          </div>
+          <Skeleton className="h-10 w-40" />
         </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+          {[...Array(6)].map((_, i) => (
+            <Card key={i}>
+              <CardHeader className="pb-2">
+                <Skeleton className="h-4 w-20" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-8 w-12" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        <Card>
+          <CardHeader>
+            <Skeleton className="h-6 w-48" />
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {[...Array(5)].map((_, i) => (
+                <Skeleton key={i} className="h-12 w-full" />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -404,7 +423,6 @@ export default function ParentsPage() {
           />
         </div>
 
-        {/* Branch Filter */}
         <Select value={filterBranch} onValueChange={setFilterBranch}>
           <SelectTrigger className="w-[200px]">
             <SelectValue />
@@ -453,15 +471,10 @@ export default function ParentsPage() {
                 </span>
               )}
             </CardTitle>
-            {totalPages > 1 && (
-              <div className="text-sm text-gray-500">
-                หน้า {currentPage} จาก {totalPages}
-              </div>
-            )}
           </div>
         </CardHeader>
-        <CardContent>
-          {currentParents.length === 0 ? (
+        <CardContent className="p-0">
+          {paginatedParents.length === 0 ? (
             <div className="text-center py-12">
               <Users className="h-12 w-12 text-gray-300 mx-auto mb-4" />
               <h3 className="text-lg font-medium text-gray-900 mb-2">
@@ -501,7 +514,7 @@ export default function ParentsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {currentParents.map((parent) => (
+                    {paginatedParents.map((parent) => (
                       <>
                         <TableRow key={parent.id} className="cursor-pointer hover:bg-gray-50" onClick={() => toggleRow(parent.id)}>
                           <TableCell>
@@ -595,7 +608,6 @@ export default function ParentsPage() {
                               {enrollmentLoading ? (
                                 <span className="text-gray-400 text-sm">กำลังโหลด...</span>
                               ) : (() => {
-                                // Get unique branches from student enrollments
                                 const enrolledBranches = new Set<string>();
                                 parent.students?.forEach(student => {
                                   student.enrollments?.forEach(enrollment => {
@@ -685,7 +697,6 @@ export default function ParentsPage() {
                                         </div>
                                       </div>
                                       <div className="flex items-center gap-3">
-                                        {/* แสดงสาขาที่เรียน */}
                                         <div className="flex flex-wrap gap-1">
                                           {(() => {
                                             const studentBranches = new Set<string>();
@@ -715,12 +726,11 @@ export default function ParentsPage() {
                                                   <GraduationCap className="h-3 w-3 mr-1" />
                                                   กำลังเรียน
                                                 </Badge>
-                                                {/* แสดงคลาสที่เรียนอยู่ */}
                                                 {student.enrollments && student.enrollments.length > 0 && (
                                                   <div className="text-xs text-gray-600 max-w-[300px]">
                                                     {student.enrollments
                                                       .filter(e => e.status === 'active')
-                                                      .map(e => classes[e.classId]?.name || e.classId)
+                                                      .map(e => classMap[e.classId]?.name || e.classId)
                                                       .join(', ')}
                                                   </div>
                                                 )}
@@ -766,77 +776,15 @@ export default function ParentsPage() {
                 </Table>
               </div>
 
-              {/* Pagination Controls */}
-              {totalPages > 1 && (
-                <div className="flex items-center justify-between mt-6 px-2">
-                  <p className="text-sm text-gray-600">
-                    แสดง {startIndex + 1}-{Math.min(endIndex, filteredParents.length)} จาก {filteredParents.length} รายการ
-                  </p>
-                  
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => goToPage(1)}
-                      disabled={currentPage === 1}
-                    >
-                      <ChevronsLeft className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => goToPage(currentPage - 1)}
-                      disabled={currentPage === 1}
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                    </Button>
-                    
-                    <div className="flex items-center gap-1">
-                      {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                        let pageNum;
-                        if (totalPages <= 5) {
-                          pageNum = i + 1;
-                        } else if (currentPage <= 3) {
-                          pageNum = i + 1;
-                        } else if (currentPage >= totalPages - 2) {
-                          pageNum = totalPages - 4 + i;
-                        } else {
-                          pageNum = currentPage - 2 + i;
-                        }
-                        
-                        return (
-                          <Button
-                            key={i}
-                            variant={pageNum === currentPage ? "default" : "outline"}
-                            size="sm"
-                            onClick={() => goToPage(pageNum)}
-                            className="w-10"
-                          >
-                            {pageNum}
-                          </Button>
-                        );
-                      })}
-                    </div>
-                    
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => goToPage(currentPage + 1)}
-                      disabled={currentPage === totalPages}
-                    >
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => goToPage(totalPages)}
-                      disabled={currentPage === totalPages}
-                    >
-                      <ChevronsRight className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              )}
+              {/* Pagination */}
+              <Pagination
+                currentPage={currentPage}
+                totalPages={calculatedTotalPages}
+                pageSize={pageSize}
+                totalItems={filteredParents.length}
+                onPageChange={handlePageChange}
+                onPageSizeChange={handlePageSizeChange}
+              />
             </>
           )}
         </CardContent>
