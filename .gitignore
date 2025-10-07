@@ -41,3 +41,7 @@ next-env.d.ts
 backup/data/*
 !backup/data/.gitkeep
 backup/logs/serviceAccountKey.json
+
+# Service Account Keys
+serviceAccountKey.json
+**/serviceAccountKey*.json
