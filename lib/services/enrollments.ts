@@ -6,11 +6,15 @@ import {
   query,
   where,
   orderBy,
+  limit,
+  startAfter,
+  QueryDocumentSnapshot,
   Timestamp,
   serverTimestamp,
   writeBatch,
   increment,
-  setDoc
+  setDoc,
+  getCountFromServer
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { Enrollment, Class } from '@/types/models';
@@ -20,12 +24,186 @@ import { getClass } from './classes';
 
 const COLLECTION_NAME = 'enrollments';
 
-// Get all enrollments
-export async function getEnrollments(branchId?: string): Promise<Enrollment[]> {
+// ============================================
+// 🎯 NEW: Query Options Interface
+// ============================================
+export interface EnrollmentQueryOptions {
+  branchId?: string | null;
+  status?: string;
+  paymentStatus?: string;
+  limit?: number;
+  startAfterDoc?: QueryDocumentSnapshot;
+  orderByField?: 'enrolledAt' | 'createdAt';
+  orderDirection?: 'asc' | 'desc';
+}
+
+export interface PaginatedEnrollments {
+  enrollments: Enrollment[];
+  lastDoc: QueryDocumentSnapshot | null;
+  hasMore: boolean;
+  total?: number;
+}
+
+// ============================================
+// 🚀 NEW: Get Enrollments with Pagination
+// ============================================
+export async function getEnrollmentsPaginated(
+  options: EnrollmentQueryOptions = {}
+): Promise<PaginatedEnrollments> {
+  try {
+    const {
+      branchId,
+      status,
+      paymentStatus,
+      limit: pageSize = 20,
+      startAfterDoc,
+      orderByField = 'enrolledAt',
+      orderDirection = 'desc'
+    } = options;
+
+    // Build query constraints
+    const constraints: any[] = [];
+    
+    // Branch filter
+    if (branchId) {
+      constraints.push(where('branchId', '==', branchId));
+    }
+    
+    // Status filter
+    if (status && status !== 'all') {
+      constraints.push(where('status', '==', status));
+    }
+    
+    // Payment status filter (nested field)
+    if (paymentStatus && paymentStatus !== 'all') {
+      constraints.push(where('payment.status', '==', paymentStatus));
+    }
+    
+    // Order by
+    constraints.push(orderBy(orderByField, orderDirection));
+    
+    // Pagination cursor
+    if (startAfterDoc) {
+      constraints.push(startAfter(startAfterDoc));
+    }
+    
+    // Limit + 1 to check if there's more
+    constraints.push(limit(pageSize + 1));
+    
+    // Execute query
+    const q = query(collection(db, COLLECTION_NAME), ...constraints);
+    const querySnapshot = await getDocs(q);
+    
+    // Process results
+    const docs = querySnapshot.docs;
+    const hasMore = docs.length > pageSize;
+    const enrollmentDocs = hasMore ? docs.slice(0, pageSize) : docs;
+    
+    const enrollments = enrollmentDocs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      enrolledAt: doc.data().enrolledAt?.toDate() || new Date(),
+      payment: {
+        ...doc.data().payment,
+        paidDate: doc.data().payment?.paidDate?.toDate()
+      }
+    } as Enrollment));
+    
+    return {
+      enrollments,
+      lastDoc: hasMore ? enrollmentDocs[enrollmentDocs.length - 1] : null,
+      hasMore
+    };
+  } catch (error) {
+    console.error('Error getting enrollments paginated:', error);
+    throw error;
+  }
+}
+
+// ============================================
+// 🎯 NEW: Get Enrollment Stats (Optimized)
+// ============================================
+export interface EnrollmentStats {
+  total: number;
+  active: number;
+  completed: number;
+  dropped: number;
+  totalRevenue: number;
+  pendingPayments: number;
+  pendingCount: number;
+  partialCount: number;
+  paidCount: number;
+}
+
+export async function getEnrollmentStats(branchId?: string | null): Promise<EnrollmentStats> {
+  try {
+    const constraints: any[] = [];
+    
+    if (branchId) {
+      constraints.push(where('branchId', '==', branchId));
+    }
+    
+    // Get all enrollments for stats (cached by React Query)
+    const q = query(collection(db, COLLECTION_NAME), ...constraints);
+    const querySnapshot = await getDocs(q);
+    
+    const stats: EnrollmentStats = {
+      total: querySnapshot.size,
+      active: 0,
+      completed: 0,
+      dropped: 0,
+      totalRevenue: 0,
+      pendingPayments: 0,
+      pendingCount: 0,
+      partialCount: 0,
+      paidCount: 0
+    };
+    
+    querySnapshot.forEach(doc => {
+      const data = doc.data();
+      
+      // Count by status
+      if (data.status === 'active') stats.active++;
+      else if (data.status === 'completed') stats.completed++;
+      else if (data.status === 'dropped') stats.dropped++;
+      
+      // Count by payment status
+      if (data.payment?.status === 'pending') {
+        stats.pendingCount++;
+        stats.pendingPayments += data.pricing?.finalPrice || 0;
+      } else if (data.payment?.status === 'partial') {
+        stats.partialCount++;
+        stats.pendingPayments += (data.pricing?.finalPrice || 0) - (data.payment?.paidAmount || 0);
+      } else if (data.payment?.status === 'paid') {
+        stats.paidCount++;
+        stats.totalRevenue += data.payment?.paidAmount || 0;
+      }
+    });
+    
+    return stats;
+  } catch (error) {
+    console.error('Error getting enrollment stats:', error);
+    return {
+      total: 0,
+      active: 0,
+      completed: 0,
+      dropped: 0,
+      totalRevenue: 0,
+      pendingPayments: 0,
+      pendingCount: 0,
+      partialCount: 0,
+      paidCount: 0
+    };
+  }
+}
+
+// ============================================
+// 🔄 UPDATED: Get all enrollments (Legacy - for search fallback)
+// ============================================
+export async function getEnrollments(branchId?: string | null): Promise<Enrollment[]> {
   try {
     let constraints: any[] = [orderBy('enrolledAt', 'desc')];
     
-    // Add branch filter if provided
     if (branchId) {
       constraints.unshift(where('branchId', '==', branchId));
     }
@@ -48,17 +226,19 @@ export async function getEnrollments(branchId?: string): Promise<Enrollment[]> {
   }
 }
 
+// ============================================
+// Existing functions (unchanged)
+// ============================================
+
 // Get enrollments by class
 export async function getEnrollmentsByClass(classId: string): Promise<Enrollment[]> {
   try {
-    // Simplified query - just filter by classId first
     const q = query(
       collection(db, COLLECTION_NAME),
       where('classId', '==', classId)
     );
     const querySnapshot = await getDocs(q);
     
-    // Filter in memory for active and completed status
     const enrollments = querySnapshot.docs
       .map(doc => ({
         id: doc.id,
@@ -197,7 +377,6 @@ export async function checkDuplicateEnrollment(
     );
     const querySnapshot = await getDocs(q);
     
-    // Filter in memory for active/completed status
     const activeEnrollments = querySnapshot.docs.filter(doc => {
       const status = doc.data().status;
       return status === 'active' || status === 'completed';
@@ -215,13 +394,10 @@ export async function createEnrollment(
   enrollmentData: Omit<Enrollment, 'id' | 'enrolledAt'>
 ): Promise<string> {
   try {
-    // Use batch write for atomic operation
     const batch = writeBatch(db);
     
-    // 1. Create enrollment document
     const enrollmentRef = doc(collection(db, COLLECTION_NAME));
     
-    // Build the data object with proper types
     const dataToSave = {
       ...enrollmentData,
       enrolledAt: serverTimestamp(),
@@ -233,7 +409,6 @@ export async function createEnrollment(
       }
     };
     
-    // Remove undefined promotionCode if it exists
     if (!dataToSave.pricing.promotionCode) {
       const { promotionCode: _promotionCode, ...pricingWithoutPromo } = dataToSave.pricing;
       dataToSave.pricing = pricingWithoutPromo;
@@ -241,16 +416,13 @@ export async function createEnrollment(
     
     batch.set(enrollmentRef, dataToSave);
     
-    // 2. Update class enrolled count
     const classRef = doc(db, 'classes', enrollmentData.classId);
     batch.update(classRef, {
       enrolledCount: increment(1)
     });
     
-    // 3. Commit the batch
     await batch.commit();
     
-    // 4. Check for missed sessions and create makeup requests
     await createMakeupForMissedSessions(
       enrollmentRef.id,
       enrollmentData.classId,
@@ -265,7 +437,6 @@ export async function createEnrollment(
   }
 }
 
-// เพิ่มฟังก์ชันใหม่
 async function createMakeupForMissedSessions(
   enrollmentId: string,
   classId: string,
@@ -273,14 +444,11 @@ async function createMakeupForMissedSessions(
   parentId: string
 ): Promise<void> {
   try {
-    // Get class data
     const classData = await getClass(classId);
     if (!classData) return;
     
-    // Get all class schedules
     const schedules = await getClassSchedules(classId);
     
-    // Filter missed sessions (sessions that have already passed)
     const now = new Date();
     const missedSchedules = schedules.filter(schedule => {
       const sessionDate = new Date(schedule.sessionDate);
@@ -292,7 +460,6 @@ async function createMakeupForMissedSessions(
              schedule.status !== 'rescheduled';
     });
     
-    // Create makeup requests for each missed session
     for (const schedule of missedSchedules) {
       try {
         await createMakeupRequest({
@@ -302,7 +469,7 @@ async function createMakeupForMissedSessions(
           studentId: studentId,
           parentId: parentId,
           requestDate: new Date(),
-          requestedBy: 'system', // ระบุว่าเป็น system auto-create
+          requestedBy: 'system',
           reason: 'สมัครเรียนหลังจากคลาสเริ่มแล้ว (Auto-generated)',
           status: 'pending',
           originalSessionNumber: schedule.sessionNumber,
@@ -312,21 +479,16 @@ async function createMakeupForMissedSessions(
         console.log(`Created makeup request for session ${schedule.sessionNumber}`);
       } catch (error) {
         console.error(`Error creating makeup for session ${schedule.sessionNumber}:`, error);
-        // Continue with other sessions even if one fails
       }
     }
     
-    // Notify admin if makeup classes were created
-    // หลังจากสร้าง makeup requests เสร็จแล้ว
     if (missedSchedules.length > 0) {
       console.log(`Created ${missedSchedules.length} makeup requests for enrollment ${enrollmentId}`);
       
-      // Get student and class info for notification
       const { getStudent } = await import('./parents');
       const studentInfo = await getStudent(parentId, studentId);
       
       if (studentInfo && classData) {
-        // Send notification to admin
         const { notifyAdminNewMakeup } = await import('./notifications');
         await notifyAdminNewMakeup(
           studentInfo.nickname || studentInfo.name,
@@ -337,7 +499,6 @@ async function createMakeupForMissedSessions(
     }
   } catch (error) {
     console.error('Error creating makeup for missed sessions:', error);
-    // Don't throw - this should not break enrollment creation
   }
 }
 
@@ -349,10 +510,8 @@ export async function updateEnrollment(
   try {
     const docRef = doc(db, COLLECTION_NAME, id);
     
-    // Build update data with proper types
     const { id: _id, enrolledAt: _enrolledAt, ...dataToUpdate } = enrollmentData;
     
-    // Handle payment date conversion separately
     let finalUpdateData: Partial<Enrollment> = dataToUpdate;
     
     if (dataToUpdate.payment?.paidDate) {
@@ -372,86 +531,32 @@ export async function updateEnrollment(
   }
 }
 
-// Cancel enrollment (drop student from class)
+// Cancel enrollment
 export async function cancelEnrollment(
   id: string,
   reason: string
 ): Promise<void> {
   try {
-    // Get enrollment data first
     const enrollment = await getEnrollment(id);
     if (!enrollment) throw new Error('Enrollment not found');
     
-    // Use batch write for atomic operation
     const batch = writeBatch(db);
     
-    // 1. Update enrollment status
     const enrollmentRef = doc(db, COLLECTION_NAME, id);
     batch.update(enrollmentRef, {
       status: 'dropped',
       droppedReason: reason
     });
     
-    // 2. Decrease class enrolled count
     const classRef = doc(db, 'classes', enrollment.classId);
     batch.update(classRef, {
       enrolledCount: increment(-1)
     });
     
-    // 3. Commit the batch
     await batch.commit();
   } catch (error) {
     console.error('Error canceling enrollment:', error);
     throw error;
-  }
-}
-
-// Get enrollment statistics
-export async function getEnrollmentStats(branchId?: string): Promise<{
-  total: number;
-  active: number;
-  completed: number;
-  dropped: number;
-  totalRevenue: number;
-  pendingPayments: number;
-}> {
-  try {
-    const enrollments = await getEnrollments(branchId);
-    
-    const stats = enrollments.reduce((acc, enrollment) => {
-      acc.total++;
-      
-      if (enrollment.status === 'active') acc.active++;
-      else if (enrollment.status === 'completed') acc.completed++;
-      else if (enrollment.status === 'dropped') acc.dropped++;
-      
-      if (enrollment.payment.status === 'paid') {
-        acc.totalRevenue += enrollment.payment.paidAmount;
-      } else if (enrollment.payment.status === 'pending') {
-        acc.pendingPayments += enrollment.pricing.finalPrice;
-      }
-      
-      return acc;
-    }, {
-      total: 0,
-      active: 0,
-      completed: 0,
-      dropped: 0,
-      totalRevenue: 0,
-      pendingPayments: 0
-    });
-    
-    return stats;
-  } catch (error) {
-    console.error('Error getting enrollment stats:', error);
-    return {
-      total: 0,
-      active: 0,
-      completed: 0,
-      dropped: 0,
-      totalRevenue: 0,
-      pendingPayments: 0
-    };
   }
 }
 
@@ -485,7 +590,7 @@ export async function checkAvailableSeats(classId: string): Promise<{
   }
 }
 
-// Transfer enrollment to another class (Updated Version)
+// Transfer enrollment to another class
 export async function transferEnrollment(
   enrollmentId: string,
   newClassId: string,
@@ -495,10 +600,8 @@ export async function transferEnrollment(
     const enrollment = await getEnrollment(enrollmentId);
     if (!enrollment) throw new Error('Enrollment not found');
     
-    // Use batch write for atomic operation
     const batch = writeBatch(db);
     
-    // 1. Update enrollment - keep status as 'active' and track transfer history
     const enrollmentRef = doc(db, COLLECTION_NAME, enrollmentId);
     
     const transferRecord = {
@@ -521,19 +624,16 @@ export async function transferEnrollment(
       }))
     });
     
-    // 2. Decrease old class enrolled count
     const oldClassRef = doc(db, 'classes', enrollment.classId);
     batch.update(oldClassRef, {
       enrolledCount: increment(-1)
     });
     
-    // 3. Increase new class enrolled count
     const newClassRef = doc(db, 'classes', newClassId);
     batch.update(newClassRef, {
       enrolledCount: increment(1)
     });
     
-    // 4. Commit the batch
     await batch.commit();
   } catch (error) {
     console.error('Error transferring enrollment:', error);
@@ -551,40 +651,29 @@ export async function getAvailableClassesForTransfer(
   allClasses: Class[];
 }> {
   try {
-    // Import required functions
     const { getClasses } = await import('./classes');
     const { getSubjects } = await import('./subjects');
     
-    // Get all classes and subjects
     const [allClasses, subjects] = await Promise.all([
       getClasses(),
       getSubjects()
     ]);
     
-    // Create subject map for quick lookup
     const subjectMap = new Map(subjects.map(s => [s.id, s]));
     
-    // Filter classes
     const availableClasses = allClasses.filter(cls => {
-      // Exclude current class
       if (cls.id === currentClassId) return false;
-      
-      // Include all statuses: draft, published, started, completed
-      // Admin can transfer to any class
       return true;
     });
     
-    // Separate into eligible (by age) and all classes
     const eligibleClasses = availableClasses.filter(cls => {
       const subject = subjectMap.get(cls.subjectId);
       if (!subject) return false;
       
-      // Check if student age is within subject age range
       return studentAge >= subject.ageRange.min && 
              studentAge <= subject.ageRange.max;
     });
     
-    // Add subject info to classes for display
     const enrichClasses = (classes: Class[]) => 
       classes.map(cls => ({
         ...cls,
@@ -617,7 +706,6 @@ export async function getEnrollmentTransferHistory(
     const enrollment = await getEnrollment(enrollmentId);
     if (!enrollment || !enrollment.transferHistory) return [];
     
-    // Return transfer history with proper date conversion
     return enrollment.transferHistory.map(transfer => ({
       ...transfer,
       transferredAt: transfer.transferredAt instanceof Date 
@@ -630,33 +718,27 @@ export async function getEnrollmentTransferHistory(
   }
 }
 
-// Delete enrollment completely (hard delete)
+// Delete enrollment completely
 export async function deleteEnrollment(
   enrollmentId: string
 ): Promise<void> {
   try {
-    // Get enrollment data first
     const enrollment = await getEnrollment(enrollmentId);
     if (!enrollment) throw new Error('Enrollment not found');
     
-    // Use batch write for atomic operation
     const batch = writeBatch(db);
     
-    // 1. Delete enrollment document
     const enrollmentRef = doc(db, COLLECTION_NAME, enrollmentId);
     batch.delete(enrollmentRef);
     
-    // 2. Decrease class enrolled count
     const classRef = doc(db, 'classes', enrollment.classId);
     batch.update(classRef, {
       enrolledCount: increment(-1)
     });
     
-    // 3. Commit the batch
     await batch.commit();
   } catch (error) {
     console.error('Error deleting enrollment:', error);
     throw error;
   }
 }
-

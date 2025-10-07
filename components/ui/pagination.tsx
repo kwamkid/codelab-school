@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 
 interface PaginationProps {
   currentPage: number;
@@ -20,6 +20,7 @@ interface PaginationProps {
   onPageChange: (page: number) => void;
   onPageSizeChange: (size: number) => void;
   pageSizeOptions?: number[];
+  showFirstLastButtons?: boolean; // เปลี่ยนชื่อ: รองรับทั้งปุ่มแรกและสุดท้าย
 }
 
 export function Pagination({
@@ -30,6 +31,7 @@ export function Pagination({
   onPageChange,
   onPageSizeChange,
   pageSizeOptions = [10, 20, 50, 100],
+  showFirstLastButtons = false, // default ปิด
 }: PaginationProps) {
   const startItem = totalItems === 0 ? 0 : (currentPage - 1) * pageSize + 1;
   const endItem = Math.min(currentPage * pageSize, totalItems);
@@ -65,6 +67,9 @@ export function Pagination({
     return null;
   }
 
+  const canGoFirst = currentPage > 1;
+  const canGoLast = currentPage < totalPages;
+
   return (
     <div className="border-t">
       {/* Mobile Layout */}
@@ -96,16 +101,33 @@ export function Pagination({
 
         {/* Row 2: Navigation */}
         <div className="flex items-center justify-center gap-1">
+          {/* First Page Button - แสดงเฉพาะเมื่อ showFirstLastButtons = true */}
+          {showFirstLastButtons && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onPageChange(1)}
+              disabled={!canGoFirst}
+              className="h-8 w-8"
+              title="หน้าแรก"
+            >
+              <ChevronsLeft className="h-4 w-4" />
+            </Button>
+          )}
+
+          {/* Previous Button */}
           <Button
             variant="outline"
             size="sm"
             onClick={() => onPageChange(currentPage - 1)}
             disabled={currentPage === 1}
             className="h-8 w-8"
+            title="หน้าก่อนหน้า"
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
 
+          {/* Page Numbers */}
           {getPageNumbers(true).map((pageNum) => (
             <Button
               key={pageNum}
@@ -118,15 +140,31 @@ export function Pagination({
             </Button>
           ))}
 
+          {/* Next Button */}
           <Button
             variant="outline"
             size="sm"
             onClick={() => onPageChange(currentPage + 1)}
             disabled={currentPage === totalPages}
             className="h-8 w-8"
+            title="หน้าถัดไป"
           >
             <ChevronRight className="h-4 w-4" />
           </Button>
+
+          {/* Last Page Button - แสดงเฉพาะเมื่อ showFirstLastButtons = true */}
+          {showFirstLastButtons && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onPageChange(totalPages)}
+              disabled={!canGoLast}
+              className="h-8 w-8"
+              title="หน้าสุดท้าย"
+            >
+              <ChevronsRight className="h-4 w-4" />
+            </Button>
+          )}
         </div>
       </div>
 
@@ -155,16 +193,33 @@ export function Pagination({
         </div>
 
         <div className="flex items-center gap-2">
+          {/* First Page Button - แสดงเฉพาะเมื่อ showFirstLastButtons = true */}
+          {showFirstLastButtons && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onPageChange(1)}
+              disabled={!canGoFirst}
+              className="w-9"
+              title="หน้าแรก"
+            >
+              <ChevronsLeft className="h-4 w-4" />
+            </Button>
+          )}
+
+          {/* Previous Button */}
           <Button
             variant="outline"
             size="sm"
             onClick={() => onPageChange(currentPage - 1)}
             disabled={currentPage === 1}
             className="w-9"
+            title="หน้าก่อนหน้า"
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
 
+          {/* Page Numbers */}
           <div className="flex items-center gap-1">
             {getPageNumbers(false).map((pageNum) => (
               <Button
@@ -179,15 +234,31 @@ export function Pagination({
             ))}
           </div>
 
+          {/* Next Button */}
           <Button
             variant="outline"
             size="sm"
             onClick={() => onPageChange(currentPage + 1)}
             disabled={currentPage === totalPages}
             className="w-9"
+            title="หน้าถัดไป"
           >
             <ChevronRight className="h-4 w-4" />
           </Button>
+
+          {/* Last Page Button - แสดงเฉพาะเมื่อ showFirstLastButtons = true */}
+          {showFirstLastButtons && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onPageChange(totalPages)}
+              disabled={!canGoLast}
+              className="w-9"
+              title="หน้าสุดท้าย"
+            >
+              <ChevronsRight className="h-4 w-4" />
+            </Button>
+          )}
         </div>
       </div>
     </div>
