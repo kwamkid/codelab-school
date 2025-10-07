@@ -2,11 +2,9 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Student, Enrollment, Branch, Class } from '@/types/models';
+import { Student, Branch } from '@/types/models';
 import { getAllStudentsWithParents } from '@/lib/services/parents';
 import { getActiveBranches } from '@/lib/services/branches';
-import { getEnrollmentsByStudent } from '@/lib/services/enrollments';
-import { getClasses } from '@/lib/services/classes';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -20,13 +18,9 @@ import {
   AlertCircle,
   Edit,
   Users,
-  Building2,
-  GraduationCap,
-  CheckCircle2,
   Globe
 } from 'lucide-react';
 import Link from 'next/link';
-import { toast } from 'sonner';
 import { Badge } from "@/components/ui/badge";
 import { calculateAge } from '@/lib/utils';
 import {
@@ -49,28 +43,19 @@ import { Skeleton } from '@/components/ui/skeleton';
 type StudentWithInfo = Student & { 
   parentName: string; 
   parentPhone: string;
-  enrollments?: Enrollment[];
-  currentClasses?: string[];
-  completedClasses?: string[];
-  enrolledBranches?: string[];
 };
 
 // Cache keys
 const QUERY_KEYS = {
   students: ['students'],
   branches: ['branches', 'active'],
-  classes: ['classes'],
 };
 
 export default function StudentsPage() {
-  const [allStudentsData, setAllStudentsData] = useState<StudentWithInfo[]>([]);
-  const [enrollmentLoading, setEnrollmentLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterGender, setFilterGender] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('active');
   const [filterAllergy, setFilterAllergy] = useState<string>('all');
-  const [filterEnrollment, setFilterEnrollment] = useState<string>('all');
-  const [filterBranch, setFilterBranch] = useState<string>('all');
 
   // Pagination
   const {
@@ -83,146 +68,28 @@ export default function StudentsPage() {
     totalPages,
   } = usePagination(20);
 
-  // React Query: Load students
-  const { data: students = [], isLoading: loadingStudents } = useQuery({
+  // React Query: Load students only (super fast!)
+  const { data: students = [], isLoading: loadingStudents } = useQuery<StudentWithInfo[]>({
     queryKey: QUERY_KEYS.students,
     queryFn: getAllStudentsWithParents,
     staleTime: 60000, // 1 minute
   });
 
-  // React Query: Load branches
-  const { data: branches = [] } = useQuery({
+  // React Query: Load branches (optional, for future use)
+  const { data: branches = [] } = useQuery<Branch[]>({
     queryKey: QUERY_KEYS.branches,
     queryFn: getActiveBranches,
     staleTime: 300000, // 5 minutes
   });
 
-  // React Query: Load classes
-  const { data: classes = [] } = useQuery({
-    queryKey: QUERY_KEYS.classes,
-    queryFn: getClasses,
-    staleTime: 120000, // 2 minutes
-  });
-
-  // Create maps
-  const branchMap = useMemo(() => {
-    const map: Record<string, string> = {};
-    branches.forEach(branch => {
-      map[branch.id] = branch.name;
-    });
-    return map;
-  }, [branches]);
-
-  const classMap = useMemo(() => {
-    const map: Record<string, Class> = {};
-    classes.forEach(cls => {
-      map[cls.id] = cls;
-    });
-    return map;
-  }, [classes]);
-
-  // Initialize students data
-  useEffect(() => {
-    if (students.length > 0) {
-      setAllStudentsData(students);
-    }
-  }, [students]);
-
   // Reset page when filters change
-  useMemo(() => {
-    resetPagination();
-  }, [searchTerm, filterGender, filterStatus, filterAllergy, filterEnrollment, filterBranch, resetPagination]);
-
-  // Load enrollment data for current page only (Lazy Loading)
   useEffect(() => {
-    if (paginatedStudents.length === 0) {
-      setEnrollmentLoading(false);
-      return;
-    }
+    resetPagination();
+  }, [searchTerm, filterGender, filterStatus, filterAllergy, resetPagination]);
 
-    const loadPageEnrollments = async () => {
-      setEnrollmentLoading(true);
-      
-      try {
-        const studentsWithEnrollments = await Promise.all(
-          paginatedStudents.map(async (student) => {
-            // Check if already loaded
-            if (student.enrollments !== undefined) {
-              return student;
-            }
-
-            try {
-              const enrollments = await getEnrollmentsByStudent(student.id);
-              
-              const currentClasses: string[] = [];
-              const completedClasses: string[] = [];
-              const enrolledBranchIds = new Set<string>();
-              
-              enrollments.forEach(enrollment => {
-                enrolledBranchIds.add(enrollment.branchId);
-                
-                const classData = classMap[enrollment.classId];
-                if (classData) {
-                  if (enrollment.status === 'active' && classData.status !== 'completed') {
-                    currentClasses.push(enrollment.classId);
-                  } else if (enrollment.status === 'completed' || classData.status === 'completed') {
-                    completedClasses.push(enrollment.classId);
-                  }
-                }
-              });
-              
-              return {
-                ...student,
-                enrollments,
-                currentClasses,
-                completedClasses,
-                enrolledBranches: Array.from(enrolledBranchIds)
-              };
-            } catch (error) {
-              console.error(`Error loading enrollments for student ${student.id}:`, error);
-              return {
-                ...student,
-                enrollments: [],
-                currentClasses: [],
-                completedClasses: [],
-                enrolledBranches: []
-              };
-            }
-          })
-        );
-
-        // Update only the students on current page
-        setAllStudentsData(prevData => {
-          const newData = [...prevData];
-          studentsWithEnrollments.forEach(updatedStudent => {
-            const index = newData.findIndex(s => s.id === updatedStudent.id);
-            if (index !== -1) {
-              newData[index] = updatedStudent;
-            }
-          });
-          return newData;
-        });
-        
-        setEnrollmentLoading(false);
-      } catch (error) {
-        console.error('Error loading page enrollments:', error);
-        setEnrollmentLoading(false);
-      }
-    };
-
-    loadPageEnrollments();
-  }, [paginatedStudents.map(s => s.id).join(','), classMap]);
-
-  // Filter students
+  // Filter students (no enrollment data needed)
   const filteredStudents = useMemo(() => {
-    let filtered = [...allStudentsData];
-    
-    if (filterBranch !== 'all') {
-      filtered = filtered.filter(student => {
-        const studiesInBranch = student.enrolledBranches?.includes(filterBranch) || false;
-        return studiesInBranch;
-      });
-    }
+    let filtered = [...students];
     
     if (searchTerm) {
       const searchLower = searchTerm.toLowerCase();
@@ -251,50 +118,25 @@ export default function StudentsPage() {
       );
     }
     
-    if (filterEnrollment !== 'all' && !enrollmentLoading) {
-      filtered = filtered.filter(student => {
-        const hasCurrentClasses = (student.currentClasses?.length || 0) > 0;
-        const hasCompletedClasses = (student.completedClasses?.length || 0) > 0;
-        const hasEnrollments = (student.enrollments?.length || 0) > 0;
-        
-        if (filterEnrollment === 'active') return hasCurrentClasses;
-        if (filterEnrollment === 'completed') return !hasCurrentClasses && hasCompletedClasses;
-        if (filterEnrollment === 'never') return !hasEnrollments;
-        return true;
-      });
-    }
-    
     return filtered;
-  }, [allStudentsData, searchTerm, filterGender, filterStatus, filterAllergy, filterEnrollment, filterBranch, enrollmentLoading]);
+  }, [students, searchTerm, filterGender, filterStatus, filterAllergy]);
 
-  // Statistics
+  // Paginated data
+  const paginatedStudents = useMemo(() => {
+    return getPaginatedData(filteredStudents);
+  }, [filteredStudents, currentPage, pageSize, getPaginatedData]);
+
+  // Statistics (simple, no enrollment data)
   const stats = useMemo(() => {
-    const currentlyEnrolled = filteredStudents.filter(s => 
-      (s.currentClasses?.length || 0) > 0
-    ).length;
-    
-    const completedOnly = filteredStudents.filter(s => 
-      (s.currentClasses?.length || 0) === 0 && (s.completedClasses?.length || 0) > 0
-    ).length;
-    
-    const neverEnrolled = filteredStudents.filter(s => 
-      (s.enrollments?.length || 0) === 0
-    ).length;
-    
     return {
       total: filteredStudents.length,
       active: filteredStudents.filter(s => s.isActive).length,
       male: filteredStudents.filter(s => s.gender === 'M').length,
       female: filteredStudents.filter(s => s.gender === 'F').length,
       withAllergies: filteredStudents.filter(s => s.allergies).length,
-      currentlyEnrolled,
-      completedOnly,
-      neverEnrolled
     };
   }, [filteredStudents]);
 
-  // Paginated data
-  const paginatedStudents = getPaginatedData(filteredStudents);
   const calculatedTotalPages = totalPages(filteredStudents.length);
 
   // Loading state
@@ -306,8 +148,8 @@ export default function StudentsPage() {
           <Skeleton className="h-4 w-96" />
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-7 gap-4">
-          {[...Array(7)].map((_, i) => (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => (
             <Card key={i}>
               <CardHeader className="pb-2">
                 <Skeleton className="h-4 w-20" />
@@ -340,20 +182,18 @@ export default function StudentsPage() {
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
           <Globe className="h-8 w-8 text-blue-500" />
-          นักเรียนทั้งหมด (ทุกสาขา)
+          นักเรียนทั้งหมด
         </h1>
         <p className="text-gray-600 mt-2">
-          รายชื่อนักเรียนทั้งหมดในระบบ - สามารถกรองตามสาขาได้
+          รายชื่อนักเรียนทั้งหมดในระบบ
         </p>
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-7 gap-4 mb-6">
+      {/* Summary Cards - Simple Stats Only */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">
-              {filterBranch !== 'all' ? 'นักเรียนในสาขา' : 'นักเรียนทั้งหมด'}
-            </CardTitle>
+            <CardTitle className="text-sm font-medium">นักเรียนทั้งหมด</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.total}</div>
@@ -394,45 +234,9 @@ export default function StudentsPage() {
             <p className="text-xs text-gray-500 mt-1">ต้องระวัง</p>
           </CardContent>
         </Card>
-        
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">กำลังเรียน</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">
-              {enrollmentLoading ? '...' : stats.currentlyEnrolled}
-            </div>
-            <p className="text-xs text-gray-500 mt-1">มีคลาสเรียน</p>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">จบคอร์สแล้ว</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-orange-600">
-              {enrollmentLoading ? '...' : stats.completedOnly}
-            </div>
-            <p className="text-xs text-gray-500 mt-1">รอคลาสใหม่</p>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">ยังไม่ลงคอร์ส</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-gray-600">
-              {enrollmentLoading ? '...' : stats.neverEnrolled}
-            </div>
-            <p className="text-xs text-gray-500 mt-1">รอลงทะเบียน</p>
-          </CardContent>
-        </Card>
       </div>
 
-      {/* Filters */}
+      {/* Filters - Simplified */}
       <div className="flex flex-col md:flex-row gap-4 mb-6">
         <div className="flex-1 relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
@@ -443,29 +247,6 @@ export default function StudentsPage() {
             className="pl-10"
           />
         </div>
-        
-        <Select value={filterBranch} onValueChange={setFilterBranch}>
-          <SelectTrigger className="w-[200px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">
-              <div className="flex items-center gap-2">
-                <Globe className="h-4 w-4" />
-                ทุกสาขา
-              </div>
-            </SelectItem>
-            {branches.map((branch) => (
-              <SelectItem key={branch.id} value={branch.id}>
-                <div className="flex items-center gap-2">
-                  <Building2 className="h-4 w-4" />
-                  {branch.name}
-                  <span className="text-xs text-gray-500 ml-1">(เรียนในสาขา)</span>
-                </div>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
         
         <Select value={filterGender} onValueChange={setFilterGender}>
           <SelectTrigger className="w-[150px]">
@@ -499,31 +280,14 @@ export default function StudentsPage() {
             <SelectItem value="no">ไม่มีประวัติแพ้</SelectItem>
           </SelectContent>
         </Select>
-
-        <Select value={filterEnrollment} onValueChange={setFilterEnrollment}>
-          <SelectTrigger className="w-[180px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">สถานะเรียนทั้งหมด</SelectItem>
-            <SelectItem value="active">มีคลาสเรียน</SelectItem>
-            <SelectItem value="completed">จบคอร์สแล้ว</SelectItem>
-            <SelectItem value="never">ยังไม่ลงคอร์ส</SelectItem>
-          </SelectContent>
-        </Select>
       </div>
 
-      {/* Students Table */}
+      {/* Students Table - Simple Columns Only */}
       <Card>
         <CardHeader>
           <div className="flex justify-between items-center">
             <CardTitle>
               รายชื่อนักเรียน ({filteredStudents.length} คน)
-              {filterBranch !== 'all' && (
-                <span className="text-blue-600 text-base ml-2">
-                  • กรองสาขา: {branchMap[filterBranch]} (เรียนในสาขา)
-                </span>
-              )}
             </CardTitle>
           </div>
         </CardHeader>
@@ -535,7 +299,7 @@ export default function StudentsPage() {
                 ไม่พบข้อมูลนักเรียน
               </h3>
               <p className="text-gray-600">
-                {searchTerm || filterGender !== 'all' || filterStatus !== 'active' || filterAllergy !== 'all' || filterBranch !== 'all'
+                {searchTerm || filterGender !== 'all' || filterStatus !== 'active' || filterAllergy !== 'all'
                   ? 'ลองปรับเงื่อนไขการค้นหา' 
                   : 'ยังไม่มีนักเรียนในระบบ'}
               </p>
@@ -546,13 +310,12 @@ export default function StudentsPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="min-w-[180px]">ข้อมูลนักเรียน</TableHead>
-                      <TableHead className="w-[100px]">เพศ / อายุ</TableHead>
-                      <TableHead className="w-[150px]">โรงเรียน</TableHead>
-                      <TableHead className="w-[150px]">ผู้ปกครอง</TableHead>
-                      <TableHead className="text-center w-[80px]">ประวัติแพ้</TableHead>
-                      <TableHead className="min-w-[200px]">สาขาที่เรียน / สถานะ</TableHead>
-                      <TableHead className="text-right w-[60px]">จัดการ</TableHead>
+                      <TableHead className="min-w-[200px]">ข้อมูลนักเรียน</TableHead>
+                      <TableHead className="w-[120px]">เพศ / อายุ</TableHead>
+                      <TableHead className="w-[180px]">โรงเรียน</TableHead>
+                      <TableHead className="w-[180px]">ผู้ปกครอง</TableHead>
+                      <TableHead className="text-center w-[100px]">ประวัติแพ้</TableHead>
+                      <TableHead className="text-right w-[80px]">จัดการ</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -564,16 +327,16 @@ export default function StudentsPage() {
                               <img
                                 src={student.profileImage}
                                 alt={student.name}
-                                className="w-12 h-12 rounded-full object-cover"
+                                className="w-12 h-12 rounded-full object-cover flex-shrink-0"
                               />
                             ) : (
-                              <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center">
+                              <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0">
                                 <User className="h-6 w-6 text-gray-500" />
                               </div>
                             )}
-                            <div>
-                              <p className="font-medium">{student.name}</p>
-                              <p className="text-sm text-gray-600">{student.nickname || '-'}</p>
+                            <div className="min-w-0">
+                              <p className="font-medium truncate">{student.name}</p>
+                              <p className="text-sm text-gray-600 truncate">{student.nickname || '-'}</p>
                               {!student.isActive && (
                                 <Badge variant="destructive" className="text-xs mt-1">ไม่ใช้งาน</Badge>
                               )}
@@ -599,12 +362,12 @@ export default function StudentsPage() {
                         <TableCell>
                           {student.schoolName ? (
                             <div>
-                              <p className="text-sm font-medium flex items-center gap-1 truncate max-w-[150px]" title={student.schoolName}>
+                              <p className="text-sm font-medium flex items-center gap-1" title={student.schoolName}>
                                 <School className="h-3 w-3 text-gray-400 flex-shrink-0" />
                                 <span className="truncate">{student.schoolName}</span>
                               </p>
                               {student.gradeLevel && (
-                                <p className="text-xs text-gray-500">{student.gradeLevel}</p>
+                                <p className="text-xs text-gray-500 truncate">{student.gradeLevel}</p>
                               )}
                             </div>
                           ) : (
@@ -612,17 +375,17 @@ export default function StudentsPage() {
                           )}
                         </TableCell>
                         <TableCell>
-                          <div>
+                          <div className="min-w-0">
                             <Link 
                               href={`/parents/${student.parentId}`}
-                              className="text-sm font-medium text-blue-600 hover:underline truncate block max-w-[140px]"
+                              className="text-sm font-medium text-blue-600 hover:underline block truncate"
                               title={student.parentName}
                             >
                               {student.parentName}
                             </Link>
                             <p className="text-xs text-gray-500 flex items-center gap-1">
                               <Phone className="h-3 w-3 flex-shrink-0" />
-                              {student.parentPhone}
+                              <span className="truncate">{student.parentPhone}</span>
                             </p>
                           </div>
                         </TableCell>
@@ -635,52 +398,6 @@ export default function StudentsPage() {
                           ) : (
                             <span className="text-gray-400">-</span>
                           )}
-                        </TableCell>
-                        <TableCell>
-                          <div className="space-y-2">
-                            <div className="flex flex-wrap gap-1">
-                              {enrollmentLoading ? (
-                                <span className="text-gray-400 text-sm">กำลังโหลด...</span>
-                              ) : student.enrolledBranches && student.enrolledBranches.length > 0 ? (
-                                student.enrolledBranches.map(branchId => (
-                                  <Badge 
-                                    key={branchId} 
-                                    variant="outline"
-                                    className="text-xs"
-                                  >
-                                    {branchMap[branchId] || branchId}
-                                  </Badge>
-                                ))
-                              ) : (
-                                <span className="text-gray-400 text-sm">-</span>
-                              )}
-                            </div>
-                            
-                            <div>
-                              {enrollmentLoading ? (
-                                <span className="text-gray-400 text-sm">กำลังโหลด...</span>
-                              ) : student.currentClasses && student.currentClasses.length > 0 ? (
-                                <div className="space-y-1">
-                                  <Badge className="bg-green-100 text-green-700 text-xs">
-                                    <GraduationCap className="h-3 w-3 mr-1" />
-                                    กำลังเรียน {student.currentClasses.length} คลาส
-                                  </Badge>
-                                  <div className="text-xs text-gray-500 max-w-[200px]">
-                                    {student.currentClasses.map(classId => 
-                                      classMap[classId]?.name || classId
-                                    ).join(', ')}
-                                  </div>
-                                </div>
-                              ) : student.completedClasses && student.completedClasses.length > 0 ? (
-                                <Badge className="bg-orange-100 text-orange-700 text-xs">
-                                  <CheckCircle2 className="h-3 w-3 mr-1" />
-                                  จบคอร์สแล้ว ({student.completedClasses.length} คลาส)
-                                </Badge>
-                              ) : (
-                                <span className="text-gray-400 text-sm">ยังไม่ลงคอร์ส</span>
-                              )}
-                            </div>
-                          </div>
                         </TableCell>
                         <TableCell className="text-right">
                           <Link href={`/parents/${student.parentId}/students/${student.id}/edit`}>
@@ -724,23 +441,12 @@ export default function StudentsPage() {
                 .filter(s => s.allergies)
                 .map(student => (
                   <div key={student.id} className="flex items-start gap-4 p-3 bg-red-50 rounded-lg">
-                    <div className="flex-1">
-                      <p className="font-medium">{student.nickname || student.name}</p>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium truncate">{student.nickname || student.name}</p>
                       <p className="text-sm text-red-600">แพ้: {student.allergies}</p>
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {student.enrolledBranches?.map(branchId => (
-                          <Badge 
-                            key={branchId} 
-                            variant="outline"
-                            className="text-xs"
-                          >
-                            {branchMap[branchId] || branchId}
-                          </Badge>
-                        ))}
-                      </div>
                     </div>
                     {student.specialNeeds && (
-                      <Badge variant="outline" className="text-xs">
+                      <Badge variant="outline" className="text-xs flex-shrink-0">
                         มีความต้องการพิเศษ
                       </Badge>
                     )}
