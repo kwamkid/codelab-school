@@ -2,12 +2,9 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { MakeupClass, Student, Class } from '@/types/models';
+import { MakeupClass } from '@/types/models';
 import { getMakeupClasses, deleteMakeupClass } from '@/lib/services/makeup';
-import { getClasses } from '@/lib/services/classes';
 import { getActiveBranches } from '@/lib/services/branches';
-import { getAllStudentsWithParents } from '@/lib/services/parents';
-import { getSubjects } from '@/lib/services/subjects';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -74,8 +71,6 @@ import { useBranch } from '@/contexts/BranchContext';
 import { PermissionGuard } from '@/components/auth/permission-guard';
 import { Skeleton } from '@/components/ui/skeleton';
 
-type StudentWithParent = Student & { parentName: string; parentPhone: string };
-
 const statusColors = {
   'pending': 'bg-yellow-100 text-yellow-700',
   'scheduled': 'bg-blue-100 text-blue-700',
@@ -100,10 +95,7 @@ const statusIcons = {
 // Cache key constants
 const QUERY_KEYS = {
   makeupClasses: (branchId?: string | null) => ['makeupClasses', branchId],
-  classes: (branchId?: string | null) => ['classes', branchId],
   branches: ['branches', 'active'],
-  students: (branchId?: string | null) => ['students', 'withParents', branchId],
-  subjects: ['subjects'],
 };
 
 export default function MakeupPage() {
@@ -139,18 +131,11 @@ export default function MakeupPage() {
     totalPages,
   } = usePagination(20);
 
-  // Query: Makeup Classes (ทั้งหมด - ใช้สำหรับ filter/search)
+  // Query: Makeup Classes - ⚡ NOW SUPER FAST!
   const { data: makeupClasses = [], isLoading: loadingMakeup } = useQuery({
     queryKey: QUERY_KEYS.makeupClasses(selectedBranchId),
     queryFn: () => getMakeupClasses(selectedBranchId),
     staleTime: 30000,
-  });
-
-  // Query: Classes (ทั้งหมด - ใช้สำหรับ dropdown filter)
-  const { data: allClasses = [], isLoading: loadingClasses } = useQuery({
-    queryKey: QUERY_KEYS.classes(selectedBranchId),
-    queryFn: () => getClasses(selectedBranchId),
-    staleTime: 60000,
   });
 
   const { data: branches = [] } = useQuery({
@@ -159,52 +144,30 @@ export default function MakeupPage() {
     staleTime: 300000,
   });
 
-  const { data: subjects = [] } = useQuery({
-    queryKey: QUERY_KEYS.subjects,
-    queryFn: getSubjects,
-    staleTime: 300000,
-  });
-
-  // Query: All Students (ใช้สำหรับ lookup) - โหลดครั้งเดียวแล้ว cache
-  const { data: allStudents = [], isLoading: loadingStudents } = useQuery({
-    queryKey: QUERY_KEYS.students(selectedBranchId),
-    queryFn: () => getAllStudentsWithParents(selectedBranchId),
-    staleTime: 60000,
-  });
-
-  // Create lookup maps
-  const studentsMap = useMemo(() => 
-    new Map(allStudents.map(s => [s.id, s])), 
-    [allStudents]
-  );
-  
-  const classesMap = useMemo(() => 
-    new Map(allClasses.map(c => [c.id, c])), 
-    [allClasses]
-  );
-
-  const subjectsMap = useMemo(() => 
-    new Map(subjects.map(s => [s.id, s])), 
-    [subjects]
-  );
-  
-  const branchesMap = useMemo(() => 
-    new Map(branches.map(b => [b.id, b])), 
-    [branches]
-  );
-
-  // Helper functions
-  const getStudentInfo = (studentId: string) => studentsMap.get(studentId);
-  const getClassInfo = (classId: string) => classesMap.get(classId);
-  const getSubjectName = (subjectId: string): string => subjectsMap.get(subjectId)?.name || '';
-  const getBranchName = (branchId: string) => branchesMap.get(branchId)?.name || '-';
+  // Get unique classes from makeup data (for filter dropdown)
+  const uniqueClasses = useMemo(() => {
+    const classMap = new Map();
+    makeupClasses.forEach(makeup => {
+      if (!classMap.has(makeup.originalClassId)) {
+        classMap.set(makeup.originalClassId, {
+          id: makeup.originalClassId,
+          name: makeup.className,
+          code: makeup.classCode
+        });
+      }
+    });
+    return Array.from(classMap.values());
+  }, [makeupClasses]);
 
   // Filter makeup classes
   const filteredMakeupClasses = useMemo(() => {
     return makeupClasses.filter(makeup => {
       if (searchTerm) {
         const searchLower = searchTerm.toLowerCase();
-        const matchesSearch = makeup.reason.toLowerCase().includes(searchLower);
+        const matchesSearch = 
+          makeup.reason.toLowerCase().includes(searchLower) ||
+          makeup.studentName.toLowerCase().includes(searchLower) ||
+          makeup.studentNickname.toLowerCase().includes(searchLower);
         if (!matchesSearch) return false;
       }
       
@@ -299,7 +262,7 @@ export default function MakeupPage() {
   };
 
   // Initial loading
-  if (loadingMakeup || loadingStudents || loadingClasses) {
+  if (loadingMakeup) {
     return (
       <div className="space-y-6">
         <div className="flex justify-between items-center">
@@ -439,7 +402,7 @@ export default function MakeupPage() {
         <div className="flex-1 relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
           <Input
-            placeholder="ค้นหาเหตุผล..."
+            placeholder="ค้นหานักเรียน หรือ เหตุผล..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-10"
@@ -463,7 +426,7 @@ export default function MakeupPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">ทุกคลาส</SelectItem>
-            {allClasses.map(cls => (
+            {uniqueClasses.map(cls => (
               <SelectItem key={cls.id} value={cls.id}>
                 {cls.name}
               </SelectItem>
@@ -519,8 +482,6 @@ export default function MakeupPage() {
                       </TableHeader>
                       <TableBody>
                         {paginatedMakeupClasses.map((makeup) => {
-                          const student = getStudentInfo(makeup.studentId);
-                          const cls = getClassInfo(makeup.originalClassId);
                           const StatusIcon = statusIcons[makeup.status];
                           const isAutoGenerated = makeup.requestedBy === 'system';
                           
@@ -539,14 +500,14 @@ export default function MakeupPage() {
                               </TableCell>
                               <TableCell className="align-top">
                                 <div className="min-w-[120px]">
-                                  <p className="font-medium text-sm">{student?.nickname || student?.name || '-'}</p>
-                                  <p className="text-xs text-gray-500">{student?.parentName || '-'}</p>
+                                  <p className="font-medium text-sm">{makeup.studentNickname || makeup.studentName}</p>
+                                  <p className="text-xs text-gray-500">{makeup.parentName}</p>
                                 </div>
                               </TableCell>
                               <TableCell className="align-top">
                                 <div className="min-w-[140px]">
-                                  <p className="font-medium text-sm">{cls?.name || '-'}</p>
-                                  <p className="text-xs text-gray-500">{cls?.code || '-'}</p>
+                                  <p className="font-medium text-sm">{makeup.className}</p>
+                                  <p className="text-xs text-gray-500">{makeup.classCode}</p>
                                 </div>
                               </TableCell>
                               <TableCell className="whitespace-nowrap align-top">
@@ -567,7 +528,7 @@ export default function MakeupPage() {
                               </TableCell>
                               {isAllBranches && (
                                 <TableCell className="align-top text-sm">
-                                  {cls ? getBranchName(cls.branchId) : '-'}
+                                  {makeup.branchName}
                                 </TableCell>
                               )}
                               <TableCell className="align-top">
@@ -674,7 +635,7 @@ export default function MakeupPage() {
         </TabsContent>
       </Tabs>
 
-      {/* Dialogs... */}
+      {/* Dialogs */}
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -687,8 +648,8 @@ export default function MakeupPage() {
           {selectedMakeup && (
             <div className="my-4 space-y-3">
               <div className="bg-gray-50 rounded p-3 text-sm">
-                <p><strong>นักเรียน:</strong> {getStudentInfo(selectedMakeup.studentId)?.name || '-'}</p>
-                <p><strong>คลาส:</strong> {getClassInfo(selectedMakeup.originalClassId)?.name || '-'}</p>
+                <p><strong>นักเรียน:</strong> {selectedMakeup.studentName}</p>
+                <p><strong>คลาส:</strong> {selectedMakeup.className}</p>
                 <p><strong>สถานะ:</strong> {statusLabels[selectedMakeup.status]}</p>
                 {selectedMakeup.requestedBy === 'system' && (
                   <p className="text-orange-600 mt-1">
@@ -726,16 +687,7 @@ export default function MakeupPage() {
         <ScheduleMakeupDialog
           open={showScheduleDialog}
           onOpenChange={setShowScheduleDialog}
-          makeupRequest={{
-            ...selectedMakeup,
-            studentName: getStudentInfo(selectedMakeup.studentId)?.name || '',
-            studentNickname: getStudentInfo(selectedMakeup.studentId)?.nickname || '',
-            className: getClassInfo(selectedMakeup.originalClassId)?.name || '',
-            subjectName: (() => {
-              const classInfo = getClassInfo(selectedMakeup.originalClassId);
-              return classInfo ? getSubjectName(classInfo.subjectId) : '';
-            })(),
-          }}
+          makeupRequest={selectedMakeup} // ✨ ใช้ denormalized data ตรงๆ
           onSuccess={async () => {
             setShowScheduleDialog(false);
             await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.makeupClasses(selectedBranchId) });
@@ -746,8 +698,8 @@ export default function MakeupPage() {
       <CreateMakeupDialog
         open={showCreateDialog}
         onOpenChange={setShowCreateDialog}
-        classes={allClasses}
-        students={allStudents}
+        classes={[]} // ไม่ต้องส่ง - component จะโหลดเอง
+        students={[]} // ไม่ต้องส่ง - component จะโหลดเอง
         onCreated={async () => {
           setShowCreateDialog(false);
           await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.makeupClasses(selectedBranchId) });

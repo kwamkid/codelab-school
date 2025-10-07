@@ -2,12 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { MakeupClass, Student, Class, Teacher, Room, ClassSchedule } from '@/types/models';
+import { MakeupClass, Class } from '@/types/models';
 import { getMakeupClass, recordMakeupAttendance, cancelMakeupClass, deleteMakeupClass, revertMakeupToScheduled } from '@/lib/services/makeup';
-import { getClass, getClassSchedule } from '@/lib/services/classes';
-import { getStudentWithParent } from '@/lib/services/parents';
-import { getTeacher } from '@/lib/services/teachers';
-import { getRoom } from '@/lib/services/rooms';
+import { getClass } from '@/lib/services/classes';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -78,11 +75,7 @@ export default function MakeupDetailPage() {
 
   
   const [makeup, setMakeup] = useState<MakeupClass | null>(null);
-  const [student, setStudent] = useState<(Student & { parentName: string; parentPhone: string }) | null>(null);
   const [classInfo, setClassInfo] = useState<Class | null>(null);
-  const [originalSchedule, setOriginalSchedule] = useState<ClassSchedule | null>(null);
-  const [makeupTeacher, setMakeupTeacher] = useState<Teacher | null>(null);
-  const [makeupRoom, setMakeupRoom] = useState<Room | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   
@@ -99,7 +92,6 @@ export default function MakeupDetailPage() {
     }
   }, [makeupId]);
 
-  // เพิ่ม useEffect เพื่อตรวจสอบ action parameter
   useEffect(() => {
     const action = searchParams.get('action');
     if (action === 'reschedule' && makeup?.status === 'scheduled') {
@@ -116,43 +108,24 @@ export default function MakeupDetailPage() {
         return;
       }
       
-      // Check if user can access this makeup class's branch
-      const classData = await getClass(makeupData.originalClassId);
-      if (classData && !isAllBranches && selectedBranchId && classData.branchId !== selectedBranchId) {
+      // Check branch access
+      if (!isAllBranches && selectedBranchId && makeupData.branchId !== selectedBranchId) {
         toast.error('คุณไม่มีสิทธิ์ดูข้อมูล Makeup Class ในสาขานี้');
         router.push('/makeup');
         return;
       }
       
-      // For branch admin, check if they have access to this branch
-      if (adminUser?.role === 'branch_admin' && classData && !canAccessBranch(classData.branchId)) {
+      if (adminUser?.role === 'branch_admin' && !canAccessBranch(makeupData.branchId)) {
         toast.error('คุณไม่มีสิทธิ์ดูข้อมูล Makeup Class ในสาขานี้');
         router.push('/makeup');
         return;
       }
       
       setMakeup(makeupData);
-      setClassInfo(classData);
-
-      const [studentData] = await Promise.all([
-        getStudentWithParent(makeupData.studentId)
-      ]);
       
-      setStudent(studentData);
-
-      if (makeupData.originalScheduleId) {
-        const scheduleData = await getClassSchedule(makeupData.originalClassId, makeupData.originalScheduleId);
-        setOriginalSchedule(scheduleData);
-      }
-
-      if (makeupData.makeupSchedule) {
-        const [teacherData, roomData] = await Promise.all([
-          getTeacher(makeupData.makeupSchedule.teacherId),
-          getRoom(makeupData.makeupSchedule.branchId, makeupData.makeupSchedule.roomId)
-        ]);
-        setMakeupTeacher(teacherData);
-        setMakeupRoom(roomData);
-      }
+      // Load class info (for teacher info if needed)
+      const classData = await getClass(makeupData.originalClassId);
+      setClassInfo(classData);
     } catch (error) {
       console.error('Error loading makeup details:', error);
       toast.error('ไม่สามารถโหลดข้อมูลได้');
@@ -266,7 +239,7 @@ export default function MakeupDetailPage() {
     }
   };
 
-  if (loading || !makeup || !student || !classInfo) {
+  if (loading || !makeup) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">
@@ -300,7 +273,7 @@ export default function MakeupDetailPage() {
       {/* Title */}
       <div className="mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
-          Makeup Class - {student.nickname}
+          Makeup Class - {makeup.studentNickname}
           {!isAllBranches && <span className="text-red-600 text-lg ml-2">(เฉพาะสาขาที่เลือก)</span>}
         </h1>
       </div>
@@ -318,20 +291,26 @@ export default function MakeupDetailPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <p className="text-sm text-gray-500 mb-1">คลาส</p>
-                  <p className="font-medium">{classInfo.name}</p>
-                  <p className="text-sm text-gray-500">{classInfo.code}</p>
+                  <p className="font-medium">{makeup.className}</p>
+                  <p className="text-sm text-gray-500">{makeup.classCode}</p>
                 </div>
-                {originalSchedule && (
-                  <div>
-                    <p className="text-sm text-gray-500 mb-1">วันที่ขาด</p>
-                    <p className="font-medium text-red-600">
-                      ครั้งที่ {originalSchedule.sessionNumber} - {formatDateWithDay(originalSchedule.sessionDate)}
-                    </p>
-                    <p className="text-sm text-gray-500">
-                      เวลา {classInfo.startTime} - {classInfo.endTime} น.
-                    </p>
-                  </div>
-                )}
+                <div>
+                  <p className="text-sm text-gray-500 mb-1">วันที่ขาด</p>
+                  {makeup.originalSessionNumber && makeup.originalSessionDate ? (
+                    <>
+                      <p className="font-medium text-red-600">
+                        ครั้งที่ {makeup.originalSessionNumber} - {formatDateWithDay(makeup.originalSessionDate)}
+                      </p>
+                      {classInfo && (
+                        <p className="text-sm text-gray-500">
+                          เวลา {classInfo.startTime} - {classInfo.endTime} น.
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-gray-400">-</p>
+                  )}
+                </div>
               </div>
 
               {/* Reason */}
@@ -381,11 +360,11 @@ export default function MakeupDetailPage() {
                   </div>
                   <div>
                     <p className="text-gray-500 mb-1">ครูผู้สอน</p>
-                    <p className="font-medium">{makeupTeacher?.nickname || makeupTeacher?.name || '-'}</p>
+                    <p className="font-medium">{makeup.makeupSchedule.teacherName || '-'}</p>
                   </div>
                   <div>
                     <p className="text-gray-500 mb-1">ห้องเรียน</p>
-                    <p className="font-medium">{makeupRoom?.name || makeup.makeupSchedule.roomId}</p>
+                    <p className="font-medium">{makeup.makeupSchedule.roomName || makeup.makeupSchedule.roomId}</p>
                   </div>
                 </div>
                 
@@ -481,7 +460,7 @@ export default function MakeupDetailPage() {
 
         {/* Sidebar - 1 column */}
         <div className="space-y-4">
-          {/* Student Info */}
+          {/* Student Info - ✨ ใช้ denormalized data */}
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-lg">
@@ -492,18 +471,18 @@ export default function MakeupDetailPage() {
             <CardContent className="space-y-2 text-sm">
               <div>
                 <p className="text-gray-500">ชื่อ-นามสกุล</p>
-                <p className="font-medium">{student.name}</p>
-                <p className="text-gray-500">({student.nickname})</p>
+                <p className="font-medium">{makeup.studentName}</p>
+                <p className="text-gray-500">({makeup.studentNickname})</p>
               </div>
               <div className="pt-2">
                 <p className="text-gray-500">ผู้ปกครอง</p>
-                <p className="font-medium">{student.parentName}</p>
+                <p className="font-medium">{makeup.parentName}</p>
               </div>
               <div>
                 <p className="text-gray-500">เบอร์โทร</p>
                 <p className="font-medium flex items-center gap-1">
                   <Phone className="h-3 w-3" />
-                  {student.parentPhone}
+                  {makeup.parentPhone}
                 </p>
               </div>
             </CardContent>
@@ -543,7 +522,7 @@ export default function MakeupDetailPage() {
                       <AlertDialogHeader>
                         <AlertDialogTitle>ยืนยันการบันทึกเข้าเรียน</AlertDialogTitle>
                         <AlertDialogDescription>
-                          คุณแน่ใจหรือไม่ว่า <strong>{student.nickname}</strong> มาเรียน Makeup Class แล้ว?
+                          คุณแน่ใจหรือไม่ว่า <strong>{makeup.studentNickname}</strong> มาเรียน Makeup Class แล้ว?
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
@@ -572,7 +551,7 @@ export default function MakeupDetailPage() {
                       <AlertDialogHeader>
                         <AlertDialogTitle>ยืนยันการบันทึกขาดเรียน</AlertDialogTitle>
                         <AlertDialogDescription>
-                          คุณแน่ใจหรือไม่ว่า <strong>{student.nickname}</strong> ไม่ได้มาเรียน Makeup Class?
+                          คุณแน่ใจหรือไม่ว่า <strong>{makeup.studentNickname}</strong> ไม่ได้มาเรียน Makeup Class?
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
@@ -691,12 +670,18 @@ export default function MakeupDetailPage() {
       </div>
 
       {/* Edit Schedule Dialog */}
-      {showEditSchedule && makeup && student && classInfo && (
+      {showEditSchedule && makeup && classInfo && (
         <EditMakeupScheduleDialog
           open={showEditSchedule}
           onOpenChange={setShowEditSchedule}
           makeup={makeup}
-          student={student}
+          student={{
+            id: makeup.studentId,
+            name: makeup.studentName,
+            nickname: makeup.studentNickname,
+            parentName: makeup.parentName,
+            parentPhone: makeup.parentPhone,
+          } as any}
           classInfo={classInfo}
           onUpdated={() => {
             setShowEditSchedule(false);

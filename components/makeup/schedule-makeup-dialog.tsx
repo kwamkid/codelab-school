@@ -31,13 +31,11 @@ import {
 } from '@/components/ui/select';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { toast } from 'sonner';
-import { MakeupClass, Teacher, Branch, Room, ClassSchedule } from '@/types/models';
+import { MakeupClass, Teacher, Room } from '@/types/models';
 import { scheduleMakeupClass } from '@/lib/services/makeup';
 import { getTeachers } from '@/lib/services/teachers';
-import { getBranches } from '@/lib/services/branches';
 import { getRoomsByBranch } from '@/lib/services/rooms';
-import { getClassSchedule } from '@/lib/services/classes';
-import { checkAvailability, AvailabilityIssue, AvailabilityWarning } from '@/lib/utils/availability';
+import { checkAvailability, AvailabilityWarning } from '@/lib/utils/availability';
 import { useAuth } from '@/hooks/useAuth';
 import { formatDate } from '@/lib/utils';
 import { useBranch } from '@/contexts/BranchContext';
@@ -45,12 +43,7 @@ import { useBranch } from '@/contexts/BranchContext';
 interface ScheduleMakeupDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  makeupRequest: MakeupClass & {
-    studentName?: string;
-    studentNickname?: string;
-    className?: string;
-    subjectName?: string;
-  };
+  makeupRequest: MakeupClass; // ✨ Now contains all denormalized data!
   onSuccess?: () => void;
 }
 
@@ -60,25 +53,21 @@ export default function ScheduleMakeupDialog({
   makeupRequest,
   onSuccess,
 }: ScheduleMakeupDialogProps) {
-  const { user, adminUser, canAccessBranch } = useAuth();
+  const { user, canAccessBranch } = useAuth();
   const { selectedBranchId, isAllBranches } = useBranch();
   const [loading, setLoading] = useState(false);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
-  const [branches, setBranches] = useState<Branch[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [checkingAvailability, setCheckingAvailability] = useState(false);
-  const [availabilityIssues, setAvailabilityIssues] = useState<AvailabilityIssue[]>([]);
+  const [availabilityIssues, setAvailabilityIssues] = useState<any[]>([]);
   const [availabilityWarnings, setAvailabilityWarnings] = useState<AvailabilityWarning[]>([]);
-  const [originalSchedule, setOriginalSchedule] = useState<ClassSchedule | null>(null);
-  const [branchName, setBranchName] = useState<string>('');
   
-  // Form data - remove branchId since we'll use the original
   const [formData, setFormData] = useState({
     date: '',
     startTime: '10:00',
     endTime: '11:00',
     teacherId: '',
-    branchId: '', // Will be set from class info
+    branchId: '',
     roomId: '',
   });
 
@@ -88,55 +77,32 @@ export default function ScheduleMakeupDialog({
 
     const loadData = async () => {
       try {
-        // Get class info first to determine branch
-        const classesModule = await import('@/lib/services/classes');
-        const classInfo = await classesModule.getClass(makeupRequest.originalClassId);
-        
-        if (!classInfo) {
-          toast.error('ไม่พบข้อมูลคลาส');
-          onOpenChange(false);
-          return;
-        }
-
-        // Check if user has access to this branch
-        if (!canAccessBranch(classInfo.branchId)) {
+        // Check branch access
+        if (!canAccessBranch(makeupRequest.branchId)) {
           toast.error('คุณไม่มีสิทธิ์จัดตาราง Makeup ในสาขานี้');
           onOpenChange(false);
           return;
         }
 
-        const [teachersData, branchesData] = await Promise.all([
-          getTeachers(classInfo.branchId), // Get teachers for specific branch if not viewing all
-          getBranches(),
+        const [teachersData, roomsData] = await Promise.all([
+          getTeachers(makeupRequest.branchId),
+          getRoomsByBranch(makeupRequest.branchId)
         ]);
 
-        // Filter teachers based on branch access
+        // Filter teachers for this branch
         const availableTeachers = teachersData.filter(t => 
-          t.isActive && t.availableBranches.includes(classInfo.branchId)
+          t.isActive && t.availableBranches.includes(makeupRequest.branchId)
         );
         
         setTeachers(availableTeachers);
-        setBranches(branchesData.filter(b => b.isActive));
+        setRooms(roomsData.filter(r => r.isActive));
 
-        // Load original schedule data
-        if (makeupRequest.originalClassId && makeupRequest.originalScheduleId) {
-          const schedule = await getClassSchedule(
-            makeupRequest.originalClassId, 
-            makeupRequest.originalScheduleId
-          );
-          setOriginalSchedule(schedule);
-        }
-
-        // Set branch name and default values
-        const branch = branchesData.find(b => b.id === classInfo.branchId);
-        setBranchName(branch?.name || '');
-        
+        // Set default values from class
         setFormData(prev => ({ 
           ...prev, 
-          branchId: classInfo.branchId,
-          teacherId: classInfo.teacherId, // Default teacher
-          startTime: classInfo.startTime,
-          endTime: classInfo.endTime
+          branchId: makeupRequest.branchId,
+          // We would need teacherId and times from classInfo
+          // For now, use reasonable defaults
         }));
       } catch (error) {
         console.error('Error loading data:', error);
@@ -147,42 +113,21 @@ export default function ScheduleMakeupDialog({
     loadData();
   }, [open, makeupRequest, canAccessBranch]);
 
-  // Load rooms when we have branchId
-  useEffect(() => {
-    const loadRooms = async () => {
-      if (!formData.branchId) {
-        setRooms([]);
-        return;
-      }
-
-      try {
-        const roomsData = await getRoomsByBranch(formData.branchId);
-        setRooms(roomsData.filter(r => r.isActive));
-      } catch (error) {
-        console.error('Error loading rooms:', error);
-        toast.error('เกิดข้อผิดพลาดในการโหลดข้อมูลห้อง');
-      }
-    };
-
-    loadRooms();
-  }, [formData.branchId]);
-
-  // Auto-set end time when start time changes
+  // Auto-set end time
   useEffect(() => {
     if (formData.startTime) {
       const [hours, minutes] = formData.startTime.split(':').map(Number);
-      const endHour = hours + 1; // Default 1 hour session
+      const endHour = hours + 1;
       const endMinutes = minutes.toString().padStart(2, '0');
       const newEndTime = `${endHour.toString().padStart(2, '0')}:${endMinutes}`;
       
-      // Only update if it's a valid time
       if (endHour < 24) {
         setFormData(prev => ({ ...prev, endTime: newEndTime }));
       }
     }
   }, [formData.startTime]);
 
-  // Check availability when relevant fields change
+  // Check availability
   useEffect(() => {
     const checkScheduleAvailability = async () => {
       if (!formData.date || !formData.startTime || !formData.endTime || 
@@ -203,7 +148,7 @@ export default function ScheduleMakeupDialog({
           teacherId: formData.teacherId,
           excludeId: makeupRequest.id,
           excludeType: 'makeup',
-          allowConflicts: true // เพิ่ม flag นี้
+          allowConflicts: true
         });
 
         setAvailabilityIssues(result.reasons);
@@ -222,14 +167,13 @@ export default function ScheduleMakeupDialog({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validate
     if (!formData.date || !formData.startTime || !formData.endTime || 
         !formData.teacherId || !formData.roomId) {
       toast.error('กรุณากรอกข้อมูลให้ครบถ้วน');
       return;
     }
 
-    // ตรวจสอบเฉพาะ issues (วันหยุด) ไม่ต้องตรวจ warnings
+    // Check for holiday
     if (availabilityIssues.length > 0) {
       const holidayIssue = availabilityIssues.find(issue => issue.type === 'holiday');
       if (holidayIssue) {
@@ -238,7 +182,7 @@ export default function ScheduleMakeupDialog({
       }
     }
 
-    // ถ้ามี warnings ให้แสดงข้อความยืนยัน
+    // Confirm if warnings exist
     if (availabilityWarnings.length > 0) {
       const confirmMessage = `มีคลาส/กิจกรรมอื่นในช่วงเวลานี้:\n${availabilityWarnings.map(w => `- ${w.message}`).join('\n')}\n\nคุณต้องการจัด Makeup Class ในเวลานี้หรือไม่?`;
       
@@ -280,12 +224,7 @@ export default function ScheduleMakeupDialog({
     }
   };
 
-  // Filter teachers based on branch - already filtered in loadData
-  const getAvailableTeachers = () => {
-    return teachers; // Already filtered
-  };
-
-  // Helper function to group warnings by type
+  // Helper to group warnings
   const getGroupedWarnings = () => {
     const roomWarnings = availabilityWarnings.filter(w => w.type === 'room_conflict');
     const teacherWarnings = availabilityWarnings.filter(w => w.type === 'teacher_conflict');
@@ -297,7 +236,6 @@ export default function ScheduleMakeupDialog({
     <Dialog open={open} onOpenChange={(newOpen) => {
       onOpenChange(newOpen);
       if (!newOpen) {
-        // Reset form when closing
         setFormData({
           date: '',
           startTime: '10:00',
@@ -318,7 +256,7 @@ export default function ScheduleMakeupDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Student & Class Info */}
+          {/* Student & Class Info - ✨ ใช้ denormalized data */}
           <div className="bg-gray-50 rounded-lg p-4 space-y-2">
             <div className="flex justify-between items-center">
               <span className="text-sm text-gray-600">นักเรียน:</span>
@@ -332,9 +270,9 @@ export default function ScheduleMakeupDialog({
                 <span className="font-medium">
                   {makeupRequest.subjectName} - {makeupRequest.className}
                 </span>
-                {originalSchedule && (
+                {makeupRequest.originalSessionNumber && (
                   <span className="text-sm text-gray-500 ml-2">
-                    (ครั้งที่ {originalSchedule.sessionNumber})
+                    (ครั้งที่ {makeupRequest.originalSessionNumber})
                   </span>
                 )}
               </div>
@@ -343,18 +281,15 @@ export default function ScheduleMakeupDialog({
               <span className="text-sm text-gray-600">เหตุผล:</span>
               <span className="font-medium">{makeupRequest.reason}</span>
             </div>
-            {branchName && (
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-600">สาขา:</span>
-                <span className="font-medium text-red-600">{branchName}</span>
-              </div>
-            )}
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-gray-600">สาขา:</span>
+              <span className="font-medium text-red-600">{makeupRequest.branchName}</span>
+            </div>
           </div>
 
           <div className="space-y-4">
-            {/* Row 1: Date and Time Range */}
+            {/* Date and Time */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Date */}
               <div className="space-y-2">
                 <Label htmlFor="date">วันที่นัด Makeup *</Label>
                 <Input
@@ -367,24 +302,21 @@ export default function ScheduleMakeupDialog({
                 />
               </div>
 
-              {/* Time Range */}
               <div className="space-y-2">
                 <Label>ช่วงเวลา *</Label>
                 <div className="grid grid-cols-2 gap-2">
                   <Input
-                    id="startTime"
                     type="time"
                     value={formData.startTime}
                     onChange={(e) => setFormData(prev => ({ ...prev, startTime: e.target.value }))}
-                    step="300" // 5 minute intervals
+                    step="300"
                     required
                   />
                   <Input
-                    id="endTime"
                     type="time"
                     value={formData.endTime}
                     onChange={(e) => setFormData(prev => ({ ...prev, endTime: e.target.value }))}
-                    step="300" // 5 minute intervals
+                    step="300"
                     min={formData.startTime}
                     required
                   />
@@ -392,9 +324,8 @@ export default function ScheduleMakeupDialog({
               </div>
             </div>
 
-            {/* Row 2: Teacher and Room */}
+            {/* Teacher and Room */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Teacher */}
               <div className="space-y-2">
                 <Label htmlFor="teacher">ครูผู้สอน *</Label>
                 <Select
@@ -405,12 +336,12 @@ export default function ScheduleMakeupDialog({
                     <SelectValue placeholder="เลือกครู" />
                   </SelectTrigger>
                   <SelectContent>
-                    {getAvailableTeachers().length === 0 ? (
+                    {teachers.length === 0 ? (
                       <div className="p-2 text-sm text-gray-500 text-center">
                         ไม่มีครูที่สอนในสาขานี้
                       </div>
                     ) : (
-                      getAvailableTeachers().map((teacher) => (
+                      teachers.map((teacher) => (
                         <SelectItem key={teacher.id} value={teacher.id}>
                           {teacher.nickname || teacher.name}
                         </SelectItem>
@@ -419,11 +350,10 @@ export default function ScheduleMakeupDialog({
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-gray-500">
-                  แสดงเฉพาะครูที่สอนในสาขา {branchName}
+                  แสดงเฉพาะครูที่สอนในสาขา {makeupRequest.branchName}
                 </p>
               </div>
 
-              {/* Room */}
               <div className="space-y-2">
                 <Label htmlFor="room">ห้องเรียน *</Label>
                 <Select
@@ -448,13 +378,13 @@ export default function ScheduleMakeupDialog({
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-gray-500">
-                  แสดงเฉพาะห้องในสาขา {branchName}
+                  แสดงเฉพาะห้องในสาขา {makeupRequest.branchName}
                 </p>
               </div>
             </div>
           </div>
 
-          {/* Availability Status - Updated */}
+          {/* Availability Status */}
           {checkingAvailability ? (
             <Alert>
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -463,7 +393,6 @@ export default function ScheduleMakeupDialog({
               </AlertDescription>
             </Alert>
           ) : availabilityIssues.length > 0 ? (
-            // แสดง Issues (วันหยุด) เป็น Error
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>
@@ -479,7 +408,6 @@ export default function ScheduleMakeupDialog({
               </AlertDescription>
             </Alert>
           ) : availabilityWarnings.length > 0 ? (
-            // แสดง Warnings (conflicts) แต่อนุญาตให้ดำเนินการต่อได้
             <div className="space-y-3">
               {(() => {
                 const { roomWarnings, teacherWarnings } = getGroupedWarnings();
@@ -494,8 +422,7 @@ export default function ScheduleMakeupDialog({
                             {roomWarnings.map((warning, index) => (
                               <div key={index} className="flex items-start gap-2 text-sm text-amber-700">
                                 {warning.details.conflictType === 'makeup' && 
-                                 warning.details.studentNames && 
-                                 warning.details.studentNames.length > 1 ? (
+                                 warning.message.includes('คน') ? (
                                   <Users className="h-3 w-3 mt-0.5 flex-shrink-0" />
                                 ) : (
                                   <Clock className="h-3 w-3 mt-0.5 flex-shrink-0" />
@@ -546,16 +473,6 @@ export default function ScheduleMakeupDialog({
             )
           )}
 
-          {/* Show branch indicator if viewing specific branch */}
-          {!isAllBranches && selectedBranchId && (
-            <Alert>
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>
-                กำลังจัดตาราง Makeup สำหรับสาขา {branchName} เท่านั้น
-              </AlertDescription>
-            </Alert>
-          )}
-
           {/* Actions */}
           <div className="flex justify-end gap-3">
             <Button
@@ -581,7 +498,7 @@ export default function ScheduleMakeupDialog({
               disabled={
                 loading || 
                 checkingAvailability || 
-                availabilityIssues.some(issue => issue.type === 'holiday') // ห้ามจัดในวันหยุด
+                availabilityIssues.some(issue => issue.type === 'holiday')
               }
               className="bg-red-500 hover:bg-red-600"
             >

@@ -1,4 +1,4 @@
-// lib/services/makeup.ts
+// lib/services/makeup.ts - Updated with Denormalized Data
 
 import { 
   collection, 
@@ -16,30 +16,63 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { MakeupClass } from '@/types/models';
-import { getClassSchedule, updateClassSchedule, getClasses } from './classes';
+import { getClassSchedule, updateClassSchedule, getClass } from './classes';
+import { getStudentWithParent } from './parents';
+import { getBranch } from './branches';
+import { getSubject } from './subjects';
 import { sendMakeupNotification } from './line-notifications';
 
 const COLLECTION_NAME = 'makeupClasses';
 
-// Get all makeup classes - FIXED VERSION
+// Get all makeup classes - Now with denormalized data! ✨
 export async function getMakeupClasses(branchId?: string | null): Promise<MakeupClass[]> {
   try {
-    const makeupQuery = query(
-      collection(db, COLLECTION_NAME),
-      orderBy('createdAt', 'desc')
-    );
+    let makeupQuery;
+    
+    if (branchId) {
+      // Query by branchId directly! 🚀
+      makeupQuery = query(
+        collection(db, COLLECTION_NAME),
+        where('branchId', '==', branchId),
+        orderBy('createdAt', 'desc')
+      );
+    } else {
+      makeupQuery = query(
+        collection(db, COLLECTION_NAME),
+        orderBy('createdAt', 'desc')
+      );
+    }
     
     const querySnapshot = await getDocs(makeupQuery);
     
-    let makeupClasses = querySnapshot.docs.map(doc => {
+    return querySnapshot.docs.map(doc => {
       const data = doc.data() as any;
       return {
         id: doc.id,
         type: data.type,
         originalClassId: data.originalClassId,
         originalScheduleId: data.originalScheduleId,
+        originalSessionNumber: data.originalSessionNumber,
+        originalSessionDate: data.originalSessionDate?.toDate(),
+        
+        // Denormalized data - ใช้ได้เลย! ✨
+        className: data.className || '',
+        classCode: data.classCode || '',
+        subjectId: data.subjectId || '',
+        subjectName: data.subjectName || '',
+        
         studentId: data.studentId,
+        studentName: data.studentName || '',
+        studentNickname: data.studentNickname || '',
+        
         parentId: data.parentId,
+        parentName: data.parentName || '',
+        parentPhone: data.parentPhone || '',
+        parentLineUserId: data.parentLineUserId,
+        
+        branchId: data.branchId || '',
+        branchName: data.branchName || '',
+        
         requestDate: data.requestDate?.toDate() || new Date(),
         requestedBy: data.requestedBy,
         reason: data.reason,
@@ -52,8 +85,10 @@ export async function getMakeupClasses(branchId?: string | null): Promise<Makeup
           startTime: data.makeupSchedule.startTime,
           endTime: data.makeupSchedule.endTime,
           teacherId: data.makeupSchedule.teacherId,
+          teacherName: data.makeupSchedule.teacherName,
           branchId: data.makeupSchedule.branchId,
           roomId: data.makeupSchedule.roomId,
+          roomName: data.makeupSchedule.roomName,
           confirmedAt: data.makeupSchedule.confirmedAt?.toDate(),
           confirmedBy: data.makeupSchedule.confirmedBy,
         } : undefined,
@@ -63,24 +98,8 @@ export async function getMakeupClasses(branchId?: string | null): Promise<Makeup
           checkedAt: data.attendance.checkedAt?.toDate() || new Date(),
           note: data.attendance.note,
         } : undefined,
-        originalSessionNumber: data.originalSessionNumber,
-        originalSessionDate: data.originalSessionDate?.toDate()
       } as MakeupClass;
     });
-    
-    // Filter by branch if specified
-    if (branchId) {
-      // Get all classes and filter by branch
-      const allClasses = await getClasses(branchId);
-      const branchClassIds = new Set(allClasses.map(c => c.id));
-      
-      // Filter makeups that belong to classes in this branch
-      makeupClasses = makeupClasses.filter(makeup => 
-        branchClassIds.has(makeup.originalClassId)
-      );
-    }
-    
-    return makeupClasses;
   } catch (error) {
     console.error('Error getting makeup classes:', error);
     throw error;
@@ -97,22 +116,60 @@ export async function getMakeupClassesByStudent(studentId: string): Promise<Make
     );
     const querySnapshot = await getDocs(q);
     
-    return querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      requestDate: doc.data().requestDate?.toDate() || new Date(),
-      createdAt: doc.data().createdAt?.toDate() || new Date(),
-      updatedAt: doc.data().updatedAt?.toDate(),
-      makeupSchedule: doc.data().makeupSchedule ? {
-        ...doc.data().makeupSchedule,
-        date: doc.data().makeupSchedule.date?.toDate() || new Date(),
-        confirmedAt: doc.data().makeupSchedule.confirmedAt?.toDate(),
-      } : undefined,
-      attendance: doc.data().attendance ? {
-        ...doc.data().attendance,
-        checkedAt: doc.data().attendance.checkedAt?.toDate() || new Date(),
-      } : undefined,
-    } as MakeupClass));
+    return querySnapshot.docs.map(doc => {
+      const data = doc.data() as any;
+      return {
+        id: doc.id,
+        type: data.type,
+        originalClassId: data.originalClassId,
+        originalScheduleId: data.originalScheduleId,
+        originalSessionNumber: data.originalSessionNumber,
+        originalSessionDate: data.originalSessionDate?.toDate(),
+        
+        className: data.className || '',
+        classCode: data.classCode || '',
+        subjectId: data.subjectId || '',
+        subjectName: data.subjectName || '',
+        
+        studentId: data.studentId,
+        studentName: data.studentName || '',
+        studentNickname: data.studentNickname || '',
+        
+        parentId: data.parentId,
+        parentName: data.parentName || '',
+        parentPhone: data.parentPhone || '',
+        parentLineUserId: data.parentLineUserId,
+        
+        branchId: data.branchId || '',
+        branchName: data.branchName || '',
+        
+        requestDate: data.requestDate?.toDate() || new Date(),
+        requestedBy: data.requestedBy,
+        reason: data.reason,
+        status: data.status,
+        notes: data.notes,
+        createdAt: data.createdAt?.toDate() || new Date(),
+        updatedAt: data.updatedAt?.toDate(),
+        makeupSchedule: data.makeupSchedule ? {
+          date: data.makeupSchedule.date?.toDate() || new Date(),
+          startTime: data.makeupSchedule.startTime,
+          endTime: data.makeupSchedule.endTime,
+          teacherId: data.makeupSchedule.teacherId,
+          teacherName: data.makeupSchedule.teacherName,
+          branchId: data.makeupSchedule.branchId,
+          roomId: data.makeupSchedule.roomId,
+          roomName: data.makeupSchedule.roomName,
+          confirmedAt: data.makeupSchedule.confirmedAt?.toDate(),
+          confirmedBy: data.makeupSchedule.confirmedBy,
+        } : undefined,
+        attendance: data.attendance ? {
+          status: data.attendance.status,
+          checkedBy: data.attendance.checkedBy,
+          checkedAt: data.attendance.checkedAt?.toDate() || new Date(),
+          note: data.attendance.note,
+        } : undefined,
+      } as MakeupClass;
+    });
   } catch (error) {
     console.error('Error getting makeup classes by student:', error);
     throw error;
@@ -129,22 +186,60 @@ export async function getMakeupClassesByClass(classId: string): Promise<MakeupCl
     );
     const querySnapshot = await getDocs(q);
     
-    return querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      requestDate: doc.data().requestDate?.toDate() || new Date(),
-      createdAt: doc.data().createdAt?.toDate() || new Date(),
-      updatedAt: doc.data().updatedAt?.toDate(),
-      makeupSchedule: doc.data().makeupSchedule ? {
-        ...doc.data().makeupSchedule,
-        date: doc.data().makeupSchedule.date?.toDate() || new Date(),
-        confirmedAt: doc.data().makeupSchedule.confirmedAt?.toDate(),
-      } : undefined,
-      attendance: doc.data().attendance ? {
-        ...doc.data().attendance,
-        checkedAt: doc.data().attendance.checkedAt?.toDate() || new Date(),
-      } : undefined,
-    } as MakeupClass));
+    return querySnapshot.docs.map(doc => {
+      const data = doc.data() as any;
+      return {
+        id: doc.id,
+        type: data.type,
+        originalClassId: data.originalClassId,
+        originalScheduleId: data.originalScheduleId,
+        originalSessionNumber: data.originalSessionNumber,
+        originalSessionDate: data.originalSessionDate?.toDate(),
+        
+        className: data.className || '',
+        classCode: data.classCode || '',
+        subjectId: data.subjectId || '',
+        subjectName: data.subjectName || '',
+        
+        studentId: data.studentId,
+        studentName: data.studentName || '',
+        studentNickname: data.studentNickname || '',
+        
+        parentId: data.parentId,
+        parentName: data.parentName || '',
+        parentPhone: data.parentPhone || '',
+        parentLineUserId: data.parentLineUserId,
+        
+        branchId: data.branchId || '',
+        branchName: data.branchName || '',
+        
+        requestDate: data.requestDate?.toDate() || new Date(),
+        requestedBy: data.requestedBy,
+        reason: data.reason,
+        status: data.status,
+        notes: data.notes,
+        createdAt: data.createdAt?.toDate() || new Date(),
+        updatedAt: data.updatedAt?.toDate(),
+        makeupSchedule: data.makeupSchedule ? {
+          date: data.makeupSchedule.date?.toDate() || new Date(),
+          startTime: data.makeupSchedule.startTime,
+          endTime: data.makeupSchedule.endTime,
+          teacherId: data.makeupSchedule.teacherId,
+          teacherName: data.makeupSchedule.teacherName,
+          branchId: data.makeupSchedule.branchId,
+          roomId: data.makeupSchedule.roomId,
+          roomName: data.makeupSchedule.roomName,
+          confirmedAt: data.makeupSchedule.confirmedAt?.toDate(),
+          confirmedBy: data.makeupSchedule.confirmedBy,
+        } : undefined,
+        attendance: data.attendance ? {
+          status: data.attendance.status,
+          checkedBy: data.attendance.checkedBy,
+          checkedAt: data.attendance.checkedAt?.toDate() || new Date(),
+          note: data.attendance.note,
+        } : undefined,
+      } as MakeupClass;
+    });
   } catch (error) {
     console.error('Error getting makeup classes by class:', error);
     throw error;
@@ -158,21 +253,56 @@ export async function getMakeupClass(id: string): Promise<MakeupClass | null> {
     const docSnap = await getDoc(docRef);
     
     if (docSnap.exists()) {
-      const data = docSnap.data();
+      const data = docSnap.data() as any;
       return {
         id: docSnap.id,
-        ...data,
+        type: data.type,
+        originalClassId: data.originalClassId,
+        originalScheduleId: data.originalScheduleId,
+        originalSessionNumber: data.originalSessionNumber,
+        originalSessionDate: data.originalSessionDate?.toDate(),
+        
+        className: data.className || '',
+        classCode: data.classCode || '',
+        subjectId: data.subjectId || '',
+        subjectName: data.subjectName || '',
+        
+        studentId: data.studentId,
+        studentName: data.studentName || '',
+        studentNickname: data.studentNickname || '',
+        
+        parentId: data.parentId,
+        parentName: data.parentName || '',
+        parentPhone: data.parentPhone || '',
+        parentLineUserId: data.parentLineUserId,
+        
+        branchId: data.branchId || '',
+        branchName: data.branchName || '',
+        
         requestDate: data.requestDate?.toDate() || new Date(),
+        requestedBy: data.requestedBy,
+        reason: data.reason,
+        status: data.status,
+        notes: data.notes,
         createdAt: data.createdAt?.toDate() || new Date(),
         updatedAt: data.updatedAt?.toDate(),
         makeupSchedule: data.makeupSchedule ? {
-          ...data.makeupSchedule,
           date: data.makeupSchedule.date?.toDate() || new Date(),
+          startTime: data.makeupSchedule.startTime,
+          endTime: data.makeupSchedule.endTime,
+          teacherId: data.makeupSchedule.teacherId,
+          teacherName: data.makeupSchedule.teacherName,
+          branchId: data.makeupSchedule.branchId,
+          roomId: data.makeupSchedule.roomId,
+          roomName: data.makeupSchedule.roomName,
           confirmedAt: data.makeupSchedule.confirmedAt?.toDate(),
+          confirmedBy: data.makeupSchedule.confirmedBy,
         } : undefined,
         attendance: data.attendance ? {
-          ...data.attendance,
+          status: data.attendance.status,
+          checkedBy: data.attendance.checkedBy,
           checkedAt: data.attendance.checkedAt?.toDate() || new Date(),
+          note: data.attendance.note,
         } : undefined,
       } as MakeupClass;
     }
@@ -207,11 +337,9 @@ export async function canCreateMakeup(
   bypassLimit: boolean = false
 ): Promise<{ allowed: boolean; currentCount: number; limit: number; message?: string }> {
   try {
-    // Get makeup settings
     const { getMakeupSettings } = await import('./settings');
     const settings = await getMakeupSettings();
     
-    // If auto-create is disabled and not bypassing, check limit
     if (!settings.autoCreateMakeup && !bypassLimit) {
       return {
         allowed: false,
@@ -221,10 +349,8 @@ export async function canCreateMakeup(
       };
     }
     
-    // Get current count
     const currentCount = await getMakeupCount(studentId, classId);
     
-    // If no limit set (0) or bypassing limit, always allow
     if (settings.makeupLimitPerCourse === 0 || bypassLimit) {
       return {
         allowed: true,
@@ -233,7 +359,6 @@ export async function canCreateMakeup(
       };
     }
     
-    // Check against limit
     const allowed = currentCount < settings.makeupLimitPerCourse;
     
     return {
@@ -244,7 +369,6 @@ export async function canCreateMakeup(
     };
   } catch (error) {
     console.error('Error checking makeup limit:', error);
-    // On error, allow creation to not block user
     return {
       allowed: true,
       currentCount: 0,
@@ -253,14 +377,13 @@ export async function canCreateMakeup(
   }
 }
 
-// Get makeup requests for specific schedules (NEW FUNCTION)
+// Get makeup requests for specific schedules
 export async function getMakeupRequestsBySchedules(
   studentId: string,
   classId: string,
   scheduleIds: string[]
 ): Promise<Record<string, MakeupClass>> {
   try {
-    // Query all makeup requests for this student and class
     const q = query(
       collection(db, COLLECTION_NAME),
       where('studentId', '==', studentId),
@@ -272,22 +395,57 @@ export async function getMakeupRequestsBySchedules(
     const makeupBySchedule: Record<string, MakeupClass> = {};
     
     querySnapshot.docs.forEach(doc => {
-      const data = doc.data();
+      const data = doc.data() as any;
       if (scheduleIds.includes(data.originalScheduleId)) {
         makeupBySchedule[data.originalScheduleId] = {
           id: doc.id,
-          ...data,
+          type: data.type,
+          originalClassId: data.originalClassId,
+          originalScheduleId: data.originalScheduleId,
+          originalSessionNumber: data.originalSessionNumber,
+          originalSessionDate: data.originalSessionDate?.toDate(),
+          
+          className: data.className || '',
+          classCode: data.classCode || '',
+          subjectId: data.subjectId || '',
+          subjectName: data.subjectName || '',
+          
+          studentId: data.studentId,
+          studentName: data.studentName || '',
+          studentNickname: data.studentNickname || '',
+          
+          parentId: data.parentId,
+          parentName: data.parentName || '',
+          parentPhone: data.parentPhone || '',
+          parentLineUserId: data.parentLineUserId,
+          
+          branchId: data.branchId || '',
+          branchName: data.branchName || '',
+          
           requestDate: data.requestDate?.toDate() || new Date(),
+          requestedBy: data.requestedBy,
+          reason: data.reason,
+          status: data.status,
+          notes: data.notes,
           createdAt: data.createdAt?.toDate() || new Date(),
           updatedAt: data.updatedAt?.toDate(),
           makeupSchedule: data.makeupSchedule ? {
-            ...data.makeupSchedule,
             date: data.makeupSchedule.date?.toDate() || new Date(),
+            startTime: data.makeupSchedule.startTime,
+            endTime: data.makeupSchedule.endTime,
+            teacherId: data.makeupSchedule.teacherId,
+            teacherName: data.makeupSchedule.teacherName,
+            branchId: data.makeupSchedule.branchId,
+            roomId: data.makeupSchedule.roomId,
+            roomName: data.makeupSchedule.roomName,
             confirmedAt: data.makeupSchedule.confirmedAt?.toDate(),
+            confirmedBy: data.makeupSchedule.confirmedBy,
           } : undefined,
           attendance: data.attendance ? {
-            ...data.attendance,
+            status: data.attendance.status,
+            checkedBy: data.attendance.checkedBy,
             checkedAt: data.attendance.checkedAt?.toDate() || new Date(),
+            note: data.attendance.note,
           } : undefined,
         } as MakeupClass;
       }
@@ -300,7 +458,7 @@ export async function getMakeupRequestsBySchedules(
   }
 }
 
-// Check if makeup already exists for a schedule (NEW FUNCTION)
+// Check if makeup already exists for a schedule
 export async function checkMakeupExists(
   studentId: string,
   classId: string,
@@ -317,22 +475,57 @@ export async function checkMakeupExists(
     
     const querySnapshot = await getDocs(q);
     if (querySnapshot.size > 0) {
-      const doc = querySnapshot.docs[0];
-      const data = doc.data();
+      const docData = querySnapshot.docs[0];
+      const data = docData.data() as any;
       return {
-        id: doc.id,
-        ...data,
+        id: docData.id,
+        type: data.type,
+        originalClassId: data.originalClassId,
+        originalScheduleId: data.originalScheduleId,
+        originalSessionNumber: data.originalSessionNumber,
+        originalSessionDate: data.originalSessionDate?.toDate(),
+        
+        className: data.className || '',
+        classCode: data.classCode || '',
+        subjectId: data.subjectId || '',
+        subjectName: data.subjectName || '',
+        
+        studentId: data.studentId,
+        studentName: data.studentName || '',
+        studentNickname: data.studentNickname || '',
+        
+        parentId: data.parentId,
+        parentName: data.parentName || '',
+        parentPhone: data.parentPhone || '',
+        parentLineUserId: data.parentLineUserId,
+        
+        branchId: data.branchId || '',
+        branchName: data.branchName || '',
+        
         requestDate: data.requestDate?.toDate() || new Date(),
+        requestedBy: data.requestedBy,
+        reason: data.reason,
+        status: data.status,
+        notes: data.notes,
         createdAt: data.createdAt?.toDate() || new Date(),
         updatedAt: data.updatedAt?.toDate(),
         makeupSchedule: data.makeupSchedule ? {
-          ...data.makeupSchedule,
           date: data.makeupSchedule.date?.toDate() || new Date(),
+          startTime: data.makeupSchedule.startTime,
+          endTime: data.makeupSchedule.endTime,
+          teacherId: data.makeupSchedule.teacherId,
+          teacherName: data.makeupSchedule.teacherName,
+          branchId: data.makeupSchedule.branchId,
+          roomId: data.makeupSchedule.roomId,
+          roomName: data.makeupSchedule.roomName,
           confirmedAt: data.makeupSchedule.confirmedAt?.toDate(),
+          confirmedBy: data.makeupSchedule.confirmedBy,
         } : undefined,
         attendance: data.attendance ? {
-          ...data.attendance,
+          status: data.attendance.status,
+          checkedBy: data.attendance.checkedBy,
           checkedAt: data.attendance.checkedAt?.toDate() || new Date(),
+          note: data.attendance.note,
         } : undefined,
       } as MakeupClass;
     }
@@ -343,12 +536,12 @@ export async function checkMakeupExists(
   }
 }
 
-// Create makeup class request
+// Create makeup class request - NOW WITH DENORMALIZED DATA! ✨
 export async function createMakeupRequest(
-  data: Omit<MakeupClass, 'id' | 'createdAt' | 'updatedAt'>
+  data: Omit<MakeupClass, 'id' | 'createdAt' | 'updatedAt' | 'className' | 'classCode' | 'subjectId' | 'subjectName' | 'studentName' | 'studentNickname' | 'parentName' | 'parentPhone' | 'parentLineUserId' | 'branchId' | 'branchName'>
 ): Promise<string> {
   try {
-    // Check if makeup already exists for this schedule
+    // Check if makeup already exists
     const existingMakeup = await checkMakeupExists(
       data.studentId,
       data.originalClassId,
@@ -359,42 +552,91 @@ export async function createMakeupRequest(
       throw new Error('Makeup request already exists for this schedule');
     }
     
+    // 🚀 Load all required data for denormalization
+    const [student, classData, schedule] = await Promise.all([
+      getStudentWithParent(data.studentId),
+      getClass(data.originalClassId),
+      getClassSchedule(data.originalClassId, data.originalScheduleId)
+    ]);
+    
+    if (!student) {
+      throw new Error('Student not found');
+    }
+    
+    if (!classData) {
+      throw new Error('Class not found');
+    }
+    
+    // Load additional data
+    const [subject, branch] = await Promise.all([
+      getSubject(classData.subjectId),
+      getBranch(classData.branchId)
+    ]);
+    
     const batch = writeBatch(db);
     
-    // 1. Create makeup request
+    // 1. Create makeup request with denormalized data ✨
     const docRef = doc(collection(db, COLLECTION_NAME));
     batch.set(docRef, {
-      ...data,
+      // Original data
+      type: data.type,
+      originalClassId: data.originalClassId,
+      originalScheduleId: data.originalScheduleId,
+      originalSessionNumber: schedule?.sessionNumber,
+      originalSessionDate: schedule?.sessionDate ? Timestamp.fromDate(schedule.sessionDate) : null,
+      
+      // Denormalized class data ✨
+      className: classData.name,
+      classCode: classData.code,
+      subjectId: classData.subjectId,
+      subjectName: subject?.name || '',
+      
+      // Student data
+      studentId: data.studentId,
+      studentName: student.name,
+      studentNickname: student.nickname,
+      
+      // Parent data
+      parentId: student.parentId,
+      parentName: student.parentName,
+      parentPhone: student.parentPhone,
+      parentLineUserId: student.parentLineUserId,
+      
+      // Branch data
+      branchId: classData.branchId,
+      branchName: branch?.name || '',
+      
+      // Request info
       requestDate: Timestamp.fromDate(data.requestDate),
+      requestedBy: data.requestedBy,
+      reason: data.reason,
       status: 'pending',
+      notes: data.notes,
       createdAt: serverTimestamp(),
     });
     
-    // 2. Update original schedule attendance to absent
-    if (data.originalScheduleId) {
-      const scheduleData = await getClassSchedule(data.originalClassId, data.originalScheduleId);
-      if (scheduleData) {
-        const updatedAttendance = scheduleData.attendance || [];
-        const studentIndex = updatedAttendance.findIndex(a => a.studentId === data.studentId);
-        
-        if (studentIndex >= 0) {
-          updatedAttendance[studentIndex] = {
-            studentId: data.studentId,
-            status: 'absent',
-            note: `Makeup requested: ${data.reason}`
-          };
-        } else {
-          updatedAttendance.push({
-            studentId: data.studentId,
-            status: 'absent',
-            note: `Makeup requested: ${data.reason}`
-          });
-        }
-        
-        await updateClassSchedule(data.originalClassId, data.originalScheduleId, {
-          attendance: updatedAttendance
+    // 2. Update original schedule attendance
+    if (schedule) {
+      const updatedAttendance = schedule.attendance || [];
+      const studentIndex = updatedAttendance.findIndex(a => a.studentId === data.studentId);
+      
+      if (studentIndex >= 0) {
+        updatedAttendance[studentIndex] = {
+          studentId: data.studentId,
+          status: 'absent',
+          note: `Makeup requested: ${data.reason}`
+        };
+      } else {
+        updatedAttendance.push({
+          studentId: data.studentId,
+          status: 'absent',
+          note: `Makeup requested: ${data.reason}`
         });
       }
+      
+      await updateClassSchedule(data.originalClassId, data.originalScheduleId, {
+        attendance: updatedAttendance
+      });
     }
     
     await batch.commit();
@@ -411,26 +653,33 @@ export async function scheduleMakeupClass(
   scheduleData: MakeupClass['makeupSchedule'] & { confirmedBy: string }
 ): Promise<void> {
   try {
+    // Load teacher and room names for denormalization
+    const [teacher, room] = await Promise.all([
+      import('./teachers').then(m => m.getTeacher(scheduleData.teacherId)),
+      import('./rooms').then(m => m.getRoom(scheduleData.branchId, scheduleData.roomId))
+    ]);
+    
     const docRef = doc(db, COLLECTION_NAME, makeupId);
     
-    // Update makeup class
+    // Update with denormalized teacher/room names ✨
     await updateDoc(docRef, {
       status: 'scheduled',
       makeupSchedule: {
         ...scheduleData,
         date: Timestamp.fromDate(scheduleData.date),
+        teacherName: teacher?.nickname || teacher?.name,
+        roomName: room?.name,
         confirmedAt: serverTimestamp(),
       },
       updatedAt: serverTimestamp(),
     });
     
-    // Send LINE notification for scheduled makeup
+    // Send LINE notification
     try {
       await sendMakeupNotification(makeupId, 'scheduled');
       console.log(`LINE notification sent for scheduled makeup ${makeupId}`);
     } catch (notificationError) {
       console.error('Error sending LINE notification:', notificationError);
-      // Don't throw - notification failure shouldn't break the scheduling
     }
   } catch (error) {
     console.error('Error scheduling makeup class:', error);
@@ -494,25 +743,61 @@ export async function getUpcomingMakeupClasses(
     const q = query(
       collection(db, COLLECTION_NAME),
       where('status', '==', 'scheduled'),
-      where('makeupSchedule.branchId', '==', branchId),
+      where('branchId', '==', branchId), // Use denormalized branchId! 🚀
       where('makeupSchedule.date', '>=', Timestamp.fromDate(startDate)),
       where('makeupSchedule.date', '<=', Timestamp.fromDate(endDate))
     );
     
     const querySnapshot = await getDocs(q);
     
-    return querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      requestDate: doc.data().requestDate?.toDate() || new Date(),
-      createdAt: doc.data().createdAt?.toDate() || new Date(),
-      updatedAt: doc.data().updatedAt?.toDate(),
-      makeupSchedule: doc.data().makeupSchedule ? {
-        ...doc.data().makeupSchedule,
-        date: doc.data().makeupSchedule.date?.toDate() || new Date(),
-        confirmedAt: doc.data().makeupSchedule.confirmedAt?.toDate(),
-      } : undefined,
-    } as MakeupClass));
+    return querySnapshot.docs.map(doc => {
+      const data = doc.data() as any;
+      return {
+        id: doc.id,
+        type: data.type,
+        originalClassId: data.originalClassId,
+        originalScheduleId: data.originalScheduleId,
+        originalSessionNumber: data.originalSessionNumber,
+        originalSessionDate: data.originalSessionDate?.toDate(),
+        
+        className: data.className || '',
+        classCode: data.classCode || '',
+        subjectId: data.subjectId || '',
+        subjectName: data.subjectName || '',
+        
+        studentId: data.studentId,
+        studentName: data.studentName || '',
+        studentNickname: data.studentNickname || '',
+        
+        parentId: data.parentId,
+        parentName: data.parentName || '',
+        parentPhone: data.parentPhone || '',
+        parentLineUserId: data.parentLineUserId,
+        
+        branchId: data.branchId || '',
+        branchName: data.branchName || '',
+        
+        requestDate: data.requestDate?.toDate() || new Date(),
+        requestedBy: data.requestedBy,
+        reason: data.reason,
+        status: data.status,
+        notes: data.notes,
+        createdAt: data.createdAt?.toDate() || new Date(),
+        updatedAt: data.updatedAt?.toDate(),
+        makeupSchedule: data.makeupSchedule ? {
+          date: data.makeupSchedule.date?.toDate() || new Date(),
+          startTime: data.makeupSchedule.startTime,
+          endTime: data.makeupSchedule.endTime,
+          teacherId: data.makeupSchedule.teacherId,
+          teacherName: data.makeupSchedule.teacherName,
+          branchId: data.makeupSchedule.branchId,
+          roomId: data.makeupSchedule.roomId,
+          roomName: data.makeupSchedule.roomName,
+          confirmedAt: data.makeupSchedule.confirmedAt?.toDate(),
+          confirmedBy: data.makeupSchedule.confirmedBy,
+        } : undefined,
+      } as MakeupClass;
+    });
   } catch (error) {
     console.error('Error getting upcoming makeup classes:', error);
     throw error;
@@ -537,25 +822,61 @@ export async function getMakeupClassesForReminder(tomorrowDate: Date): Promise<M
     
     const querySnapshot = await getDocs(q);
     
-    return querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      requestDate: doc.data().requestDate?.toDate() || new Date(),
-      createdAt: doc.data().createdAt?.toDate() || new Date(),
-      updatedAt: doc.data().updatedAt?.toDate(),
-      makeupSchedule: doc.data().makeupSchedule ? {
-        ...doc.data().makeupSchedule,
-        date: doc.data().makeupSchedule.date?.toDate() || new Date(),
-        confirmedAt: doc.data().makeupSchedule.confirmedAt?.toDate(),
-      } : undefined,
-    } as MakeupClass));
+    return querySnapshot.docs.map(doc => {
+      const data = doc.data() as any;
+      return {
+        id: doc.id,
+        type: data.type,
+        originalClassId: data.originalClassId,
+        originalScheduleId: data.originalScheduleId,
+        originalSessionNumber: data.originalSessionNumber,
+        originalSessionDate: data.originalSessionDate?.toDate(),
+        
+        className: data.className || '',
+        classCode: data.classCode || '',
+        subjectId: data.subjectId || '',
+        subjectName: data.subjectName || '',
+        
+        studentId: data.studentId,
+        studentName: data.studentName || '',
+        studentNickname: data.studentNickname || '',
+        
+        parentId: data.parentId,
+        parentName: data.parentName || '',
+        parentPhone: data.parentPhone || '',
+        parentLineUserId: data.parentLineUserId,
+        
+        branchId: data.branchId || '',
+        branchName: data.branchName || '',
+        
+        requestDate: data.requestDate?.toDate() || new Date(),
+        requestedBy: data.requestedBy,
+        reason: data.reason,
+        status: data.status,
+        notes: data.notes,
+        createdAt: data.createdAt?.toDate() || new Date(),
+        updatedAt: data.updatedAt?.toDate(),
+        makeupSchedule: data.makeupSchedule ? {
+          date: data.makeupSchedule.date?.toDate() || new Date(),
+          startTime: data.makeupSchedule.startTime,
+          endTime: data.makeupSchedule.endTime,
+          teacherId: data.makeupSchedule.teacherId,
+          teacherName: data.makeupSchedule.teacherName,
+          branchId: data.makeupSchedule.branchId,
+          roomId: data.makeupSchedule.roomId,
+          roomName: data.makeupSchedule.roomName,
+          confirmedAt: data.makeupSchedule.confirmedAt?.toDate(),
+          confirmedBy: data.makeupSchedule.confirmedBy,
+        } : undefined,
+      } as MakeupClass;
+    });
   } catch (error) {
     console.error('Error getting makeup classes for reminder:', error);
     return [];
   }
 }
 
-// Update makeup attendance (NEW FUNCTION)
+// Update makeup attendance
 export async function updateMakeupAttendance(
   makeupId: string,
   attendance: {
@@ -567,13 +888,11 @@ export async function updateMakeupAttendance(
   try {
     const docRef = doc(db, COLLECTION_NAME, makeupId);
     
-    // Get current makeup data
     const makeup = await getMakeupClass(makeupId);
     if (!makeup) {
       throw new Error('Makeup class not found');
     }
     
-    // Only allow updating if already completed
     if (makeup.status !== 'completed') {
       throw new Error('Can only update attendance for completed makeup classes');
     }
@@ -591,7 +910,7 @@ export async function updateMakeupAttendance(
   }
 }
 
-// Revert makeup to scheduled status (NEW FUNCTION)
+// Revert makeup to scheduled status
 export async function revertMakeupToScheduled(
   makeupId: string,
   revertedBy: string,
@@ -600,20 +919,17 @@ export async function revertMakeupToScheduled(
   try {
     const docRef = doc(db, COLLECTION_NAME, makeupId);
     
-    // Get current makeup data
     const makeup = await getMakeupClass(makeupId);
     if (!makeup) {
       throw new Error('Makeup class not found');
     }
     
-    // Only allow reverting if completed
     if (makeup.status !== 'completed') {
       throw new Error('Can only revert completed makeup classes');
     }
     
     const batch = writeBatch(db);
     
-    // Update makeup status back to scheduled
     batch.update(docRef, {
       status: 'scheduled',
       attendance: null,
@@ -621,7 +937,6 @@ export async function revertMakeupToScheduled(
       notes: `${makeup.notes || ''}\n[${new Date().toLocaleDateString('th-TH')}] ยกเลิกการบันทึกเข้าเรียน: ${reason} (โดย ${revertedBy})`
     });
     
-    // Create revert log
     const logRef = doc(collection(db, 'auditLogs'));
     batch.set(logRef, {
       type: 'makeup_attendance_reverted',
@@ -642,39 +957,34 @@ export async function revertMakeupToScheduled(
   }
 }
 
+// Delete makeup class
 export async function deleteMakeupClass(
   makeupId: string,
   deletedBy: string,
   reason?: string
 ): Promise<void> {
   try {
-    // Get makeup details first
     const makeup = await getMakeupClass(makeupId);
     if (!makeup) {
       throw new Error('Makeup class not found');
     }
 
-    // Only allow deletion of pending or scheduled status
     if (makeup.status === 'completed') {
       throw new Error('Cannot delete completed makeup class');
     }
 
     const batch = writeBatch(db);
 
-    // 1. Delete the makeup document
     const makeupRef = doc(db, COLLECTION_NAME, makeupId);
     batch.delete(makeupRef);
 
-    // 2. Update original schedule attendance if needed
     if (makeup.originalScheduleId && makeup.originalClassId) {
       const scheduleData = await getClassSchedule(makeup.originalClassId, makeup.originalScheduleId);
       if (scheduleData && scheduleData.attendance) {
-        // Remove or update the attendance record
         const updatedAttendance = scheduleData.attendance.filter(
           a => a.studentId !== makeup.studentId
         );
         
-        // Update the schedule
         const scheduleRef = doc(db, 'classes', makeup.originalClassId, 'schedules', makeup.originalScheduleId);
         batch.update(scheduleRef, {
           attendance: updatedAttendance
@@ -682,7 +992,6 @@ export async function deleteMakeupClass(
       }
     }
 
-    // 3. Create deletion log (optional - in a separate collection)
     const logRef = doc(collection(db, 'deletionLogs'));
     batch.set(logRef, {
       type: 'makeup_class',
@@ -692,7 +1001,9 @@ export async function deleteMakeupClass(
       reason: reason || 'No reason provided',
       originalData: {
         studentId: makeup.studentId,
+        studentName: makeup.studentName,
         classId: makeup.originalClassId,
+        className: makeup.className,
         scheduleId: makeup.originalScheduleId,
         status: makeup.status,
         requestDate: makeup.requestDate
@@ -706,6 +1017,7 @@ export async function deleteMakeupClass(
   }
 }
 
+// Check teacher availability
 export async function checkTeacherAvailability(
   teacherId: string,
   date: Date,
@@ -716,7 +1028,6 @@ export async function checkTeacherAvailability(
   excludeMakeupId?: string
 ): Promise<{ available: boolean; reason?: string }> {
   try {
-    // Use centralized availability checker
     const { checkAvailability } = await import('../utils/availability');
     
     const result = await checkAvailability({
@@ -731,7 +1042,6 @@ export async function checkTeacherAvailability(
     });
     
     if (!result.available) {
-      // Return the first issue as reason
       const firstIssue = result.reasons[0];
       return {
         available: false,
@@ -763,22 +1073,57 @@ export async function getMakeupByOriginalSchedule(
     
     const querySnapshot = await getDocs(q);
     if (querySnapshot.size > 0) {
-      const doc = querySnapshot.docs[0];
-      const data = doc.data();
+      const docData = querySnapshot.docs[0];
+      const data = docData.data() as any;
       return {
-        id: doc.id,
-        ...data,
+        id: docData.id,
+        type: data.type,
+        originalClassId: data.originalClassId,
+        originalScheduleId: data.originalScheduleId,
+        originalSessionNumber: data.originalSessionNumber,
+        originalSessionDate: data.originalSessionDate?.toDate(),
+        
+        className: data.className || '',
+        classCode: data.classCode || '',
+        subjectId: data.subjectId || '',
+        subjectName: data.subjectName || '',
+        
+        studentId: data.studentId,
+        studentName: data.studentName || '',
+        studentNickname: data.studentNickname || '',
+        
+        parentId: data.parentId,
+        parentName: data.parentName || '',
+        parentPhone: data.parentPhone || '',
+        parentLineUserId: data.parentLineUserId,
+        
+        branchId: data.branchId || '',
+        branchName: data.branchName || '',
+        
         requestDate: data.requestDate?.toDate() || new Date(),
+        requestedBy: data.requestedBy,
+        reason: data.reason,
+        status: data.status,
+        notes: data.notes,
         createdAt: data.createdAt?.toDate() || new Date(),
         updatedAt: data.updatedAt?.toDate(),
         makeupSchedule: data.makeupSchedule ? {
-          ...data.makeupSchedule,
           date: data.makeupSchedule.date?.toDate() || new Date(),
+          startTime: data.makeupSchedule.startTime,
+          endTime: data.makeupSchedule.endTime,
+          teacherId: data.makeupSchedule.teacherId,
+          teacherName: data.makeupSchedule.teacherName,
+          branchId: data.makeupSchedule.branchId,
+          roomId: data.makeupSchedule.roomId,
+          roomName: data.makeupSchedule.roomName,
           confirmedAt: data.makeupSchedule.confirmedAt?.toDate(),
+          confirmedBy: data.makeupSchedule.confirmedBy,
         } : undefined,
         attendance: data.attendance ? {
-          ...data.attendance,
+          status: data.attendance.status,
+          checkedBy: data.attendance.checkedBy,
           checkedAt: data.attendance.checkedAt?.toDate() || new Date(),
+          note: data.attendance.note,
         } : undefined,
       } as MakeupClass;
     }
@@ -789,7 +1134,7 @@ export async function getMakeupByOriginalSchedule(
   }
 }
 
-// Delete makeup class (soft delete for completed, hard delete for pending/scheduled)
+// Delete makeup class for schedule
 export async function deleteMakeupForSchedule(
   studentId: string,
   classId: string,
@@ -802,10 +1147,8 @@ export async function deleteMakeupForSchedule(
     if (!makeup) return;
 
     if (makeup.status === 'completed') {
-      // For completed makeup, just update status to cancelled
       await cancelMakeupClass(makeup.id, reason, deletedBy);
     } else {
-      // For pending/scheduled, delete the makeup
       await deleteMakeupClass(makeup.id, deletedBy, reason);
     }
   } catch (error) {

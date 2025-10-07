@@ -369,42 +369,74 @@ export interface RoomAvailabilityResult {
   }[];
 }
 
-// Makeup Class Types
+// Makeup Class Types - Updated with Denormalized Data
 export interface MakeupClass {
   id: string;
-  type: 'scheduled' | 'ad-hoc'; // ขอล่วงหน้า หรือ ขอหลังขาดเรียน
-  originalClassId: string; // คลาสเดิม
-  originalScheduleId: string; // คาบเรียนเดิม (schedule id)
-  studentId: string; // นักเรียนที่ขอ makeup
-  parentId: string; // ผู้ปกครอง
-  requestDate: Date; // วันที่ขอ
-  requestedBy: string; // user id ของคนที่สร้าง request
-  reason: string; // เหตุผลที่ขาด
+  type: 'scheduled' | 'ad-hoc';
+  
+  // Original Class Info
+  originalClassId: string;
+  originalScheduleId: string;
+  originalSessionNumber?: number;
+  originalSessionDate?: Date;
+  
+  // Denormalized Class Data ✨
+  className: string;              // เพิ่ม: ชื่อคลาสเดิม
+  classCode: string;              // เพิ่ม: รหัสคลาสเดิม
+  subjectId: string;              // เพิ่ม: วิชา
+  subjectName: string;            // เพิ่ม: ชื่อวิชา
+  
+  // Student Info
+  studentId: string;
+  
+  // Denormalized Student Data ✨
+  studentName: string;            // เพิ่ม: ชื่อเต็มนักเรียน
+  studentNickname: string;        // เพิ่ม: ชื่อเล่น
+  
+  // Parent Info
+  parentId: string;
+  
+  // Denormalized Parent Data ✨
+  parentName: string;             // เพิ่ม: ชื่อผู้ปกครอง
+  parentPhone: string;            // เพิ่ม: เบอร์ผู้ปกครอง
+  parentLineUserId?: string;      // เพิ่ม: LINE User ID (สำหรับส่ง notification)
+  
+  // Branch Info - เพิ่มทั้ง section ✨
+  branchId: string;               // เพิ่ม: สาขาที่เรียน
+  branchName: string;             // เพิ่ม: ชื่อสาขา
+  
+  // Request Info
+  requestDate: Date;
+  requestedBy: string;
+  reason: string;
   status: 'pending' | 'scheduled' | 'completed' | 'cancelled';
   
-  // เพิ่ม fields ที่หายไป
-  originalSessionNumber?: number; // ครั้งที่ของคลาสเดิม
-  originalSessionDate?: Date; // วันที่เรียนเดิม
-  
-  makeupSchedule?: { // ข้อมูลการนัด makeup (อาจยังไม่มีถ้า status = pending)
+  // Makeup Schedule
+  makeupSchedule?: {
     date: Date;
     startTime: string;
     endTime: string;
-    teacherId: string; // ครูที่สอน (อาจไม่ใช่คนเดิม)
+    teacherId: string;
+    teacherName?: string;         // เพิ่ม: ชื่อครู (optional)
     branchId: string;
     roomId: string;
+    roomName?: string;            // เพิ่ม: ชื่อห้อง (optional)
     confirmedAt?: Date;
     confirmedBy?: string;
   };
-  attendance?: { // ผลการเข้าเรียน
+  
+  // Attendance
+  attendance?: {
     status: 'present' | 'absent';
     checkedBy: string;
     checkedAt: Date;
     note?: string;
   };
+  
+  // Metadata
   createdAt: Date;
   updatedAt?: Date;
-  notes?: string; // หมายเหตุเพิ่มเติม
+  notes?: string;
 }
 
 export interface LinkToken {
