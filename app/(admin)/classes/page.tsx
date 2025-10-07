@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Class, Branch, Subject, Teacher } from '@/types/models';
+import { Class } from '@/types/models';
 import { getClasses, deleteClass, batchUpdateClassStatuses } from '@/lib/services/classes';
 import { getActiveBranches } from '@/lib/services/branches';
 import { getActiveSubjects } from '@/lib/services/subjects';
@@ -12,14 +12,10 @@ import { Button } from '@/components/ui/button';
 import { 
   Plus, 
   Calendar, 
-  Users, 
-  Clock, 
-  MapPin, 
   Trash2, 
   Edit, 
   Eye,
   Search,
-  Filter,
   MoreHorizontal,
   RefreshCw,
   CheckCircle,
@@ -67,6 +63,7 @@ import { ActionButton } from '@/components/ui/action-button';
 import { PermissionGuard } from '@/components/auth/permission-guard';
 import { useAuth } from '@/hooks/useAuth';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Pagination, usePagination } from '@/components/ui/pagination';
 
 const statusColors = {
   'draft': 'bg-gray-100 text-gray-700',
@@ -84,13 +81,12 @@ const statusLabels = {
   'cancelled': 'ยกเลิก',
 };
 
-// Cache key constants
-const QUERY_KEYS = {
-  classes: (branchId?: string | null) => ['classes', branchId],
-  branches: ['branches', 'active'],
-  subjects: ['subjects', 'active'],
-  teachers: (branchId?: string | null) => ['teachers', 'active', branchId],
-};
+// ============================================
+// 🎨 Mini Skeleton Components
+// ============================================
+const InlineTextSkeleton = ({ width = "w-20" }: { width?: string }) => (
+  <Skeleton className={`h-4 ${width}`} />
+);
 
 export default function ClassesPage() {
   const { selectedBranchId, isAllBranches } = useBranch();
@@ -109,27 +105,45 @@ export default function ClassesPage() {
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [selectedSubject, setSelectedSubject] = useState<string>('all');
 
-  // Optimized queries with React Query
+  // ============================================
+  // 🎯 Pagination Hook
+  // ============================================
+  const {
+    currentPage,
+    pageSize,
+    handlePageChange,
+    handlePageSizeChange,
+    resetPagination,
+    getPaginatedData,
+    totalPages: calculateTotalPages
+  } = usePagination(20);
+
+  // ============================================
+  // 🎯 Query 1: Classes (Load First)
+  // ============================================
   const { data: classes = [], isLoading: loadingClasses } = useQuery({
-    queryKey: QUERY_KEYS.classes(selectedBranchId),
+    queryKey: ['classes', selectedBranchId],
     queryFn: () => getClasses(selectedBranchId),
     staleTime: 60000, // 1 minute
   });
 
-  const { data: branches = [] } = useQuery({
-    queryKey: QUERY_KEYS.branches,
+  // ============================================
+  // 🎯 Query 2-4: Supporting Data (Load After)
+  // ============================================
+  const { data: branches = [], isLoading: loadingBranches } = useQuery({
+    queryKey: ['branches', 'active'],
     queryFn: getActiveBranches,
-    staleTime: 300000, // 5 minutes
+    staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
-  const { data: subjects = [] } = useQuery({
-    queryKey: QUERY_KEYS.subjects,
+  const { data: subjects = [], isLoading: loadingSubjects } = useQuery({
+    queryKey: ['subjects', 'active'],
     queryFn: getActiveSubjects,
-    staleTime: 300000, // 5 minutes
+    staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
-  const { data: teachers = [] } = useQuery({
-    queryKey: QUERY_KEYS.teachers(selectedBranchId),
+  const { data: teachers = [], isLoading: loadingTeachers } = useQuery({
+    queryKey: ['teachers', 'active', selectedBranchId],
     queryFn: () => getActiveTeachers(selectedBranchId),
     staleTime: 60000, // 1 minute
   });
@@ -182,6 +196,18 @@ export default function ClassesPage() {
     });
   }, [classes, searchTerm, selectedStatus, selectedSubject, getSubjectName, getTeacherName, getBranchName]);
 
+  // ============================================
+  // 🎯 Paginated Classes
+  // ============================================
+  const paginatedClasses = useMemo(() => {
+    return getPaginatedData(filteredClasses);
+  }, [filteredClasses, getPaginatedData]);
+
+  // Calculate total pages
+  const totalPages = useMemo(() => {
+    return calculateTotalPages(filteredClasses.length);
+  }, [filteredClasses.length, calculateTotalPages]);
+
   // Calculate statistics with memoization
   const stats = useMemo(() => ({
     total: classes.length,
@@ -191,13 +217,19 @@ export default function ClassesPage() {
     enrolledSeats: classes.reduce((sum, c) => sum + c.enrolledCount, 0),
   }), [classes]);
 
+  // ============================================
+  // 🎯 Reset Pagination on Filter Change
+  // ============================================
+  useEffect(() => {
+    resetPagination();
+  }, [selectedBranchId, selectedStatus, selectedSubject, searchTerm, resetPagination]);
+
   const handleDeleteClass = async (classId: string, className: string) => {
     setDeletingId(classId);
     try {
       await deleteClass(classId);
       toast.success(`ลบคลาส ${className} เรียบร้อยแล้ว`);
-      // Invalidate query to refresh data
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.classes(selectedBranchId) });
+      queryClient.invalidateQueries({ queryKey: ['classes', selectedBranchId] });
     } catch (error: any) {
       console.error('Error deleting class:', error);
       if (error.message === 'Cannot delete class with enrolled students') {
@@ -220,8 +252,7 @@ export default function ClassesPage() {
       
       if (result.updated > 0) {
         toast.success(`อัปเดตสถานะคลาสสำเร็จ ${result.updated} คลาส`);
-        // Invalidate query to refresh data
-        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.classes(selectedBranchId) });
+        queryClient.invalidateQueries({ queryKey: ['classes', selectedBranchId] });
       } else {
         toast.info('ไม่มีคลาสที่ต้องอัปเดตสถานะ');
       }
@@ -237,7 +268,11 @@ export default function ClassesPage() {
     }
   };
 
-  // Loading state
+  // ============================================
+  // 🎨 Loading States (Progressive)
+  // ============================================
+  
+  // Phase 1: Classes Loading (Show skeleton)
   if (loadingClasses) {
     return (
       <div className="space-y-6">
@@ -302,7 +337,12 @@ export default function ClassesPage() {
               <span className="text-red-600 text-lg ml-2">(เฉพาะสาขาที่เลือก)</span>
             )}
           </h1>
-          <p className="text-gray-600 mt-2">จัดการตารางเรียนและคลาสทั้งหมด</p>
+          <p className="text-gray-600 mt-2">
+            จัดการตารางเรียนและคลาสทั้งหมด
+            {(loadingSubjects || loadingTeachers || loadingBranches) && (
+              <span className="text-orange-500 ml-2">(กำลังโหลดข้อมูลเพิ่มเติม...)</span>
+            )}
+          </p>
         </div>
         <div className="flex gap-2">
           {isSuperAdmin() && (
@@ -428,21 +468,26 @@ export default function ClassesPage() {
               </div>
             </div>
 
-            {/* Filters */}
+            {/* Subject Filter */}
             <Select value={selectedSubject} onValueChange={setSelectedSubject}>
               <SelectTrigger className="w-[200px]">
                 <SelectValue placeholder="เลือกวิชา" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">ทุกวิชา</SelectItem>
-                {subjects.map(subject => (
-                  <SelectItem key={subject.id} value={subject.id}>
-                    {subject.name}
-                  </SelectItem>
-                ))}
+                {loadingSubjects ? (
+                  <SelectItem value="loading" disabled>กำลังโหลด...</SelectItem>
+                ) : (
+                  subjects.map(subject => (
+                    <SelectItem key={subject.id} value={subject.id}>
+                      {subject.name}
+                    </SelectItem>
+                  ))
+                )}
               </SelectContent>
             </Select>
 
+            {/* Status Filter */}
             <Select value={selectedStatus} onValueChange={setSelectedStatus}>
               <SelectTrigger className="w-[200px]">
                 <SelectValue placeholder="เลือกสถานะ" />
@@ -484,146 +529,176 @@ export default function ClassesPage() {
               )}
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[180px]">คลาส</TableHead>
-                    <TableHead className="w-[100px]">วิชา</TableHead>
-                    {isAllBranches && <TableHead className="w-[100px]">สาขา</TableHead>}
-                    <TableHead className="w-[80px]">ครู</TableHead>
-                    <TableHead className="w-[100px]">วัน/เวลา</TableHead>
-                    <TableHead className="text-center w-[120px]">ระยะเวลา</TableHead>
-                    <TableHead className="text-center w-[70px]">นักเรียน</TableHead>
-                    <TableHead className="text-right w-[90px]">ราคา</TableHead>
-                    <TableHead className="text-center w-[90px]">สถานะ</TableHead>
-                    <TableHead className="text-center w-[40px]"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredClasses.map((cls) => {
-                    const isDeletable = cls.enrolledCount <= 0 || cls.status === 'cancelled';
-                    
-                    return (
-                      <TableRow key={cls.id}>
-                        <TableCell className="align-top">
-                          <div className="flex items-start gap-2">
-                            <div 
-                              className="w-3 h-3 rounded-full flex-shrink-0 mt-1" 
-                              style={{ backgroundColor: getSubjectColor(cls.subjectId) }}
-                            />
-                            <div className="min-w-0">
-                              <div className="font-medium truncate" title={cls.name}>{cls.name}</div>
-                              <div className="text-xs text-gray-500">{cls.code}</div>
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell className="align-top">
-                          <div className="break-words">{getSubjectName(cls.subjectId)}</div>
-                        </TableCell>
-                        {isAllBranches && (
+            <>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[180px]">คลาส</TableHead>
+                      <TableHead className="w-[100px]">วิชา</TableHead>
+                      {isAllBranches && <TableHead className="w-[100px]">สาขา</TableHead>}
+                      <TableHead className="w-[80px]">ครู</TableHead>
+                      <TableHead className="w-[100px]">วัน/เวลา</TableHead>
+                      <TableHead className="text-center w-[120px]">ระยะเวลา</TableHead>
+                      <TableHead className="text-center w-[70px]">นักเรียน</TableHead>
+                      <TableHead className="text-right w-[90px]">ราคา</TableHead>
+                      <TableHead className="text-center w-[90px]">สถานะ</TableHead>
+                      <TableHead className="text-center w-[40px]"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {paginatedClasses.map((cls) => {
+                      const isDeletable = cls.enrolledCount <= 0 || cls.status === 'cancelled';
+                      
+                      return (
+                        <TableRow key={cls.id}>
                           <TableCell className="align-top">
-                            <div className="break-words">{getBranchName(cls.branchId)}</div>
-                          </TableCell>
-                        )}
-                        <TableCell className="align-top">{getTeacherName(cls.teacherId)}</TableCell>
-                        <TableCell className="align-top">
-                          <div>
-                            <div className="leading-tight break-words">
-                              {cls.daysOfWeek.map(d => getDayName(d)).join(', ')}
+                            <div className="flex items-start gap-2">
+                              <div 
+                                className="w-3 h-3 rounded-full flex-shrink-0 mt-1" 
+                                style={{ backgroundColor: getSubjectColor(cls.subjectId) }}
+                              />
+                              <div className="min-w-0">
+                                <div className="font-medium truncate" title={cls.name}>{cls.name}</div>
+                                <div className="text-xs text-gray-500">{cls.code}</div>
+                              </div>
                             </div>
-                            <div className="text-xs text-gray-500">{cls.startTime}-{cls.endTime}</div>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-center align-top">
-                          <div>
-                            <div className="text-sm">{formatDate(cls.startDate, 'short')}</div>
-                            <div className="text-xs text-gray-500">-{formatDate(cls.endDate, 'short')}</div>
-                            <div className="font-medium">{cls.totalSessions} ครั้ง</div>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-center align-top">
-                          <span className={cls.enrolledCount >= cls.maxStudents ? 'text-red-600 font-medium' : ''}>
-                            {cls.enrolledCount}/{cls.maxStudents}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-right font-medium text-green-600 align-top">
-                          {formatCurrency(cls.pricing.totalPrice)}
-                        </TableCell>
-                        <TableCell className="text-center align-top">
-                          <Badge 
-                            className={`${statusColors[cls.status as keyof typeof statusColors] || 'bg-gray-100 text-gray-700'}`}
-                            variant={!cls.status ? 'destructive' : 'default'}
-                          >
-                            {statusLabels[cls.status as keyof typeof statusLabels] || 'ไม่ระบุ'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-center align-top">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" className="h-8 w-8 p-0">
-                                <span className="sr-only">เปิดเมนู</span>
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem asChild>
-                                <Link href={`/classes/${cls.id}`}>
-                                  <Eye className="mr-2 h-4 w-4" />
-                                  ดูรายละเอียด
-                                </Link>
-                              </DropdownMenuItem>
-                              <PermissionGuard requiredRole={['super_admin', 'branch_admin']}>
+                          </TableCell>
+                          <TableCell className="align-top">
+                            {loadingSubjects ? (
+                              <InlineTextSkeleton width="w-16" />
+                            ) : (
+                              <div className="break-words">{getSubjectName(cls.subjectId)}</div>
+                            )}
+                          </TableCell>
+                          {isAllBranches && (
+                            <TableCell className="align-top">
+                              {loadingBranches ? (
+                                <InlineTextSkeleton width="w-20" />
+                              ) : (
+                                <div className="break-words">{getBranchName(cls.branchId)}</div>
+                              )}
+                            </TableCell>
+                          )}
+                          <TableCell className="align-top">
+                            {loadingTeachers ? (
+                              <InlineTextSkeleton width="w-16" />
+                            ) : (
+                              getTeacherName(cls.teacherId)
+                            )}
+                          </TableCell>
+                          <TableCell className="align-top">
+                            <div>
+                              <div className="leading-tight break-words">
+                                {cls.daysOfWeek.map(d => getDayName(d)).join(', ')}
+                              </div>
+                              <div className="text-xs text-gray-500">{cls.startTime}-{cls.endTime}</div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-center align-top">
+                            <div>
+                              <div className="text-sm">{formatDate(cls.startDate, 'short')}</div>
+                              <div className="text-xs text-gray-500">-{formatDate(cls.endDate, 'short')}</div>
+                              <div className="font-medium">{cls.totalSessions} ครั้ง</div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-center align-top">
+                            <span className={cls.enrolledCount >= cls.maxStudents ? 'text-red-600 font-medium' : ''}>
+                              {cls.enrolledCount}/{cls.maxStudents}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-right font-medium text-green-600 align-top">
+                            {formatCurrency(cls.pricing.totalPrice)}
+                          </TableCell>
+                          <TableCell className="text-center align-top">
+                            <Badge 
+                              className={`${statusColors[cls.status as keyof typeof statusColors] || 'bg-gray-100 text-gray-700'}`}
+                              variant={!cls.status ? 'destructive' : 'default'}
+                            >
+                              {statusLabels[cls.status as keyof typeof statusLabels] || 'ไม่ระบุ'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-center align-top">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" className="h-8 w-8 p-0">
+                                  <span className="sr-only">เปิดเมนู</span>
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
                                 <DropdownMenuItem asChild>
-                                  <Link href={`/classes/${cls.id}/edit`}>
-                                    <Edit className="mr-2 h-4 w-4" />
-                                    แก้ไข
+                                  <Link href={`/classes/${cls.id}`}>
+                                    <Eye className="mr-2 h-4 w-4" />
+                                    ดูรายละเอียด
                                   </Link>
                                 </DropdownMenuItem>
-                              </PermissionGuard>
-                              {isDeletable && (
                                 <PermissionGuard requiredRole={['super_admin', 'branch_admin']}>
-                                  <AlertDialog>
-                                    <AlertDialogTrigger asChild>
-                                      <DropdownMenuItem 
-                                        onSelect={(e) => e.preventDefault()}
-                                        className="text-red-600"
-                                      >
-                                        <Trash2 className="mr-2 h-4 w-4" />
-                                        ลบคลาส
-                                      </DropdownMenuItem>
-                                    </AlertDialogTrigger>
-                                    <AlertDialogContent>
-                                      <AlertDialogHeader>
-                                        <AlertDialogTitle>ยืนยันการลบคลาส</AlertDialogTitle>
-                                        <AlertDialogDescription>
-                                          คุณแน่ใจหรือไม่ที่จะลบคลาส &quot;{cls.name}&quot;? 
-                                          การกระทำนี้ไม่สามารถยกเลิกได้
-                                        </AlertDialogDescription>
-                                      </AlertDialogHeader>
-                                      <AlertDialogFooter>
-                                        <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
-                                        <AlertDialogAction 
-                                          onClick={() => handleDeleteClass(cls.id, cls.name)}
-                                          disabled={deletingId === cls.id}
-                                          className="bg-red-500 hover:bg-red-600"
-                                        >
-                                          {deletingId === cls.id ? 'กำลังลบ...' : 'ลบคลาส'}
-                                        </AlertDialogAction>
-                                      </AlertDialogFooter>
-                                    </AlertDialogContent>
-                                  </AlertDialog>
+                                  <DropdownMenuItem asChild>
+                                    <Link href={`/classes/${cls.id}/edit`}>
+                                      <Edit className="mr-2 h-4 w-4" />
+                                      แก้ไข
+                                    </Link>
+                                  </DropdownMenuItem>
                                 </PermissionGuard>
-                              )}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
+                                {isDeletable && (
+                                  <PermissionGuard requiredRole={['super_admin', 'branch_admin']}>
+                                    <AlertDialog>
+                                      <AlertDialogTrigger asChild>
+                                        <DropdownMenuItem 
+                                          onSelect={(e) => e.preventDefault()}
+                                          className="text-red-600"
+                                        >
+                                          <Trash2 className="mr-2 h-4 w-4" />
+                                          ลบคลาส
+                                        </DropdownMenuItem>
+                                      </AlertDialogTrigger>
+                                      <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                          <AlertDialogTitle>ยืนยันการลบคลาส</AlertDialogTitle>
+                                          <AlertDialogDescription>
+                                            คุณแน่ใจหรือไม่ที่จะลบคลาส &quot;{cls.name}&quot;? 
+                                            การกระทำนี้ไม่สามารถยกเลิกได้
+                                          </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                          <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+                                          <AlertDialogAction 
+                                            onClick={() => handleDeleteClass(cls.id, cls.name)}
+                                            disabled={deletingId === cls.id}
+                                            className="bg-red-500 hover:bg-red-600"
+                                          >
+                                            {deletingId === cls.id ? 'กำลังลบ...' : 'ลบคลาส'}
+                                          </AlertDialogAction>
+                                        </AlertDialogFooter>
+                                      </AlertDialogContent>
+                                    </AlertDialog>
+                                  </PermissionGuard>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* Pagination Component */}
+              {filteredClasses.length > 0 && (
+                <Pagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  pageSize={pageSize}
+                  totalItems={filteredClasses.length}
+                  onPageChange={handlePageChange}
+                  onPageSizeChange={handlePageSizeChange}
+                  pageSizeOptions={[10, 20, 50, 100]}
+                  showFirstLastButtons={false}
+                />
+              )}
+            </>
           )}
         </CardContent>
       </Card>

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import type { Parent, Student, Enrollment, Branch } from '@/types/models';
+import type { Parent, Student, Enrollment } from '@/types/models';
 import { getParents, getStudentsByParent } from '@/lib/services/parents';
 import { getActiveBranches } from '@/lib/services/branches';
 import { getEnrollmentsByStudent } from '@/lib/services/enrollments';
@@ -29,7 +29,6 @@ import {
   Globe
 } from 'lucide-react';
 import Link from 'next/link';
-import { toast } from 'sonner';
 import { Badge } from "@/components/ui/badge";
 import {
   Select,
@@ -63,12 +62,16 @@ interface ParentWithInfo extends Parent {
   enrollmentStatus?: 'active' | 'completed' | 'never' | 'mixed';
 }
 
-// Cache keys
-const QUERY_KEYS = {
-  parents: ['parents'],
-  branches: ['branches', 'active'],
-  classes: ['classes'],
-};
+// ============================================
+// 🎨 Mini Skeleton Components
+// ============================================
+const InlineTextSkeleton = ({ width = "w-20" }: { width?: string }) => (
+  <Skeleton className={`h-4 ${width}`} />
+);
+
+const BadgeSkeleton = () => (
+  <Skeleton className="h-5 w-16" />
+);
 
 export default function ParentsPage() {
   const [allParentsData, setAllParentsData] = useState<ParentWithInfo[]>([]);
@@ -78,7 +81,9 @@ export default function ParentsPage() {
   const [filterBranch, setFilterBranch] = useState<string>('all');
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
-  // Pagination
+  // ============================================
+  // 🎯 Pagination Hook
+  // ============================================
   const {
     currentPage,
     pageSize,
@@ -89,25 +94,28 @@ export default function ParentsPage() {
     totalPages,
   } = usePagination(20);
 
-  // React Query: Load parents
+  // ============================================
+  // 🎯 Query 1: Parents (Load First)
+  // ============================================
   const { data: parents = [], isLoading: loadingParents } = useQuery({
-    queryKey: QUERY_KEYS.parents,
+    queryKey: ['parents'],
     queryFn: getParents,
     staleTime: 60000, // 1 minute
   });
 
-  // React Query: Load branches
-  const { data: branches = [] } = useQuery({
-    queryKey: QUERY_KEYS.branches,
+  // ============================================
+  // 🎯 Query 2-3: Supporting Data (Load After)
+  // ============================================
+  const { data: branches = [], isLoading: loadingBranches } = useQuery({
+    queryKey: ['branches', 'active'],
     queryFn: getActiveBranches,
-    staleTime: 300000, // 5 minutes
+    staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
-  // React Query: Load classes
-  const { data: classes = [] } = useQuery({
-    queryKey: QUERY_KEYS.classes,
-    queryFn: getClasses,
-    staleTime: 120000, // 2 minutes
+  const { data: classes = [], isLoading: loadingClasses } = useQuery({
+    queryKey: ['classes'],
+    queryFn: () => getClasses(), // แก้: ห่อด้วย arrow function
+    staleTime: 2 * 60 * 1000, // 2 minutes
   });
 
   // Create maps
@@ -129,11 +137,20 @@ export default function ParentsPage() {
 
   // Load enrollment data when parents change
   useEffect(() => {
-    if (parents.length > 0) {
+    // รอให้ parents และ classes โหลดเสร็จก่อน
+    if (parents.length > 0 && Array.isArray(classes) && classes.length > 0 && !loadingClasses) {
+      console.log('Loading parent details...'); // Debug log
       setAllParentsData(parents);
-      loadAllParentDetails(parents, classMap);
+      
+      // สร้าง classMap ใหม่ทุกครั้งเพื่อใช้ข้อมูลล่าสุด
+      const freshClassMap: Record<string, any> = {};
+      classes.forEach((cls: any) => {
+        freshClassMap[cls.id] = cls;
+      });
+      
+      loadAllParentDetails(parents, freshClassMap);
     }
-  }, [parents, classMap]);
+  }, [parents, classes, loadingClasses]); // เพิ่ม parents และ classes
 
   // Reset page when filters change
   useMemo(() => {
@@ -283,7 +300,11 @@ export default function ParentsPage() {
     setExpandedRows(newExpanded);
   };
 
-  // Loading state
+  // ============================================
+  // 🎨 Loading States (Progressive)
+  // ============================================
+  
+  // Phase 1: Parents Loading
   if (loadingParents) {
     return (
       <div className="space-y-6">
@@ -334,9 +355,12 @@ export default function ParentsPage() {
           </h1>
           <p className="text-gray-600 mt-2">
             ข้อมูลผู้ปกครองและนักเรียนทั้งหมดในระบบ - สามารถกรองตามสาขาได้
+            {(loadingBranches || loadingClasses || enrollmentLoading) && (
+              <span className="text-orange-500 ml-2">(กำลังโหลดข้อมูลเพิ่มเติม...)</span>
+            )}
           </p>
         </div>
-        <PermissionGuard action="create">
+        <PermissionGuard requiredRole={['super_admin', 'branch_admin']}>
           <Link href="/parents/new">
             <ActionButton action="create" className="bg-red-500 hover:bg-red-600">
               <Plus className="h-4 w-4 mr-2" />
@@ -434,15 +458,19 @@ export default function ParentsPage() {
                 ทุกสาขา
               </div>
             </SelectItem>
-            {branches.map((branch) => (
-              <SelectItem key={branch.id} value={branch.id}>
-                <div className="flex items-center gap-2">
-                  <Building2 className="h-4 w-4" />
-                  {branch.name}
-                  <span className="text-xs text-gray-500 ml-1">(เรียน+สนใจ)</span>
-                </div>
-              </SelectItem>
-            ))}
+            {loadingBranches ? (
+              <SelectItem value="loading" disabled>กำลังโหลด...</SelectItem>
+            ) : (
+              branches.map((branch) => (
+                <SelectItem key={branch.id} value={branch.id}>
+                  <div className="flex items-center gap-2">
+                    <Building2 className="h-4 w-4" />
+                    {branch.name}
+                    <span className="text-xs text-gray-500 ml-1">(เรียน+สนใจ)</span>
+                  </div>
+                </SelectItem>
+              ))
+            )}
           </SelectContent>
         </Select>
 
@@ -465,7 +493,7 @@ export default function ParentsPage() {
           <div className="flex justify-between items-center">
             <CardTitle>
               รายชื่อผู้ปกครอง ({filteredParents.length} คน)
-              {filterBranch !== 'all' && (
+              {filterBranch !== 'all' && !loadingBranches && (
                 <span className="text-blue-600 text-base ml-2">
                   • กรองสาขา: {branchMap[filterBranch]} (เรียน+สนใจ)
                 </span>
@@ -592,7 +620,9 @@ export default function ParentsPage() {
                             )}
                           </TableCell>
                           <TableCell>
-                            {parent.preferredBranchId ? (
+                            {loadingBranches ? (
+                              <InlineTextSkeleton width="w-24" />
+                            ) : parent.preferredBranchId ? (
                               <div className="flex items-center gap-1">
                                 <Badge variant="outline">
                                   {branchMap[parent.preferredBranchId] || parent.preferredBranchId}
@@ -607,6 +637,8 @@ export default function ParentsPage() {
                             <div className="flex flex-wrap gap-1 max-w-[200px]">
                               {enrollmentLoading ? (
                                 <span className="text-gray-400 text-sm">กำลังโหลด...</span>
+                              ) : loadingBranches ? (
+                                <BadgeSkeleton />
                               ) : (() => {
                                 const enrolledBranches = new Set<string>();
                                 parent.students?.forEach(student => {
@@ -639,7 +671,7 @@ export default function ParentsPage() {
                                   <Eye className="h-4 w-4" />
                                 </Button>
                               </Link>
-                              <PermissionGuard action="update">
+                              <PermissionGuard requiredRole={['super_admin', 'branch_admin']}>
                                 <Link href={`/parents/${parent.id}/edit`} onClick={(e) => e.stopPropagation()}>
                                   <Button variant="ghost" size="sm">
                                     <Edit className="h-4 w-4" />
@@ -698,7 +730,9 @@ export default function ParentsPage() {
                                       </div>
                                       <div className="flex items-center gap-3">
                                         <div className="flex flex-wrap gap-1">
-                                          {(() => {
+                                          {loadingBranches ? (
+                                            <BadgeSkeleton />
+                                          ) : (() => {
                                             const studentBranches = new Set<string>();
                                             student.enrollments?.forEach(enrollment => {
                                               studentBranches.add(enrollment.branchId);
@@ -726,7 +760,7 @@ export default function ParentsPage() {
                                                   <GraduationCap className="h-3 w-3 mr-1" />
                                                   กำลังเรียน
                                                 </Badge>
-                                                {student.enrollments && student.enrollments.length > 0 && (
+                                                {student.enrollments && student.enrollments.length > 0 && !loadingClasses && (
                                                   <div className="text-xs text-gray-600 max-w-[300px]">
                                                     {student.enrollments
                                                       .filter(e => e.status === 'active')
@@ -777,14 +811,18 @@ export default function ParentsPage() {
               </div>
 
               {/* Pagination */}
-              <Pagination
-                currentPage={currentPage}
-                totalPages={calculatedTotalPages}
-                pageSize={pageSize}
-                totalItems={filteredParents.length}
-                onPageChange={handlePageChange}
-                onPageSizeChange={handlePageSizeChange}
-              />
+              {filteredParents.length > 0 && (
+                <Pagination
+                  currentPage={currentPage}
+                  totalPages={calculatedTotalPages}
+                  pageSize={pageSize}
+                  totalItems={filteredParents.length}
+                  onPageChange={handlePageChange}
+                  onPageSizeChange={handlePageSizeChange}
+                  pageSizeOptions={[10, 20, 50, 100]}
+                  showFirstLastButtons={false}
+                />
+              )}
             </>
           )}
         </CardContent>

@@ -7,7 +7,7 @@ import { Enrollment } from '@/types/models';
 import { 
   getEnrollmentsPaginated,
   getEnrollmentStats,
-  getEnrollments, // Fallback for search
+  getEnrollments,
   deleteEnrollment, 
   updateEnrollment, 
   cancelEnrollment,
@@ -89,8 +89,6 @@ import { ActionButton } from '@/components/ui/action-button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Pagination, usePagination } from '@/components/ui/pagination';
 
-type StudentWithParent = any;
-
 const statusColors = {
   'active': 'bg-green-100 text-green-700',
   'completed': 'bg-gray-100 text-gray-700',
@@ -116,6 +114,20 @@ const paymentStatusLabels = {
   'partial': 'ชำระบางส่วน',
   'paid': 'ชำระแล้ว',
 };
+
+// ============================================
+// 🎨 Mini Skeleton Components
+// ============================================
+const TableCellSkeleton = () => (
+  <div className="space-y-2">
+    <Skeleton className="h-4 w-24" />
+    <Skeleton className="h-3 w-32" />
+  </div>
+);
+
+const InlineTextSkeleton = ({ width = "w-20" }: { width?: string }) => (
+  <Skeleton className={`h-4 ${width}`} />
+);
 
 // Debounce hook
 function useDebounce<T>(value: T, delay: number): T {
@@ -152,11 +164,8 @@ export default function EnrollmentsPage() {
     totalPages: calculateTotalPages
   } = usePagination(20);
   
-  // Additional state for Firestore pagination
-  // เปลี่ยนจาก array เป็น Map เพื่อเก็บ cursor แต่ละหน้า
   const [cursorMap, setCursorMap] = useState<Map<number, QueryDocumentSnapshot>>(new Map());
   
-  // Search mode (fallback to client-side)
   const isSearchMode = debouncedSearchTerm.length > 0;
   
   // Other states
@@ -179,13 +188,12 @@ export default function EnrollmentsPage() {
   const { data: stats, isLoading: loadingStats } = useQuery<EnrollmentStats>({
     queryKey: ['enrollment-stats', selectedBranchId],
     queryFn: () => getEnrollmentStats(selectedBranchId),
-    staleTime: 2 * 60 * 1000, // 2 minutes
+    staleTime: 2 * 60 * 1000,
   });
 
   // ============================================
   // 🎯 Query 2: Paginated Enrollments (Normal Mode)
   // ============================================
-  // Get cursor for current page (from previous page's lastDoc)
   const cursor = currentPage > 1 ? cursorMap.get(currentPage - 1) : undefined;
   
   const { 
@@ -200,7 +208,7 @@ export default function EnrollmentsPage() {
       selectedPaymentStatus,
       pageSize,
       currentPage,
-      cursor?.id // เพิ่ม cursor id เพื่อ trigger refetch
+      cursor?.id
     ],
     queryFn: async () => {
       return await getEnrollmentsPaginated({
@@ -211,9 +219,9 @@ export default function EnrollmentsPage() {
         startAfterDoc: cursor,
       });
     },
-    enabled: !isSearchMode, // Only when not searching
-    staleTime: 30 * 1000, // 30 seconds
-    gcTime: 60 * 1000, // 1 minute
+    enabled: !isSearchMode,
+    staleTime: 30 * 1000,
+    gcTime: 60 * 1000,
     placeholderData: keepPreviousData,
   });
 
@@ -226,29 +234,29 @@ export default function EnrollmentsPage() {
   } = useQuery<Enrollment[]>({
     queryKey: ['enrollments-all', selectedBranchId],
     queryFn: () => getEnrollments(selectedBranchId),
-    enabled: isSearchMode, // Only when searching
-    staleTime: 2 * 60 * 1000, // 2 minutes
+    enabled: isSearchMode,
+    staleTime: 2 * 60 * 1000,
   });
 
   // ============================================
   // 🎯 Query 4: Supporting Data (Cached Longer)
   // ============================================
-  const { data: students = [] } = useQuery({
+  const { data: students = [], isLoading: loadingStudents } = useQuery({
     queryKey: ['students', 'withParents', selectedBranchId],
     queryFn: () => getAllStudentsWithParents(),
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 5 * 60 * 1000,
   });
 
-  const { data: classes = [] } = useQuery({
+  const { data: classes = [], isLoading: loadingClasses } = useQuery({
     queryKey: ['classes', selectedBranchId],
     queryFn: () => getClasses(),
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 5 * 60 * 1000,
   });
 
-  const { data: branches = [] } = useQuery({
+  const { data: branches = [], isLoading: loadingBranches } = useQuery({
     queryKey: ['branches', 'active'],
     queryFn: getActiveBranches,
-    staleTime: 10 * 60 * 1000, // 10 minutes
+    staleTime: 10 * 60 * 1000,
   });
 
   // Create lookup maps
@@ -272,17 +280,14 @@ export default function EnrollmentsPage() {
   const getBranchName = (branchId: string) => branchesMap.get(branchId)?.name || 'Unknown';
 
   // ============================================
-  // 🎯 Enrollment Data (switch between modes)
+  // 🎯 Enrollment Data
   // ============================================
   const enrollmentsToDisplay = useMemo(() => {
     if (isSearchMode) {
-      // Search Mode: Filter client-side
       return allEnrollments.filter(enrollment => {
-        // Status filter
         if (selectedStatus !== 'all' && enrollment.status !== selectedStatus) return false;
         if (selectedPaymentStatus !== 'all' && enrollment.payment.status !== selectedPaymentStatus) return false;
         
-        // Search filter
         const student = getStudentInfo(enrollment.studentId);
         const classInfo = getClassInfo(enrollment.classId);
         const searchLower = debouncedSearchTerm.toLowerCase();
@@ -296,7 +301,6 @@ export default function EnrollmentsPage() {
         );
       });
     } else {
-      // Normal Mode: Use paginated data from Firestore
       return paginatedData?.enrollments || [];
     }
   }, [
@@ -310,7 +314,6 @@ export default function EnrollmentsPage() {
     getClassInfo
   ]);
 
-  // Paginate search results (client-side pagination)
   const paginatedSearchResults = useMemo(() => {
     if (!isSearchMode) return enrollmentsToDisplay;
     return getPaginatedData(enrollmentsToDisplay);
@@ -318,27 +321,22 @@ export default function EnrollmentsPage() {
 
   const displayedEnrollments = isSearchMode ? paginatedSearchResults : enrollmentsToDisplay;
 
-  // Calculate total pages (ปรับใหม่)
   const totalPages = useMemo(() => {
     if (isSearchMode) {
-      // Search mode: รู้จำนวนแน่นอน
       return calculateTotalPages(enrollmentsToDisplay.length);
     } else {
-      // Normal mode: ประมาณการจาก stats
       if (stats?.total) {
         return Math.ceil(stats.total / pageSize);
       }
-      // Fallback: แสดงอย่างน้อย currentPage + 1 ถ้ามี hasMore
       return paginatedData?.hasMore ? currentPage + 1 : currentPage;
     }
   }, [isSearchMode, enrollmentsToDisplay.length, calculateTotalPages, stats?.total, pageSize, paginatedData?.hasMore, currentPage]);
 
   // ============================================
-  // 🎯 Auto-save cursor after loading data
+  // 🎯 Auto-save cursor
   // ============================================
   useEffect(() => {
     if (!isSearchMode && paginatedData?.lastDoc && paginatedData.hasMore) {
-      // Save lastDoc for current page
       setCursorMap(prev => {
         const newMap = new Map(prev);
         newMap.set(currentPage, paginatedData.lastDoc);
@@ -352,18 +350,14 @@ export default function EnrollmentsPage() {
   // ============================================
   const handlePageChangeWithFirestore = (page: number) => {
     if (!isSearchMode && page < currentPage) {
-      // Going back - clear cursors after target page
       setCursorMap(prev => {
         const newMap = new Map(prev);
-        // Keep only cursors before target page
         for (let i = page; i <= currentPage; i++) {
           newMap.delete(i);
         }
         return newMap;
       });
     }
-    
-    // Change page
     handlePageChange(page);
   };
 
@@ -372,7 +366,6 @@ export default function EnrollmentsPage() {
     handlePageSizeChange(newSize);
   };
 
-  // Reset pagination when filters change
   useEffect(() => {
     setCursorMap(new Map());
     resetPagination();
@@ -461,10 +454,10 @@ export default function EnrollmentsPage() {
   };
 
   // ============================================
-  // 🎨 Loading States (Progressive)
+  // 🎨 Loading States
   // ============================================
   
-  // Phase 1: Stats Loading (Fast - shows first)
+  // Phase 1: Stats Loading (Show skeleton cards)
   if (loadingStats) {
     return (
       <div className="space-y-6">
@@ -518,7 +511,7 @@ export default function EnrollmentsPage() {
         </PermissionGuard>
       </div>
 
-      {/* Summary Cards - Show Immediately */}
+      {/* Summary Cards - แสดงข้อมูลทันทีที่มี stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <Card>
           <CardHeader className="pb-2">
@@ -619,11 +612,15 @@ export default function EnrollmentsPage() {
             {fetchingEnrollments && !isLoadingTable && (
               <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
             )}
+            {(loadingStudents || loadingClasses || loadingBranches) && (
+              <span className="text-xs text-gray-400 font-normal ml-2">
+                (กำลังโหลดข้อมูลเพิ่มเติม...)
+              </span>
+            )}
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           {isLoadingTable ? (
-            // Skeleton for table
             <div className="p-6 space-y-3">
               {[...Array(5)].map((_, i) => (
                 <Skeleton key={i} className="h-16 w-full" />
@@ -665,18 +662,44 @@ export default function EnrollmentsPage() {
                       return (
                         <TableRow key={enrollment.id}>
                           <TableCell>
-                            <div>
-                              <p className="font-medium">{student?.nickname || student?.name}</p>
-                              <p className="text-sm text-gray-500">ผู้ปกครอง: {student?.parentName}</p>
-                            </div>
+                            {loadingStudents ? (
+                              <TableCellSkeleton />
+                            ) : student ? (
+                              <div>
+                                <p className="font-medium">{student.nickname || student.name}</p>
+                                <p className="text-sm text-gray-500">ผู้ปกครอง: {student.parentName}</p>
+                              </div>
+                            ) : (
+                              <div>
+                                <p className="font-medium text-gray-400">Unknown</p>
+                                <p className="text-sm text-gray-400">ID: {enrollment.studentId}</p>
+                              </div>
+                            )}
                           </TableCell>
                           <TableCell>
-                            <div>
-                              <p className="font-medium">{classInfo?.name}</p>
-                              <p className="text-sm text-gray-500">{classInfo?.code}</p>
-                            </div>
+                            {loadingClasses ? (
+                              <TableCellSkeleton />
+                            ) : classInfo ? (
+                              <div>
+                                <p className="font-medium">{classInfo.name}</p>
+                                <p className="text-sm text-gray-500">{classInfo.code}</p>
+                              </div>
+                            ) : (
+                              <div>
+                                <p className="font-medium text-gray-400">Unknown</p>
+                                <p className="text-sm text-gray-400">ID: {enrollment.classId}</p>
+                              </div>
+                            )}
                           </TableCell>
-                          {isAllBranches && <TableCell>{getBranchName(enrollment.branchId)}</TableCell>}
+                          {isAllBranches && (
+                            <TableCell>
+                              {loadingBranches ? (
+                                <InlineTextSkeleton width="w-24" />
+                              ) : (
+                                getBranchName(enrollment.branchId)
+                              )}
+                            </TableCell>
+                          )}
                           <TableCell>{formatDate(enrollment.enrolledAt)}</TableCell>
                           <TableCell className="text-right">
                             <div>
@@ -826,7 +849,7 @@ export default function EnrollmentsPage() {
                   onPageChange={handlePageChangeWithFirestore}
                   onPageSizeChange={handlePageSizeChangeWithReset}
                   pageSizeOptions={[10, 20, 50, 100]}
-                  showFirstLastButtons={false} // ปิดปุ่มหน้าแรก/หน้าสุดท้าย
+                  showFirstLastButtons={false}
                 />
               )}
             </>
