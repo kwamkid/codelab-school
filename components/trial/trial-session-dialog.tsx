@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import SubjectSearchSelect from '@/components/ui/subject-search-select';
 import {
   Select,
   SelectContent,
@@ -285,7 +286,7 @@ export default function TrialSessionDialog({
       onClose();
       handleBack();
     }}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>นัดหมายทดลองเรียน</DialogTitle>
         </DialogHeader>
@@ -408,74 +409,14 @@ export default function TrialSessionDialog({
                 {/* Subject */}
                 <div className="space-y-2">
                   <Label htmlFor="subject">วิชา *</Label>
-                  <Select
+                  <SubjectSearchSelect
+                    subjects={subjects}
                     value={formData.subjectId}
                     onValueChange={(value) => setFormData(prev => ({ ...prev, subjectId: value }))}
                     disabled={!formData.branchId}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder={formData.branchId ? "เลือกวิชา" : "เลือกสาขาก่อน"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {/* แสดงวิชาที่นักเรียนสนใจก่อน */}
-                      {(() => {
-                        const currentStudent = students.find(s => s.name === selectedStudent);
-                        const interestedSubjects = currentStudent?.subjectInterests || [];
-                        const interestedSubjectsList = subjects.filter(s => interestedSubjects.includes(s.id));
-                        const otherSubjects = subjects.filter(s => !interestedSubjects.includes(s.id));
-                        
-                        return (
-                          <>
-                            {interestedSubjectsList.length > 0 && (
-                              <>
-                                <div className="px-2 py-1.5 text-sm font-semibold text-gray-700 bg-gray-50">
-                                  วิชาที่สนใจ
-                                </div>
-                                {interestedSubjectsList.map((subject) => (
-                                  <SelectItem key={subject.id} value={subject.id}>
-                                    <div className="flex items-center gap-2">
-                                      <div 
-                                        className="w-3 h-3 rounded-full" 
-                                        style={{ backgroundColor: subject.color }}
-                                      />
-                                      <span>{subject.name}</span>
-                                      <Badge 
-                                        variant="outline" 
-                                        className="ml-auto text-xs bg-green-50 text-green-700 border-green-300"
-                                      >
-                                        สนใจ
-                                      </Badge>
-                                    </div>
-                                  </SelectItem>
-                                ))}
-                              </>
-                            )}
-                            
-                            {otherSubjects.length > 0 && (
-                              <>
-                                {interestedSubjectsList.length > 0 && (
-                                  <div className="px-2 py-1.5 text-sm font-semibold text-gray-700 bg-gray-50">
-                                    วิชาอื่นๆ
-                                  </div>
-                                )}
-                                {otherSubjects.map((subject) => (
-                                  <SelectItem key={subject.id} value={subject.id}>
-                                    <div className="flex items-center gap-2">
-                                      <div 
-                                        className="w-3 h-3 rounded-full" 
-                                        style={{ backgroundColor: subject.color }}
-                                      />
-                                      <span>{subject.name}</span>
-                                    </div>
-                                  </SelectItem>
-                                ))}
-                              </>
-                            )}
-                          </>
-                        );
-                      })()}
-                    </SelectContent>
-                  </Select>
+                    required
+                    placeholder={formData.branchId ? "ค้นหาวิชา..." : "เลือกสาขาก่อน"}
+                  />
                 </div>
               </div>
 

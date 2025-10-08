@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
+import SubjectSearchSelect from '@/components/ui/subject-search-select';
 import {
   Select,
   SelectContent,
@@ -69,7 +70,10 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
     status: true
   });
   
-  const [editPermission, setEditPermission] = useState({
+  const [editPermission, setEditPermission] = useState<{
+    canEdit: boolean;
+    reason?: string;
+  }>({
     canEdit: true,
     reason: ''
   });
@@ -476,35 +480,35 @@ export default function ClassForm({ classData, isEdit = false }: ClassFormProps)
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="subject">{renderFieldLabel('วิชา *', editableFields.resources)}</Label>
-                <Select
-                  value={formData.subjectId}
-                  onValueChange={(value) => setFormData({ ...formData, subjectId: value })}
-                  disabled={!editableFields.resources}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="เลือกวิชา" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {subjects.length === 0 ? (
-                      <div className="p-2 text-center">
-                        <p className="text-sm text-gray-500 mb-2">ยังไม่มีวิชา</p>
-                        <Link href="/subjects/new">
-                          <Button size="sm" className="w-full bg-red-500 hover:bg-red-600">
-                            <Plus className="h-3 w-3 mr-1" />
-                            เพิ่มวิชา
-                          </Button>
-                        </Link>
-                      </div>
-                    ) : (
-                      subjects.map((subject) => (
-                        <SelectItem key={subject.id} value={subject.id}>
-                          {subject.name}
-                        </SelectItem>
-                      ))
-                    )}
-                  </SelectContent>
-                </Select>
+                {subjects.length === 0 ? (
+                  <>
+                    <Label>{renderFieldLabel('วิชา *', editableFields.resources)}</Label>
+                    <div className="p-4 border rounded-md text-center">
+                      <p className="text-sm text-gray-500 mb-2">ยังไม่มีวิชา</p>
+                      <Link href="/subjects/new">
+                        <Button size="sm" className="bg-red-500 hover:bg-red-600">
+                          <Plus className="h-3 w-3 mr-1" />
+                          เพิ่มวิชา
+                        </Button>
+                      </Link>
+                    </div>
+                  </>
+                ) : (
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Label>วิชา *</Label>
+                      {!editableFields.resources && isEdit && <Lock className="h-3 w-3 text-gray-400" />}
+                    </div>
+                    <SubjectSearchSelect
+                      subjects={subjects}
+                      value={formData.subjectId}
+                      onValueChange={(value) => setFormData({ ...formData, subjectId: value })}
+                      disabled={!editableFields.resources}
+                      required
+                      placeholder="ค้นหาวิชา... (พิมพ์ชื่อวิชา, รหัส หรือหมวดหมู่)"
+                    />
+                  </div>
+                )}
               </div>
             </div>
           </CardContent>
