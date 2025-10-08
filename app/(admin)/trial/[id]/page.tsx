@@ -127,7 +127,6 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
   const [tempBranchId, setTempBranchId] = useState<string>('');
   
   // Modal states
-  // Modal states
   const [sessionModalOpen, setSessionModalOpen] = useState(false);
   const [convertModalOpen, setConvertModalOpen] = useState(false);
   const [rescheduleModalOpen, setRescheduleModalOpen] = useState(false);
@@ -497,7 +496,6 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
                             value={tempStudentData.gradeLevel}
                             onChange={(value) => setTempStudentData(prev => ({ ...prev, gradeLevel: value }))}
                             placeholder="ระดับชั้น..."
-                            className="h-8 text-sm"
                           />
                           <div className="flex gap-1">
                             <Button size="sm" onClick={handleStudentSave} className="text-xs h-7">บันทึก</Button>
