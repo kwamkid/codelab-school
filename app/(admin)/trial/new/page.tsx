@@ -168,8 +168,8 @@ export default function CreateTrialBookingPage() {
       // Validate birthdate if provided
       if (student.birthdate) {
         const age = calculateAge(new Date(student.birthdate));
-        if (age < 3 || age > 18) {
-          toast.error(`อายุนักเรียนคนที่ ${i + 1} ต้องอยู่ระหว่าง 3-18 ปี`);
+        if (age < 3 || age > 22) {
+          toast.error(`อายุนักเรียนคนที่ ${i + 1} ต้องอยู่ระหว่าง 3-22 ปี`);
           return false;
         }
       }

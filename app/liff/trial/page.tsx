@@ -34,7 +34,9 @@ import {
   MessageCircle,
   AlertTriangle,
   Search,
-  Check
+  Check,
+  Calendar,
+  Cake
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Branch, Subject } from '@/types/models'
@@ -42,9 +44,24 @@ import Image from 'next/image'
 
 interface StudentForm {
   name: string
+  birthdate: string
   schoolName: string
   gradeLevel: string
   subjectInterests: string[]
+}
+
+// Calculate age from birthdate
+function calculateAge(birthdate: Date): number {
+  const today = new Date()
+  const birthDate = new Date(birthdate)
+  let age = today.getFullYear() - birthDate.getFullYear()
+  const monthDiff = today.getMonth() - birthDate.getMonth()
+  
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    age--
+  }
+  
+  return age
 }
 
 // Subject Selector Component
@@ -174,6 +191,7 @@ export default function TrialBookingPage() {
   // Students
   const [students, setStudents] = useState<StudentForm[]>([{
     name: '',
+    birthdate: '',
     schoolName: '',
     gradeLevel: '',
     subjectInterests: []
@@ -266,6 +284,7 @@ export default function TrialBookingPage() {
   const addStudent = () => {
     setStudents([...students, {
       name: '',
+      birthdate: '',
       schoolName: '',
       gradeLevel: '',
       subjectInterests: []
@@ -343,6 +362,16 @@ export default function TrialBookingPage() {
         toast.error(`กรุณากรอกชื่อนักเรียนคนที่ ${i + 1}`)
         return false
       }
+      
+      // Validate birthdate if provided
+      if (student.birthdate) {
+        const age = calculateAge(new Date(student.birthdate))
+        if (age < 3 || age > 22) {
+          toast.error(`อายุนักเรียนคนที่ ${i + 1} ควรอยู่ระหว่าง 3-22 ปี`)
+          return false
+        }
+      }
+      
       if (student.subjectInterests.length === 0) {
         toast.error(`กรุณาเลือกวิชาที่สนใจสำหรับนักเรียนคนที่ ${i + 1}`)
         return false
@@ -364,13 +393,26 @@ export default function TrialBookingPage() {
         source: 'online' as const,
         parentName: parentName.trim(),
         parentPhone: parentPhone.replace(/-/g, ''),
-        branchId: selectedBranch, // ต้องมี branchId
-        students: students.map(s => ({
-          name: s.name.trim(),
-          subjectInterests: s.subjectInterests,
-          ...(s.schoolName.trim() && { schoolName: s.schoolName.trim() }),
-          ...(s.gradeLevel && { gradeLevel: s.gradeLevel })
-        })),
+        branchId: selectedBranch,
+        students: students.map(s => {
+          const studentData: any = {
+            name: s.name.trim(),
+            subjectInterests: s.subjectInterests
+          }
+          
+          // Add optional fields only if they have values
+          if (s.birthdate) {
+            studentData.birthdate = new Date(s.birthdate)
+          }
+          if (s.schoolName.trim()) {
+            studentData.schoolName = s.schoolName.trim()
+          }
+          if (s.gradeLevel) {
+            studentData.gradeLevel = s.gradeLevel
+          }
+          
+          return studentData
+        }),
         status: 'new',
         ...(parentEmail.trim() && { parentEmail: parentEmail.trim() }),
         ...(contactNote.trim() && { contactNote: contactNote.trim() })
@@ -520,6 +562,7 @@ export default function TrialBookingPage() {
                     setContactNote('')
                     setStudents([{
                       name: '',
+                      birthdate: '',
                       schoolName: '',
                       gradeLevel: '',
                       subjectInterests: []
@@ -703,7 +746,7 @@ export default function TrialBookingPage() {
                   </div>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
+                    <div className="md:col-span-2">
                       <Label>
                         ชื่อ-นามสกุล <span className="text-red-500">*</span>
                       </Label>
@@ -716,6 +759,34 @@ export default function TrialBookingPage() {
                     </div>
                     
                     <div>
+                      <Label htmlFor={`birthdate-${idx}`}>
+                        <Cake className="inline h-4 w-4 mr-1" />
+                        วันเกิด
+                      </Label>
+                      <Input
+                        id={`birthdate-${idx}`}
+                        type="date"
+                        value={student.birthdate}
+                        onChange={(e) => updateStudent(idx, 'birthdate', e.target.value)}
+                        max={new Date().toISOString().split('T')[0]}
+                      />
+                      {student.birthdate && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          อายุ: {calculateAge(new Date(student.birthdate))} ปี
+                        </p>
+                      )}
+                    </div>
+                    
+                    <div>
+                      <Label>ระดับชั้น</Label>
+                      <GradeLevelCombobox
+                        value={student.gradeLevel}
+                        onChange={(value) => updateStudent(idx, 'gradeLevel', value)}
+                        placeholder="เลือกหรือพิมพ์ระดับชั้น..."
+                      />
+                    </div>
+                    
+                    <div className="md:col-span-2">
                       <Label>โรงเรียน</Label>
                       <div className="relative">
                         <School className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -727,15 +798,6 @@ export default function TrialBookingPage() {
                         />
                       </div>
                     </div>
-                  </div>
-                  
-                  <div>
-                    <Label>ระดับชั้น</Label>
-                    <GradeLevelCombobox
-                      value={student.gradeLevel}
-                      onChange={(value) => updateStudent(idx, 'gradeLevel', value)}
-                      placeholder="เลือกหรือพิมพ์ระดับชั้น..."
-                    />
                   </div>
                   
                   <div>

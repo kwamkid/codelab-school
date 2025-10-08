@@ -246,6 +246,21 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
   const handleStudentSave = async () => {
     if (!booking || editingStudent === null) return;
     
+    // Validate student data
+    if (!tempStudentData.name.trim()) {
+      toast.error('กรุณากรอกชื่อนักเรียน');
+      return;
+    }
+    
+    // Validate birthdate if provided
+    if (tempStudentData.birthdate) {
+      const age = calculateAge(new Date(tempStudentData.birthdate));
+      if (age < 3 || age > 22) {
+        toast.error('อายุนักเรียนต้องอยู่ระหว่าง 3-22 ปี');
+        return;
+      }
+    }
+    
     try {
       const updatedStudents = [...booking.students];
       updatedStudents[editingStudent] = {
@@ -483,13 +498,21 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
                             onChange={(e) => setTempStudentData(prev => ({ ...prev, name: e.target.value }))}
                             className="h-8 text-sm"
                           />
-                          <Input
-                            type="date"
-                            placeholder="วันเกิด"
-                            value={tempStudentData.birthdate}
-                            onChange={(e) => setTempStudentData(prev => ({ ...prev, birthdate: e.target.value }))}
-                            className="h-8 text-sm"
-                          />
+                          <div>
+                            <Input
+                              type="date"
+                              placeholder="วันเกิด"
+                              value={tempStudentData.birthdate}
+                              onChange={(e) => setTempStudentData(prev => ({ ...prev, birthdate: e.target.value }))}
+                              max={new Date().toISOString().split('T')[0]}
+                              className="h-8 text-sm"
+                            />
+                            {tempStudentData.birthdate && (
+                              <p className="text-xs text-gray-500 mt-1">
+                                อายุ: {calculateAge(new Date(tempStudentData.birthdate))} ปี
+                              </p>
+                            )}
+                          </div>
                           <Input
                             placeholder="โรงเรียน"
                             value={tempStudentData.schoolName}
