@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, Fragment } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { Parent, Student, Enrollment } from '@/types/models';
 import { getParents, getStudentsByParent } from '@/lib/services/parents';
@@ -136,7 +136,6 @@ export default function ParentsPage() {
   // Load enrollment data when parents change
   useEffect(() => {
     if (parents.length > 0 && Array.isArray(classes) && classes.length > 0 && !loadingClasses) {
-      console.log('Loading parent details...');
       setAllParentsData(parents);
       
       const freshClassMap: Record<string, any> = {};
@@ -219,6 +218,39 @@ export default function ParentsPage() {
       );
       
       setAllParentsData(parentsWithDetails);
+      
+      // ============================================
+      // 🔍 LOG 1: Parents Page - รายละเอียดการนับ
+      // ============================================
+      const totalActiveStudents = parentsWithDetails.reduce((sum, p) => sum + (p.activeStudentCount || 0), 0);
+      const totalInactiveStudents = parentsWithDetails.reduce((sum, p) => {
+        const inactiveCount = (p.students || []).filter(s => !s.isActive).length;
+        return sum + inactiveCount;
+      }, 0);
+      const totalAllStudents = parentsWithDetails.reduce((sum, p) => sum + (p.students?.length || 0), 0);
+      
+      console.group('📊 PARENTS PAGE - Student Count');
+      console.log('Total Parents:', parentsWithDetails.length);
+      console.log('Total Students (All):', totalAllStudents);
+      console.log('Total Students (Active):', totalActiveStudents);
+      console.log('Total Students (Inactive):', totalInactiveStudents);
+      console.log('Verification:', totalActiveStudents + totalInactiveStudents, '=', totalAllStudents);
+      
+      // แสดง breakdown ตาม parent (แสดงทุกคน)
+      const parentsWithStudents = parentsWithDetails
+        .filter(p => (p.students?.length || 0) > 0)
+        .map(p => ({
+          parentId: p.id.substring(0, 8),
+          parentName: p.displayName,
+          total: p.students?.length || 0,
+          active: p.activeStudentCount || 0,
+          inactive: (p.students || []).filter(s => !s.isActive).length
+        }));
+      
+      console.log(`Parents with students: ${parentsWithStudents.length}`);
+      console.table(parentsWithStudents);
+      console.groupEnd();
+      
       setEnrollmentLoading(false);
     } catch (error) {
       console.error('Error loading parent details:', error);
@@ -539,8 +571,8 @@ export default function ParentsPage() {
                   </TableHeader>
                   <TableBody>
                     {paginatedParents.map((parent) => (
-                      <>
-                        <TableRow key={parent.id} className="cursor-pointer hover:bg-gray-50" onClick={() => toggleRow(parent.id)}>
+                      <Fragment key={parent.id}>
+                        <TableRow className="cursor-pointer hover:bg-gray-50" onClick={() => toggleRow(parent.id)}>
                           <TableCell>
                             <Button variant="ghost" size="sm" className="p-0 h-6 w-6">
                               {expandedRows.has(parent.id) ? 
@@ -680,7 +712,7 @@ export default function ParentsPage() {
                         
                         {/* Expandable row for students */}
                         {expandedRows.has(parent.id) && parent.students && parent.students.length > 0 && (
-                          <TableRow key={`${parent.id}-expanded`}>
+                          <TableRow>
                             <TableCell colSpan={9} className="bg-gray-50 p-0">
                               <div className="p-4">
                                 <h4 className="font-medium text-sm mb-3">ข้อมูลนักเรียน</h4>
@@ -800,7 +832,7 @@ export default function ParentsPage() {
                             </TableCell>
                           </TableRow>
                         )}
-                      </>
+                      </Fragment>
                     ))}
                   </TableBody>
                 </Table>

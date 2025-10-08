@@ -119,7 +119,7 @@ export default function StudentsPage() {
   } = useQuery<StudentWithInfo[]>({
     queryKey: QUERY_KEYS.students,
     queryFn: getAllStudentsWithParents,
-    staleTime: 2 * 60 * 1000, // 2 minutes (เพิ่มจาก 1 นาที)
+    staleTime: 2 * 60 * 1000, // 2 minutes
     gcTime: 5 * 60 * 1000, // 5 minutes
   });
 
@@ -132,6 +132,61 @@ export default function StudentsPage() {
     staleTime: 5 * 60 * 1000, // 5 minutes
     gcTime: 10 * 60 * 1000, // 10 minutes
   });
+
+  // ============================================
+  // 🔍 LOG 2: Students Page - รายละเอียดการนับ
+  // ============================================
+  useEffect(() => {
+    if (!loadingStudents && students.length > 0) {
+      const activeStudents = students.filter(s => s.isActive);
+      const inactiveStudents = students.filter(s => !s.isActive);
+      
+      console.group('📊 STUDENTS PAGE - Student Count');
+      console.log('Total Students (All):', students.length);
+      console.log('Total Students (Active):', activeStudents.length);
+      console.log('Total Students (Inactive):', inactiveStudents.length);
+      console.log('Verification:', activeStudents.length + inactiveStudents.length, '=', students.length);
+      
+      // นับจำนวนนักเรียนแยกตาม parent
+      const parentGroups = students.reduce((acc, student) => {
+        if (!acc[student.parentId]) {
+          acc[student.parentId] = {
+            parentId: student.parentId.substring(0, 8),
+            parentName: student.parentName,
+            total: 0,
+            active: 0,
+            inactive: 0
+          };
+        }
+        acc[student.parentId].total++;
+        if (student.isActive) {
+          acc[student.parentId].active++;
+        } else {
+          acc[student.parentId].inactive++;
+        }
+        return acc;
+      }, {} as Record<string, any>);
+      
+      const parentSummary = Object.values(parentGroups);
+      console.log('Total Unique Parents:', parentSummary.length);
+      console.table(parentSummary);
+      
+      // หา students ที่อาจจะมีปัญหา
+      const studentsWithNoParentName = students.filter(s => !s.parentName || s.parentName === 'Unknown');
+      if (studentsWithNoParentName.length > 0) {
+        console.warn('⚠️ Students with no parent name:', studentsWithNoParentName.length);
+        console.table(studentsWithNoParentName.map(s => ({
+          studentId: s.id.substring(0, 8),
+          name: s.name,
+          parentId: s.parentId.substring(0, 8),
+          parentName: s.parentName,
+          isActive: s.isActive
+        })));
+      }
+      
+      console.groupEnd();
+    }
+  }, [students, loadingStudents]);
 
   // Reset page when filters change
   useEffect(() => {
@@ -177,16 +232,17 @@ export default function StudentsPage() {
     return getPaginatedData(filteredStudents);
   }, [filteredStudents, getPaginatedData]);
 
-  // Statistics
+  // Statistics - นับจากข้อมูลจริง ไม่ขึ้นกับ filter
   const stats = useMemo(() => {
     return {
-      total: filteredStudents.length,
-      active: filteredStudents.filter(s => s.isActive).length,
-      male: filteredStudents.filter(s => s.gender === 'M').length,
-      female: filteredStudents.filter(s => s.gender === 'F').length,
-      withAllergies: filteredStudents.filter(s => s.allergies).length,
+      total: students.length,
+      active: students.filter(s => s.isActive).length,
+      inactive: students.filter(s => !s.isActive).length,
+      male: students.filter(s => s.gender === 'M').length,
+      female: students.filter(s => s.gender === 'F').length,
+      withAllergies: students.filter(s => s.allergies).length,
     };
-  }, [filteredStudents]);
+  }, [students]);
 
   const calculatedTotalPages = totalPages(filteredStudents.length);
 
@@ -212,7 +268,7 @@ export default function StudentsPage() {
         </p>
       </div>
 
-      {/* Summary Cards - แสดงทันทีพร้อม skeleton หรือข้อมูลจริง */}
+      {/* Summary Cards - แสดงข้อมูลจริงทั้งหมด */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <Card>
           <CardHeader className="pb-2">
@@ -227,7 +283,9 @@ export default function StudentsPage() {
             ) : (
               <>
                 <div className="text-2xl font-bold">{stats.total}</div>
-                <p className="text-xs text-gray-500 mt-1">ใช้งาน {stats.active} คน</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  ใช้งาน {stats.active} คน • ไม่ใช้งาน {stats.inactive} คน
+                </p>
               </>
             )}
           </CardContent>

@@ -22,15 +22,17 @@ import { Parent, Student } from '@/types/models';
 const COLLECTION_NAME = 'parents';
 
 // ============================================
-// 🚀 BEST: Fast Student Loading with collectionGroup (Requires Firestore Rules)
+// 📍 lib/services/parents.ts
+// แทนที่ฟังก์ชัน getAllStudentsWithParentsFast ด้วยโค้ดนี้
 // ============================================
+
 export async function getAllStudentsWithParentsFast(): Promise<(Student & { 
   parentName: string; 
   parentPhone: string;
   lineDisplayName?: string;
 })[]> {
   try {
-    console.time('getAllStudentsWithParentsFast');
+    console.time('⏱️ getAllStudentsWithParentsFast');
     
     // Step 1: Query ALL students at once using collectionGroup (1 query!)
     console.time('Step 1: Query all students');
@@ -40,7 +42,7 @@ export async function getAllStudentsWithParentsFast(): Promise<(Student & {
     );
     const studentsSnapshot = await getDocs(studentsQuery);
     console.timeEnd('Step 1: Query all students');
-    console.log(`Found ${studentsSnapshot.size} students`);
+    console.log(`Found ${studentsSnapshot.size} students in Firestore`);
     
     // Step 2: Extract unique parent IDs
     const parentIds = new Set<string>();
@@ -118,8 +120,34 @@ export async function getAllStudentsWithParentsFast(): Promise<(Student & {
     });
     console.timeEnd('Step 4: Combine data');
     
-    console.timeEnd('getAllStudentsWithParentsFast');
-    console.log(`Total students with parent info: ${result.length}`);
+    // ============================================
+    // 🔍 LOG 3: Service Layer - รายละเอียดการโหลด
+    // ============================================
+    console.group('📊 SERVICE LAYER - getAllStudentsWithParentsFast');
+    const activeCount = result.filter(s => s.isActive).length;
+    const inactiveCount = result.filter(s => !s.isActive).length;
+    const unknownParents = result.filter(s => s.parentName === 'Unknown');
+    
+    console.log('Total Students Loaded:', result.length);
+    console.log('Active Students:', activeCount);
+    console.log('Inactive Students:', inactiveCount);
+    console.log('Unique Parents (from students):', parentIds.size);
+    console.log('Parents Found in DB:', parentMap.size);
+    console.log('Students with Unknown Parent:', unknownParents.length);
+    
+    if (unknownParents.length > 0) {
+      console.warn('⚠️ Students without parent mapping:');
+      console.table(unknownParents.slice(0, 10).map(s => ({
+        studentId: s.id.substring(0, 8),
+        name: s.name,
+        parentId: s.parentId.substring(0, 8),
+        isActive: s.isActive
+      })));
+    }
+    
+    console.groupEnd();
+    
+    console.timeEnd('⏱️ getAllStudentsWithParentsFast');
     
     return result;
   } catch (error) {
