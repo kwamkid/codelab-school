@@ -18,7 +18,8 @@ import {
   AlertCircle,
   Edit,
   Users,
-  Globe
+  Globe,
+  Loader2
 } from 'lucide-react';
 import Link from 'next/link';
 import { Badge } from "@/components/ui/badge";
@@ -45,6 +46,44 @@ type StudentWithInfo = Student & {
   parentPhone: string;
 };
 
+// ============================================
+// 🎨 Mini Skeleton Components
+// ============================================
+const TableRowSkeleton = () => (
+  <TableRow>
+    <TableCell>
+      <div className="flex items-start gap-3">
+        <Skeleton className="w-12 h-12 rounded-full flex-shrink-0" />
+        <div className="space-y-2">
+          <Skeleton className="h-4 w-32" />
+          <Skeleton className="h-3 w-24" />
+        </div>
+      </div>
+    </TableCell>
+    <TableCell>
+      <div className="space-y-2">
+        <Skeleton className="h-5 w-12" />
+        <Skeleton className="h-4 w-16" />
+      </div>
+    </TableCell>
+    <TableCell>
+      <Skeleton className="h-4 w-28" />
+    </TableCell>
+    <TableCell>
+      <div className="space-y-2">
+        <Skeleton className="h-4 w-24" />
+        <Skeleton className="h-3 w-20" />
+      </div>
+    </TableCell>
+    <TableCell>
+      <Skeleton className="h-5 w-12 mx-auto" />
+    </TableCell>
+    <TableCell>
+      <Skeleton className="h-8 w-8 ml-auto" />
+    </TableCell>
+  </TableRow>
+);
+
 // Cache keys
 const QUERY_KEYS = {
   students: ['students'],
@@ -57,7 +96,9 @@ export default function StudentsPage() {
   const [filterStatus, setFilterStatus] = useState<string>('active');
   const [filterAllergy, setFilterAllergy] = useState<string>('all');
 
-  // Pagination
+  // ============================================
+  // 🎯 Pagination Hook
+  // ============================================
   const {
     currentPage,
     pageSize,
@@ -68,18 +109,28 @@ export default function StudentsPage() {
     totalPages,
   } = usePagination(20);
 
-  // React Query: Load students only (super fast!)
-  const { data: students = [], isLoading: loadingStudents } = useQuery<StudentWithInfo[]>({
+  // ============================================
+  // 🎯 Query 1: Students (Load First - Priority)
+  // ============================================
+  const { 
+    data: students = [], 
+    isLoading: loadingStudents,
+    isFetching: fetchingStudents
+  } = useQuery<StudentWithInfo[]>({
     queryKey: QUERY_KEYS.students,
     queryFn: getAllStudentsWithParents,
-    staleTime: 60000, // 1 minute
+    staleTime: 2 * 60 * 1000, // 2 minutes (เพิ่มจาก 1 นาที)
+    gcTime: 5 * 60 * 1000, // 5 minutes
   });
 
-  // React Query: Load branches (optional, for future use)
-  const { data: branches = [] } = useQuery<Branch[]>({
+  // ============================================
+  // 🎯 Query 2: Branches (Load After - Optional)
+  // ============================================
+  const { data: branches = [], isLoading: loadingBranches } = useQuery<Branch[]>({
     queryKey: QUERY_KEYS.branches,
     queryFn: getActiveBranches,
-    staleTime: 300000, // 5 minutes
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes
   });
 
   // Reset page when filters change
@@ -87,7 +138,7 @@ export default function StudentsPage() {
     resetPagination();
   }, [searchTerm, filterGender, filterStatus, filterAllergy, resetPagination]);
 
-  // Filter students (no enrollment data needed)
+  // Filter students
   const filteredStudents = useMemo(() => {
     let filtered = [...students];
     
@@ -124,9 +175,9 @@ export default function StudentsPage() {
   // Paginated data
   const paginatedStudents = useMemo(() => {
     return getPaginatedData(filteredStudents);
-  }, [filteredStudents, currentPage, pageSize, getPaginatedData]);
+  }, [filteredStudents, getPaginatedData]);
 
-  // Statistics (simple, no enrollment data)
+  // Statistics
   const stats = useMemo(() => {
     return {
       total: filteredStudents.length,
@@ -139,44 +190,11 @@ export default function StudentsPage() {
 
   const calculatedTotalPages = totalPages(filteredStudents.length);
 
-  // Loading state
-  if (loadingStudents) {
-    return (
-      <div className="space-y-6">
-        <div className="mb-8">
-          <Skeleton className="h-8 w-64 mb-2" />
-          <Skeleton className="h-4 w-96" />
-        </div>
-
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {[...Array(4)].map((_, i) => (
-            <Card key={i}>
-              <CardHeader className="pb-2">
-                <Skeleton className="h-4 w-20" />
-              </CardHeader>
-              <CardContent>
-                <Skeleton className="h-8 w-12" />
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
-        <Card>
-          <CardHeader>
-            <Skeleton className="h-6 w-48" />
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {[...Array(5)].map((_, i) => (
-                <Skeleton key={i} className="h-12 w-full" />
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
+  // ============================================
+  // 🎨 Loading States (Progressive - แสดงทีละส่วน)
+  // ============================================
+  
+  // Phase 1: แสดง Header + Cards ก่อนเสมอ
   return (
     <div>
       <div className="mb-8">
@@ -186,18 +204,32 @@ export default function StudentsPage() {
         </h1>
         <p className="text-gray-600 mt-2">
           รายชื่อนักเรียนทั้งหมดในระบบ
+          {(loadingStudents || fetchingStudents) && (
+            <span className="text-orange-500 ml-2">
+              (กำลังโหลดข้อมูล...)
+            </span>
+          )}
         </p>
       </div>
 
-      {/* Summary Cards - Simple Stats Only */}
+      {/* Summary Cards - แสดงทันทีพร้อม skeleton หรือข้อมูลจริง */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">นักเรียนทั้งหมด</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.total}</div>
-            <p className="text-xs text-gray-500 mt-1">ใช้งาน {stats.active} คน</p>
+            {loadingStudents ? (
+              <>
+                <Skeleton className="h-8 w-12 mb-1" />
+                <Skeleton className="h-3 w-20" />
+              </>
+            ) : (
+              <>
+                <div className="text-2xl font-bold">{stats.total}</div>
+                <p className="text-xs text-gray-500 mt-1">ใช้งาน {stats.active} คน</p>
+              </>
+            )}
           </CardContent>
         </Card>
         
@@ -206,10 +238,19 @@ export default function StudentsPage() {
             <CardTitle className="text-sm font-medium">นักเรียนชาย</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-600">{stats.male}</div>
-            <p className="text-xs text-gray-500 mt-1">
-              {stats.total > 0 ? ((stats.male / stats.total) * 100).toFixed(0) : 0}%
-            </p>
+            {loadingStudents ? (
+              <>
+                <Skeleton className="h-8 w-12 mb-1" />
+                <Skeleton className="h-3 w-16" />
+              </>
+            ) : (
+              <>
+                <div className="text-2xl font-bold text-blue-600">{stats.male}</div>
+                <p className="text-xs text-gray-500 mt-1">
+                  {stats.total > 0 ? ((stats.male / stats.total) * 100).toFixed(0) : 0}%
+                </p>
+              </>
+            )}
           </CardContent>
         </Card>
         
@@ -218,10 +259,19 @@ export default function StudentsPage() {
             <CardTitle className="text-sm font-medium">นักเรียนหญิง</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-pink-600">{stats.female}</div>
-            <p className="text-xs text-gray-500 mt-1">
-              {stats.total > 0 ? ((stats.female / stats.total) * 100).toFixed(0) : 0}%
-            </p>
+            {loadingStudents ? (
+              <>
+                <Skeleton className="h-8 w-12 mb-1" />
+                <Skeleton className="h-3 w-16" />
+              </>
+            ) : (
+              <>
+                <div className="text-2xl font-bold text-pink-600">{stats.female}</div>
+                <p className="text-xs text-gray-500 mt-1">
+                  {stats.total > 0 ? ((stats.female / stats.total) * 100).toFixed(0) : 0}%
+                </p>
+              </>
+            )}
           </CardContent>
         </Card>
         
@@ -230,13 +280,22 @@ export default function StudentsPage() {
             <CardTitle className="text-sm font-medium">มีประวัติแพ้</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-600">{stats.withAllergies}</div>
-            <p className="text-xs text-gray-500 mt-1">ต้องระวัง</p>
+            {loadingStudents ? (
+              <>
+                <Skeleton className="h-8 w-12 mb-1" />
+                <Skeleton className="h-3 w-16" />
+              </>
+            ) : (
+              <>
+                <div className="text-2xl font-bold text-red-600">{stats.withAllergies}</div>
+                <p className="text-xs text-gray-500 mt-1">ต้องระวัง</p>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>
 
-      {/* Filters - Simplified */}
+      {/* Filters - แสดงทันที */}
       <div className="flex flex-col md:flex-row gap-4 mb-6">
         <div className="flex-1 relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
@@ -245,10 +304,11 @@ export default function StudentsPage() {
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-10"
+            disabled={loadingStudents}
           />
         </div>
         
-        <Select value={filterGender} onValueChange={setFilterGender}>
+        <Select value={filterGender} onValueChange={setFilterGender} disabled={loadingStudents}>
           <SelectTrigger className="w-[150px]">
             <SelectValue />
           </SelectTrigger>
@@ -259,7 +319,7 @@ export default function StudentsPage() {
           </SelectContent>
         </Select>
         
-        <Select value={filterStatus} onValueChange={setFilterStatus}>
+        <Select value={filterStatus} onValueChange={setFilterStatus} disabled={loadingStudents}>
           <SelectTrigger className="w-[150px]">
             <SelectValue />
           </SelectTrigger>
@@ -270,7 +330,7 @@ export default function StudentsPage() {
           </SelectContent>
         </Select>
 
-        <Select value={filterAllergy} onValueChange={setFilterAllergy}>
+        <Select value={filterAllergy} onValueChange={setFilterAllergy} disabled={loadingStudents}>
           <SelectTrigger className="w-[180px]">
             <SelectValue />
           </SelectTrigger>
@@ -282,17 +342,44 @@ export default function StudentsPage() {
         </Select>
       </div>
 
-      {/* Students Table - Simple Columns Only */}
+      {/* Students Table - แสดง skeleton หรือข้อมูล */}
       <Card>
         <CardHeader>
           <div className="flex justify-between items-center">
-            <CardTitle>
-              รายชื่อนักเรียน ({filteredStudents.length} คน)
+            <CardTitle className="flex items-center gap-2">
+              <span>
+                รายชื่อนักเรียน 
+                {!loadingStudents && ` (${filteredStudents.length} คน)`}
+              </span>
+              {fetchingStudents && !loadingStudents && (
+                <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+              )}
             </CardTitle>
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          {paginatedStudents.length === 0 ? (
+          {loadingStudents ? (
+            // แสดง skeleton แค่ใน table เท่านั้น
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="min-w-[200px]">ข้อมูลนักเรียน</TableHead>
+                    <TableHead className="w-[120px]">เพศ / อายุ</TableHead>
+                    <TableHead className="w-[180px]">โรงเรียน</TableHead>
+                    <TableHead className="w-[180px]">ผู้ปกครอง</TableHead>
+                    <TableHead className="text-center w-[100px]">ประวัติแพ้</TableHead>
+                    <TableHead className="text-right w-[80px]">จัดการ</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {[...Array(5)].map((_, i) => (
+                    <TableRowSkeleton key={i} />
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          ) : paginatedStudents.length === 0 ? (
             <div className="text-center py-12">
               <Users className="h-12 w-12 text-gray-300 mx-auto mb-4" />
               <h3 className="text-lg font-medium text-gray-900 mb-2">
@@ -412,22 +499,26 @@ export default function StudentsPage() {
                 </Table>
               </div>
 
-              {/* Pagination */}
-              <Pagination
-                currentPage={currentPage}
-                totalPages={calculatedTotalPages}
-                pageSize={pageSize}
-                totalItems={filteredStudents.length}
-                onPageChange={handlePageChange}
-                onPageSizeChange={handlePageSizeChange}
-              />
+              {/* Pagination Component */}
+              {filteredStudents.length > 0 && (
+                <Pagination
+                  currentPage={currentPage}
+                  totalPages={calculatedTotalPages}
+                  pageSize={pageSize}
+                  totalItems={filteredStudents.length}
+                  onPageChange={handlePageChange}
+                  onPageSizeChange={handlePageSizeChange}
+                  pageSizeOptions={[10, 20, 50, 100]}
+                  showFirstLastButtons={false}
+                />
+              )}
             </>
           )}
         </CardContent>
       </Card>
 
-      {/* Allergies Details */}
-      {paginatedStudents.some(s => s.allergies) && (
+      {/* Allergies Details - แสดงเฉพาะเมื่อมีข้อมูลแล้ว */}
+      {!loadingStudents && paginatedStudents.some(s => s.allergies) && (
         <Card className="mt-6">
           <CardHeader>
             <CardTitle className="text-red-600 flex items-center gap-2">

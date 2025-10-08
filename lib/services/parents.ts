@@ -12,12 +12,249 @@ import {
   Timestamp,
   deleteField,
   limit,
-  serverTimestamp
+  serverTimestamp,
+  collectionGroup,
+  documentId
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase/client';
 import { Parent, Student } from '@/types/models';
 
 const COLLECTION_NAME = 'parents';
+
+// ============================================
+// 🚀 BEST: Fast Student Loading with collectionGroup (Requires Firestore Rules)
+// ============================================
+export async function getAllStudentsWithParentsFast(): Promise<(Student & { 
+  parentName: string; 
+  parentPhone: string;
+  lineDisplayName?: string;
+})[]> {
+  try {
+    console.time('getAllStudentsWithParentsFast');
+    
+    // Step 1: Query ALL students at once using collectionGroup (1 query!)
+    console.time('Step 1: Query all students');
+    const studentsQuery = query(
+      collectionGroup(db, 'students'),
+      orderBy('birthdate', 'asc')
+    );
+    const studentsSnapshot = await getDocs(studentsQuery);
+    console.timeEnd('Step 1: Query all students');
+    console.log(`Found ${studentsSnapshot.size} students`);
+    
+    // Step 2: Extract unique parent IDs
+    const parentIds = new Set<string>();
+    studentsSnapshot.docs.forEach(doc => {
+      const parentId = doc.ref.parent.parent?.id;
+      if (parentId) parentIds.add(parentId);
+    });
+    console.log(`Found ${parentIds.size} unique parents`);
+    
+    // Step 3: Batch query parents efficiently
+    console.time('Step 3: Query parents in batches');
+    const parentMap = new Map<string, { displayName: string; phone: string }>();
+    const parentIdsArray = Array.from(parentIds);
+    
+    // Firestore 'in' query limit = 30
+    const batchSize = 30;
+    const batches: Promise<void>[] = [];
+    
+    for (let i = 0; i < parentIdsArray.length; i += batchSize) {
+      const batch = parentIdsArray.slice(i, i + batchSize);
+      
+      const batchPromise = (async () => {
+        const parentsQuery = query(
+          collection(db, 'parents'),
+          where(documentId(), 'in', batch)
+        );
+        const parentsSnapshot = await getDocs(parentsQuery);
+        
+        parentsSnapshot.docs.forEach(doc => {
+          const data = doc.data();
+          parentMap.set(doc.id, {
+            displayName: data.displayName || 'Unknown',
+            phone: data.phone || ''
+          });
+        });
+      })();
+      
+      batches.push(batchPromise);
+    }
+    
+    // Run all parent queries in parallel!
+    await Promise.all(batches);
+    console.timeEnd('Step 3: Query parents in batches');
+    
+    // Step 4: Combine data (fast - in memory)
+    console.time('Step 4: Combine data');
+    const result = studentsSnapshot.docs.map(doc => {
+      const data = doc.data();
+      const parentId = doc.ref.parent.parent?.id || '';
+      const parent = parentMap.get(parentId);
+      
+      return {
+        id: doc.id,
+        parentId,
+        name: data.name || '',
+        nickname: data.nickname || '',
+        birthdate: data.birthdate?.toDate ? data.birthdate.toDate() : new Date(data.birthdate),
+        gender: data.gender || 'M',
+        schoolName: data.schoolName,
+        gradeLevel: data.gradeLevel,
+        profileImage: data.profileImage,
+        allergies: data.allergies,
+        specialNeeds: data.specialNeeds,
+        emergencyContact: data.emergencyContact,
+        emergencyPhone: data.emergencyPhone,
+        isActive: data.isActive ?? true,
+        parentName: parent?.displayName || 'Unknown',
+        parentPhone: parent?.phone || '',
+        lineDisplayName: parent?.displayName
+      } as Student & { 
+        parentName: string; 
+        parentPhone: string;
+        lineDisplayName?: string;
+      };
+    });
+    console.timeEnd('Step 4: Combine data');
+    
+    console.timeEnd('getAllStudentsWithParentsFast');
+    console.log(`Total students with parent info: ${result.length}`);
+    
+    return result;
+  } catch (error) {
+    console.error('Error getting students fast (collectionGroup):', error);
+    console.log('Falling back to optimized batch method...');
+    // Fallback to batch method if collectionGroup fails
+    return getAllStudentsWithParentsBatch();
+  }
+}
+
+// ============================================
+// 🔄 FALLBACK: Optimized Batch Loading (No collectionGroup required)
+// ============================================
+export async function getAllStudentsWithParentsBatch(): Promise<(Student & { 
+  parentName: string; 
+  parentPhone: string;
+  lineDisplayName?: string;
+})[]> {
+  try {
+    console.time('getAllStudentsWithParentsBatch');
+    
+    // Step 1: Get all parents first (1 query)
+    console.time('Step 1: Query all parents');
+    const parentsSnapshot = await getDocs(
+      query(collection(db, 'parents'), orderBy('createdAt', 'desc'))
+    );
+    console.timeEnd('Step 1: Query all parents');
+    console.log(`Found ${parentsSnapshot.size} parents`);
+    
+    // Step 2: Create parent map
+    const parentMap = new Map<string, { displayName: string; phone: string }>();
+    parentsSnapshot.docs.forEach(doc => {
+      const data = doc.data();
+      parentMap.set(doc.id, {
+        displayName: data.displayName || 'Unknown',
+        phone: data.phone || ''
+      });
+    });
+    
+    // Step 3: Query students in parallel batches (NOT one-by-one!)
+    console.time('Step 3: Query students in parallel');
+    const batchSize = 10; // Query 10 parents' students at once
+    const allStudents: (Student & { 
+      parentName: string; 
+      parentPhone: string;
+      lineDisplayName?: string;
+    })[] = [];
+    
+    const parentIds = Array.from(parentMap.keys());
+    const batches: Promise<void>[] = [];
+    
+    for (let i = 0; i < parentIds.length; i += batchSize) {
+      const batchParentIds = parentIds.slice(i, i + batchSize);
+      
+      const batchPromise = (async () => {
+        // Query students for this batch of parents in parallel
+        const studentPromises = batchParentIds.map(async (parentId) => {
+          try {
+            const studentsQuery = query(
+              collection(db, 'parents', parentId, 'students'),
+              orderBy('birthdate', 'asc')
+            );
+            const studentsSnapshot = await getDocs(studentsQuery);
+            const parent = parentMap.get(parentId);
+            
+            return studentsSnapshot.docs.map(doc => {
+              const data = doc.data();
+              return {
+                id: doc.id,
+                parentId,
+                name: data.name || '',
+                nickname: data.nickname || '',
+                birthdate: data.birthdate?.toDate ? data.birthdate.toDate() : new Date(data.birthdate),
+                gender: data.gender || 'M',
+                schoolName: data.schoolName,
+                gradeLevel: data.gradeLevel,
+                profileImage: data.profileImage,
+                allergies: data.allergies,
+                specialNeeds: data.specialNeeds,
+                emergencyContact: data.emergencyContact,
+                emergencyPhone: data.emergencyPhone,
+                isActive: data.isActive ?? true,
+                parentName: parent?.displayName || 'Unknown',
+                parentPhone: parent?.phone || '',
+                lineDisplayName: parent?.displayName
+              } as Student & { 
+                parentName: string; 
+                parentPhone: string;
+                lineDisplayName?: string;
+              };
+            });
+          } catch (error) {
+            console.error(`Error fetching students for parent ${parentId}:`, error);
+            return [];
+          }
+        });
+        
+        // Wait for all students in this batch
+        const batchResults = await Promise.all(studentPromises);
+        // Flatten and add to results
+        batchResults.forEach(students => allStudents.push(...students));
+      })();
+      
+      batches.push(batchPromise);
+    }
+    
+    // Run all batches in parallel
+    await Promise.all(batches);
+    console.timeEnd('Step 3: Query students in parallel');
+    
+    console.timeEnd('getAllStudentsWithParentsBatch');
+    console.log(`Total students: ${allStudents.length}`);
+    
+    return allStudents;
+  } catch (error) {
+    console.error('Error getting students batch:', error);
+    return [];
+  }
+}
+
+// ============================================
+// 🎯 PUBLIC: Smart Auto-Select Method
+// ============================================
+export async function getAllStudentsWithParents(): Promise<(Student & { 
+  parentName: string; 
+  parentPhone: string;
+  lineDisplayName?: string;
+})[]> {
+  // Try fast method first (collectionGroup), fallback to batch if fails
+  return getAllStudentsWithParentsFast();
+}
+
+// ============================================
+// Existing functions below (unchanged)
+// ============================================
 
 // Get all parents - ไม่ filter ตาม branch เพราะเป็นข้อมูลกลาง
 export async function getParents(): Promise<Parent[]> {
@@ -49,15 +286,12 @@ export async function getParentsWithBranchInfo(branchId?: string): Promise<(Pare
     const parents = await getParents();
     
     if (!branchId) {
-      // ถ้าไม่เลือกสาขา ให้คืนข้อมูลปกติ
       return parents;
     }
     
-    // Get enrollments for the branch
     const { getEnrollmentsByBranch } = await import('./enrollments');
     const enrollments = await getEnrollmentsByBranch(branchId);
     
-    // Count students per parent in this branch
     const parentStudentCount = new Map<string, Set<string>>();
     enrollments.forEach(enrollment => {
       if (!parentStudentCount.has(enrollment.parentId)) {
@@ -66,7 +300,6 @@ export async function getParentsWithBranchInfo(branchId?: string): Promise<(Pare
       parentStudentCount.get(enrollment.parentId)!.add(enrollment.studentId);
     });
     
-    // Add branch info to parents
     return parents.map(parent => ({
       ...parent,
       enrolledInBranch: parentStudentCount.has(parent.id),
@@ -127,7 +360,6 @@ export async function getParentByLineId(lineUserId: string): Promise<Parent | nu
 // Create new parent
 export async function createParent(parentData: Omit<Parent, 'id' | 'createdAt' | 'lastLoginAt'>): Promise<string> {
   try {
-    // Create a properly typed data object for Firestore
     const dataToSave: {
       displayName: string;
       phone: string;
@@ -153,14 +385,12 @@ export async function createParent(parentData: Omit<Parent, 'id' | 'createdAt' |
       lastLoginAt: Timestamp.now(),
     };
 
-    // Add optional fields if they exist
     if (parentData.emergencyPhone) dataToSave.emergencyPhone = parentData.emergencyPhone;
     if (parentData.email) dataToSave.email = parentData.email;
     if (parentData.lineUserId) dataToSave.lineUserId = parentData.lineUserId;
     if (parentData.pictureUrl) dataToSave.pictureUrl = parentData.pictureUrl;
     if (parentData.preferredBranchId) dataToSave.preferredBranchId = parentData.preferredBranchId;
 
-    // Add address if provided
     if (parentData.address) {
       dataToSave.address = {
         houseNumber: parentData.address.houseNumber,
@@ -185,16 +415,13 @@ export async function updateParent(id: string, parentData: Partial<Parent>): Pro
   try {
     const docRef = doc(db, COLLECTION_NAME, id);
     
-    // Create a properly typed update object
     const updateData: any = {};
     
-    // Copy only the fields that should be updated
     if (parentData.displayName !== undefined) updateData.displayName = parentData.displayName;
     if (parentData.phone !== undefined) updateData.phone = parentData.phone;
     if (parentData.emergencyPhone !== undefined) updateData.emergencyPhone = parentData.emergencyPhone;
     if (parentData.email !== undefined) updateData.email = parentData.email;
     
-    // Handle LINE fields - use deleteField() for null values
     if (parentData.lineUserId !== undefined) {
       updateData.lineUserId = parentData.lineUserId === null || parentData.lineUserId === '' 
         ? deleteField() 
@@ -209,7 +436,6 @@ export async function updateParent(id: string, parentData: Partial<Parent>): Pro
     
     if (parentData.preferredBranchId !== undefined) updateData.preferredBranchId = parentData.preferredBranchId;
     
-    // Handle address update
     if (parentData.address !== undefined) {
       updateData.address = {
         houseNumber: parentData.address.houseNumber,
@@ -276,7 +502,6 @@ export async function createStudent(
   try {
     const studentsRef = collection(db, COLLECTION_NAME, parentId, 'students');
     
-    // Prepare data without undefined values
     const dataToSave: any = {
       name: studentData.name,
       nickname: studentData.nickname,
@@ -285,7 +510,6 @@ export async function createStudent(
       isActive: studentData.isActive ?? true,
     };
     
-    // Add optional fields only if they have values
     if (studentData.schoolName) dataToSave.schoolName = studentData.schoolName;
     if (studentData.gradeLevel) dataToSave.gradeLevel = studentData.gradeLevel;
     if (studentData.profileImage) dataToSave.profileImage = studentData.profileImage;
@@ -311,10 +535,8 @@ export async function updateStudent(
   try {
     const studentRef = doc(db, 'parents', parentId, 'students', studentId);
     
-    // Prepare update data
     const updateData: any = {};
     
-    // Add fields to update, excluding id and parentId
     Object.keys(data).forEach(key => {
       if (key !== 'id' && key !== 'parentId' && data[key as keyof Student] !== undefined) {
         if (key === 'birthdate' && data.birthdate) {
@@ -325,7 +547,6 @@ export async function updateStudent(
       }
     });
     
-    // Add updatedAt timestamp
     updateData.updatedAt = serverTimestamp();
     
     await updateDoc(studentRef, updateData);
@@ -335,17 +556,15 @@ export async function updateStudent(
   }
 }
 
-// Check if phone exists (updated to check both phone and emergencyPhone)
+// Check if phone exists
 export async function checkParentPhoneExists(phone: string, excludeId?: string): Promise<boolean> {
   try {
-    // Check main phone
     const phoneQuery = query(
       collection(db, COLLECTION_NAME),
       where('phone', '==', phone)
     );
     const phoneSnapshot = await getDocs(phoneQuery);
     
-    // Check emergency phone
     const emergencyPhoneQuery = query(
       collection(db, COLLECTION_NAME),
       where('emergencyPhone', '==', phone)
@@ -365,7 +584,7 @@ export async function checkParentPhoneExists(phone: string, excludeId?: string):
   }
 }
 
-// Search parents (updated to include address search)
+// Search parents
 export async function searchParents(searchTerm: string): Promise<Parent[]> {
   try {
     const parents = await getParents();
@@ -403,49 +622,6 @@ export async function getParentWithStudents(
   }
 }
 
-// Get all students with parent info - ไม่ filter ตาม branch
-export async function getAllStudentsWithParents(): Promise<(Student & { 
-  parentName: string; 
-  parentPhone: string;
-  lineDisplayName?: string;
-})[]> {
-  try {
-    const parents = await getParents();
-    const allStudents: (Student & { 
-      parentName: string; 
-      parentPhone: string;
-      lineDisplayName?: string;
-    })[] = [];
-    
-    for (const parent of parents) {
-      const studentsSnapshot = await getDocs(
-        collection(db, 'parents', parent.id, 'students')
-      );
-      
-      const students = studentsSnapshot.docs.map(doc => ({
-        id: doc.id,
-        parentId: parent.id,
-        ...doc.data(),
-        birthdate: doc.data().birthdate?.toDate() || new Date(),
-        parentName: parent.displayName,
-        parentPhone: parent.phone,
-        lineDisplayName: parent.displayName
-      } as Student & { 
-        parentName: string; 
-        parentPhone: string;
-        lineDisplayName?: string;
-      }));
-      
-      allStudents.push(...students);
-    }
-    
-    return allStudents;
-  } catch (error) {
-    console.error('Error getting all students with parents:', error);
-    return [];
-  }
-}
-
 // Get students with enrollment info for branch
 export async function getAllStudentsWithBranchInfo(branchId?: string): Promise<(Student & { 
   parentName: string; 
@@ -461,11 +637,9 @@ export async function getAllStudentsWithBranchInfo(branchId?: string): Promise<(
       return students;
     }
     
-    // Get enrollments for the branch
     const { getEnrollmentsByBranch } = await import('./enrollments');
     const enrollments = await getEnrollmentsByBranch(branchId);
     
-    // Map student enrollments
     const studentEnrollments = new Map<string, string[]>();
     enrollments.forEach(enrollment => {
       if (!studentEnrollments.has(enrollment.studentId)) {
@@ -474,7 +648,6 @@ export async function getAllStudentsWithBranchInfo(branchId?: string): Promise<(
       studentEnrollments.get(enrollment.studentId)!.push(enrollment.classId);
     });
     
-    // Add branch info to students
     return students.map(student => ({
       ...student,
       enrolledInBranch: studentEnrollments.has(student.id),
@@ -493,7 +666,6 @@ export async function getStudentWithParent(studentId: string): Promise<(Student 
   lineDisplayName?: string;
 }) | null> {
   try {
-    // First, find which parent has this student
     const parentsSnapshot = await getDocs(collection(db, COLLECTION_NAME));
     
     for (const parentDoc of parentsSnapshot.docs) {
@@ -533,7 +705,6 @@ export async function getStudentWithParent(studentId: string): Promise<(Student 
 // Check if LINE User ID already exists
 export async function checkLineUserIdExists(lineUserId: string): Promise<{ exists: boolean; parentId?: string }> {
   try {
-    // Don't check if lineUserId is empty
     if (!lineUserId || lineUserId.trim() === '') {
       return { exists: false };
     }
@@ -593,7 +764,6 @@ export async function deleteStudent(
   studentId: string
 ): Promise<void> {
   try {
-    // Check if student has any enrollments first
     const { getEnrollmentsByStudent } = await import('./enrollments');
     const enrollments = await getEnrollmentsByStudent(studentId);
     
@@ -601,7 +771,6 @@ export async function deleteStudent(
       throw new Error('ไม่สามารถลบนักเรียนที่มีประวัติการลงทะเบียนเรียนได้');
     }
     
-    // Delete student document
     const studentRef = doc(db, COLLECTION_NAME, parentId, 'students', studentId);
     await deleteDoc(studentRef);
     
@@ -615,14 +784,12 @@ export async function deleteStudent(
 // Delete parent
 export async function deleteParent(parentId: string): Promise<void> {
   try {
-    // Check if parent has any students
     const students = await getStudentsByParent(parentId);
     
     if (students.length > 0) {
       throw new Error('ไม่สามารถลบผู้ปกครองที่ยังมีข้อมูลนักเรียนได้ กรุณาลบข้อมูลนักเรียนทั้งหมดก่อน');
     }
     
-    // Delete parent document
     const parentRef = doc(db, COLLECTION_NAME, parentId);
     await deleteDoc(parentRef);
     
