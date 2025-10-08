@@ -120,7 +120,10 @@ export default function ConvertToStudentForm({
   const [classSearchTerm, setClassSearchTerm] = useState('');
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>('all');
   
-  // Form state
+  // Get student data from booking
+  const bookingStudent = booking.students.find(s => s.name === session.studentName);
+  
+  // Form state - ดึงข้อมูลจาก booking มาใส่ default value
   const [formData, setFormData] = useState<FormData>({
     // Parent
     useExistingParent: false,
@@ -137,14 +140,17 @@ export default function ConvertToStudentForm({
       postalCode: ''
     },
     
-    // Student
+    // Student - ใช้ข้อมูลจาก booking
     studentSelection: 'new',
     studentName: session.studentName,
     studentNickname: '',
-    studentBirthdate: '',
+    // ดึงวันเกิดจาก booking ถ้ามี
+    studentBirthdate: bookingStudent?.birthdate 
+      ? new Date(bookingStudent.birthdate).toISOString().split('T')[0]
+      : '',
     studentGender: 'M',
-    studentSchoolName: '',
-    studentGradeLevel: '',
+    studentSchoolName: bookingStudent?.schoolName || '',
+    studentGradeLevel: bookingStudent?.gradeLevel || '',
     studentAllergies: '',
     studentSpecialNeeds: '',
     emergencyContact: '',
@@ -225,7 +231,6 @@ export default function ConvertToStudentForm({
       setSubjects(subjectsData);
       setBranches(branchesData);
       
-      // แสดงคลาสทั้งหมดของสาขา ไม่จำกัดวิชา
       const branchClasses = classesData.filter(cls => 
         cls.branchId === session.branchId &&
         (cls.status === 'published' || cls.status === 'started') &&
@@ -233,16 +238,6 @@ export default function ConvertToStudentForm({
       );
       
       setClasses(branchClasses);
-      
-      // Pre-fill student data if available
-      const studentData = booking.students.find(s => s.name === session.studentName);
-      if (studentData) {
-        setFormData(prev => ({
-          ...prev,
-          studentSchoolName: studentData.schoolName || '',
-          studentGradeLevel: studentData.gradeLevel || ''
-        }));
-      }
       
       // Check enrolled classes if using existing student
       if (formData.selectedExistingStudentId) {
@@ -256,7 +251,6 @@ export default function ConvertToStudentForm({
     }
   };
   
-  // Function to check which classes the student is already enrolled in
   const checkEnrolledClasses = async (studentId: string) => {
     try {
       const { getEnrollmentsByStudent } = await import('@/lib/services/enrollments');
@@ -270,7 +264,6 @@ export default function ConvertToStudentForm({
     }
   };
 
-  // Update enrolled classes when student selection changes
   useEffect(() => {
     if (formData.studentSelection === 'existing' && formData.selectedExistingStudentId) {
       checkEnrolledClasses(formData.selectedExistingStudentId);
@@ -279,7 +272,6 @@ export default function ConvertToStudentForm({
     }
   }, [formData.selectedExistingStudentId, formData.studentSelection]);
 
-  // Set default subject filter to trial subject (but still show all classes)
   useEffect(() => {
     if (session.subjectId && subjects.length > 0) {
       const trialSubject = subjects.find(s => s.id === session.subjectId);
@@ -289,16 +281,13 @@ export default function ConvertToStudentForm({
     }
   }, [session.subjectId, subjects]);
 
-  // Filter classes function
   const getFilteredClasses = () => {
     let filtered = [...classes];
     
-    // Filter by subject
     if (selectedSubjectFilter !== 'all') {
       filtered = filtered.filter(cls => cls.subjectId === selectedSubjectFilter);
     }
     
-    // Filter by search term
     if (classSearchTerm.trim()) {
       const searchLower = classSearchTerm.toLowerCase();
       filtered = filtered.filter(cls => 
@@ -424,9 +413,7 @@ export default function ConvertToStudentForm({
     setLoading(true);
 
     try {
-      // Prepare conversion data
       const conversionData: any = {
-        // Parent info
         useExistingParent: formData.useExistingParent,
         existingParentId: formData.existingParentId,
         parentName: formData.parentName,
@@ -435,7 +422,6 @@ export default function ConvertToStudentForm({
         emergencyPhone: formData.emergencyPhone ? formData.emergencyPhone.replace(/-/g, '') : undefined,
         address: formData.address.houseNumber ? formData.address : undefined,
         
-        // Class and pricing
         classId: formData.selectedClass,
         pricing: {
           originalPrice: pricing.originalPrice,
@@ -446,7 +432,6 @@ export default function ConvertToStudentForm({
         }
       };
       
-      // Add student data based on selection
       if (formData.studentSelection === 'existing' && formData.selectedExistingStudentId) {
         conversionData.useExistingStudent = true;
         conversionData.existingStudentId = formData.selectedExistingStudentId;
@@ -464,7 +449,6 @@ export default function ConvertToStudentForm({
         conversionData.emergencyContactPhone = formData.emergencyContactPhone || undefined;
       }
       
-      // Call enhanced conversion function
       const result = await convertTrialToEnrollment(
         booking.id,
         session.id,
@@ -749,7 +733,6 @@ export default function ConvertToStudentForm({
                   }
                 >
                   <div className="space-y-4">
-                    {/* Existing Students */}
                     {existingStudents.map((student) => (
                       <label 
                         key={student.id} 
@@ -779,7 +762,6 @@ export default function ConvertToStudentForm({
                       </label>
                     ))}
 
-                    {/* New Student Option */}
                     <label className={`flex items-start space-x-3 p-4 border rounded-lg cursor-pointer hover:bg-gray-50 ${
                       formData.studentSelection === 'new' ? 'border-red-500 bg-red-50' : ''
                     }`}>
@@ -808,6 +790,12 @@ export default function ConvertToStudentForm({
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg">ข้อมูลนักเรียนใหม่</CardTitle>
+                {bookingStudent?.birthdate && (
+                  <CardDescription className="text-xs">
+                    <Baby className="inline h-3 w-3 mr-1" />
+                    วันเกิดดึงมาจากข้อมูลการจอง (สามารถแก้ไขได้)
+                  </CardDescription>
+                )}
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -987,7 +975,6 @@ export default function ConvertToStudentForm({
       {/* Step 3: Class Selection & Pricing */}
       {currentStep === 3 && (
         <div className="space-y-6">
-          {/* Trial Session Info */}
           <Alert className="border-blue-200 bg-blue-50">
             <Info className="h-4 w-4 text-blue-600" />
             <AlertDescription className="text-blue-800">

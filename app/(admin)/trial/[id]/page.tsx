@@ -47,7 +47,8 @@ import {
   History,
   Save,
   X as XIcon,
-  Building2
+  Building2,
+  Baby
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useSearchParams } from 'next/navigation';
@@ -66,7 +67,7 @@ import { getSubjects } from '@/lib/services/subjects';
 import { getTeachers } from '@/lib/services/teachers';
 import { getBranches } from '@/lib/services/branches';
 import { getRoomsByBranch } from '@/lib/services/rooms';
-import { formatDate } from '@/lib/utils';
+import { formatDate, calculateAge } from '@/lib/utils';
 import TrialSessionDialog from '@/components/trial/trial-session-dialog';
 import ContactHistorySection from '@/components/trial/contact-history-section';
 import ConvertToStudentDialog from '@/components/trial/convert-to-student-dialog';
@@ -140,7 +141,6 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
     }
   }, [params.id]);
 
-  // เพิ่ม useEffect เพื่อตรวจสอบ action parameter
   useEffect(() => {
     const action = searchParams.get('action');
     const sessionId = searchParams.get('sessionId');
@@ -151,7 +151,6 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
         setSelectedSession(sessionToReschedule);
         setRescheduleModalOpen(true);
         
-        // Clear URL parameters using Next.js router
         router.replace(`/trial/${params.id}`, { scroll: false });
       }
     }
@@ -178,11 +177,9 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
       setTeachers(teachersData.filter(t => t.isActive));
       setBranches(branchesData.filter(b => b.isActive));
       
-      // Load sessions
       const sessionsData = await getTrialSessionsByBooking(params.id);
       setSessions(sessionsData);
       
-      // Load rooms for all branches
       const roomsData: Record<string, Room[]> = {};
       for (const branch of branchesData) {
         const branchRooms = await getRoomsByBranch(branch.id);
@@ -239,6 +236,7 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
     const student = booking.students[idx];
     setTempStudentData({
       name: student.name,
+      birthdate: student.birthdate ? new Date(student.birthdate).toISOString().split('T')[0] : '',
       schoolName: student.schoolName || '',
       gradeLevel: student.gradeLevel || ''
     });
@@ -252,7 +250,10 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
       const updatedStudents = [...booking.students];
       updatedStudents[editingStudent] = {
         ...updatedStudents[editingStudent],
-        ...tempStudentData
+        name: tempStudentData.name,
+        schoolName: tempStudentData.schoolName,
+        gradeLevel: tempStudentData.gradeLevel,
+        ...(tempStudentData.birthdate && { birthdate: new Date(tempStudentData.birthdate) })
       };
       
       await updateTrialBooking(booking.id, { students: updatedStudents });
@@ -266,7 +267,6 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
     }
   };
 
-  // ฟังก์ชันจัดการสาขา
   const handleBranchEdit = () => {
     if (!booking) return;
     setTempBranchId(booking.branchId || '');
@@ -295,7 +295,6 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
     setBooking({ ...booking, status: 'cancelled' });
     toast.success('ยกเลิกการจองเรียบร้อย');
     
-    // Reload data to update sessions
     loadData();
   };
 
@@ -320,7 +319,6 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
     setRescheduleModalOpen(false);
     setSelectedSession(null);
     
-    // Make sure URL is clean
     router.replace(`/trial/${params.id}`, { scroll: false });
   };
 
@@ -350,7 +348,6 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
 
   if (!booking) return null;
 
-  // Get students who haven't scheduled trial yet
   const unscheduledStudents = booking.students.filter(student => 
     !sessions.some(session => session.studentName === student.name)
   );
@@ -487,6 +484,13 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
                             className="h-8 text-sm"
                           />
                           <Input
+                            type="date"
+                            placeholder="วันเกิด"
+                            value={tempStudentData.birthdate}
+                            onChange={(e) => setTempStudentData(prev => ({ ...prev, birthdate: e.target.value }))}
+                            className="h-8 text-sm"
+                          />
+                          <Input
                             placeholder="โรงเรียน"
                             value={tempStudentData.schoolName}
                             onChange={(e) => setTempStudentData(prev => ({ ...prev, schoolName: e.target.value }))}
@@ -508,6 +512,12 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
                             <div className="flex-1">
                               <h4 className="font-medium text-sm">{student.name}</h4>
                               <div className="space-y-0.5 mt-1">
+                                {student.birthdate && (
+                                  <p className="text-xs text-gray-600 flex items-center gap-1">
+                                    <Baby className="h-3 w-3" />
+                                    {formatDate(student.birthdate)} (อายุ {calculateAge(student.birthdate)} ปี)
+                                  </p>
+                                )}
                                 {student.schoolName && (
                                   <p className="text-xs text-gray-600 flex items-center gap-1">
                                     <School className="h-3 w-3" />
@@ -658,14 +668,12 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
                               </div>
                             </TableCell>
                             <TableCell className="text-center">
-                              {/* ถ้าลงทะเบียนแล้ว ไม่ต้องแสดงสถานะอื่น */}
                               {session.converted ? (
                                 <Badge className="bg-emerald-100 text-emerald-700">
                                   <UserPlus className="h-3 w-3 mr-1" />
                                   ลงทะเบียนแล้ว
                                 </Badge>
                               ) : (
-                                // แสดงสถานะปกติถ้ายังไม่ได้ลงทะเบียน
                                 <>
                                   {session.status === 'scheduled' && isPast ? (
                                     <div className="flex gap-2 justify-center">
@@ -680,7 +688,6 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
                                               attended: true
                                             });
                                             
-                                            // Check if all sessions are completed
                                             const updatedSessions = sessions.map(s => 
                                               s.id === session.id ? { ...s, status: 'attended' as const } : s
                                             );
@@ -778,7 +785,6 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
                                       </h4>
                                       <div className="space-y-3 max-h-64 overflow-y-auto">
                                         {session.rescheduleHistory.map((history, idx) => {
-                                          // Convert Timestamp to Date if needed
                                           const originalDate = history.originalDate instanceof Date 
                                             ? history.originalDate 
                                             : new Date((history.originalDate as any).seconds * 1000);
@@ -835,7 +841,6 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
                                   <DropdownMenuLabel>จัดการ</DropdownMenuLabel>
                                   <DropdownMenuSeparator />
                                   
-                                  {/* ถ้าลงทะเบียนแล้ว ไม่ต้องแสดง action อื่น */}
                                   {session.converted ? (
                                     <DropdownMenuItem disabled className="text-gray-400">
                                       <CheckCircle className="h-4 w-4 mr-2" />
@@ -874,7 +879,6 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
                                         </DropdownMenuItem>
                                       )}
                                       
-                                      {/* สามารถแปลงเป็นนักเรียนได้ แม้จะยกเลิกหรือยังไม่ได้เรียน */}
                                       {!session.converted && (
                                         <DropdownMenuItem 
                                           onSelect={() => {
@@ -888,10 +892,9 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
                                         </DropdownMenuItem>
                                       )}
                                       
-                                      {/* สามารถนัดใหม่ได้ แม้จะยกเลิก */}
-                                      {(session.status === 'scheduled' && !isPast) || 
+                                      {((session.status === 'scheduled' && !isPast) || 
                                        session.status === 'cancelled' || 
-                                       session.status === 'absent' ? (
+                                       session.status === 'absent') && (
                                         <>
                                           <DropdownMenuItem
                                             onSelect={() => {
@@ -903,7 +906,7 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
                                             {session.status === 'cancelled' ? 'นัดวันใหม่' : 'เปลี่ยนวันนัดหมาย'}
                                           </DropdownMenuItem>
                                         </>
-                                      ) : null}
+                                      )}
                                       
                                       {session.status === 'scheduled' && !isPast && (
                                         <>
@@ -945,7 +948,7 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
 
         {/* Right Column - Actions & History */}
         <div className="space-y-6">
-          {/* Branch Info - ย้ายมาอยู่บนสุดทางขวา */}
+          {/* Branch Info */}
           <Card>
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
@@ -1066,7 +1069,6 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
                 </Alert>
               )}
               
-              {/* ปุ่มยกเลิกการจอง - แสดงเมื่อสถานะเป็น new, contacted, scheduled */}
               {(booking.status === 'new' || booking.status === 'contacted' || booking.status === 'scheduled') && (
                 <>
                  <div className="pt-2 mt-2 border-t">
@@ -1083,7 +1085,6 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
                 </>
               )}
               
-              {/* แสดงข้อความถ้าถูกยกเลิกแล้ว */}
               {booking.status === 'cancelled' && (
                 <Alert>
                   <XCircle className="h-4 w-4" />
@@ -1142,7 +1143,6 @@ export default function TrialBookingDetailPage({ params }: { params: { id: strin
         />
       )}
 
-      {/* Cancel Booking Dialog */}
       <CancelBookingDialog
         isOpen={cancelDialogOpen}
         onClose={() => setCancelDialogOpen(false)}

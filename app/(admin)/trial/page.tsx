@@ -45,7 +45,8 @@ import {
   Eye,
   Building2,
   Clock,
-  XCircle
+  XCircle,
+  Baby
 } from 'lucide-react';
 import { CancelBookingDialog } from '@/components/trial/cancel-booking-dialog';
 import { useRouter } from 'next/navigation';
@@ -58,7 +59,8 @@ import {
   cancelTrialBooking 
 } from '@/lib/services/trial-bookings';
 import { getActiveBranches } from '@/lib/services/branches';
-import { formatDate } from '@/lib/utils';
+import { getSubjects } from '@/lib/services/subjects';
+import { formatDate, calculateAge } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useBranch } from '@/contexts/BranchContext';
 import { PermissionGuard } from '@/components/auth/permission-guard';
@@ -84,6 +86,7 @@ const QUERY_KEYS = {
   trialBookings: (branchId?: string | null) => ['trialBookings', branchId],
   trialStats: (branchId?: string | null) => ['trialStats', branchId],
   branches: ['branches', 'active'],
+  subjects: ['subjects', 'active'],
 };
 
 export default function TrialBookingsPage() {
@@ -129,10 +132,25 @@ export default function TrialBookingsPage() {
     staleTime: 300000, // 5 minutes
   });
 
+  const { data: subjects = [] } = useQuery({
+    queryKey: QUERY_KEYS.subjects,
+    queryFn: async () => {
+      const allSubjects = await getSubjects();
+      return allSubjects.filter(s => s.isActive);
+    },
+    staleTime: 300000, // 5 minutes
+  });
+
   // Create lookup map for branches
   const branchesMap = useMemo(() => 
     new Map(branches.map(b => [b.id, b])), 
     [branches]
+  );
+
+  // Create lookup map for subjects
+  const subjectsMap = useMemo(() => 
+    new Map(subjects.map(s => [s.id, s])), 
+    [subjects]
   );
 
   // Filter bookings with memoization
@@ -323,7 +341,7 @@ export default function TrialBookingsPage() {
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <div className="p-6 max-w-full mx-auto space-y-6">
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
@@ -448,13 +466,14 @@ export default function TrialBookingsPage() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>วันที่/เวลา</TableHead>
-                          <TableHead>ช่องทาง</TableHead>
-                          {isAllBranches && <TableHead>สาขา</TableHead>}
-                          <TableHead>ผู้ปกครอง</TableHead>
-                          <TableHead>นักเรียน</TableHead>
-                          <TableHead>สถานะ</TableHead>
-                          <TableHead className="text-center">จัดการ</TableHead>
+                          <TableHead className="w-[140px]">วันที่/เวลา</TableHead>
+                          <TableHead className="w-[80px]">ช่องทาง</TableHead>
+                          {isAllBranches && <TableHead className="w-[120px]">สาขา</TableHead>}
+                          <TableHead className="w-[180px]">ผู้ปกครอง</TableHead>
+                          <TableHead className="w-[200px]">นักเรียน</TableHead>
+                          <TableHead className="w-[180px]">วิชาที่สนใจ</TableHead>
+                          <TableHead className="w-[100px]">สถานะ</TableHead>
+                          <TableHead className="w-[100px] text-center">จัดการ</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -462,7 +481,7 @@ export default function TrialBookingsPage() {
                           <TableRow key={booking.id}>
                             <TableCell>
                               <div className="space-y-1">
-                                <div className="flex items-center gap-1 font-medium">
+                                <div className="flex items-center gap-1 font-medium text-sm">
                                   <Calendar className="h-3 w-3 text-gray-400" />
                                   {formatDate(booking.createdAt)}
                                 </div>
@@ -482,17 +501,11 @@ export default function TrialBookingsPage() {
                             )}
                             <TableCell>
                               <div>
-                                <div className="font-medium">{booking.parentName}</div>
-                                <div className="text-sm text-gray-600 flex items-center gap-2 mt-1">
+                                <div className="font-medium text-sm">{booking.parentName}</div>
+                                <div className="text-xs text-gray-600 flex items-center gap-1 mt-1">
                                   <Phone className="h-3 w-3" />
                                   {booking.parentPhone}
                                 </div>
-                                {booking.parentEmail && (
-                                  <div className="text-sm text-gray-600 flex items-center gap-2 mt-1">
-                                    <Mail className="h-3 w-3" />
-                                    {booking.parentEmail}
-                                  </div>
-                                )}
                               </div>
                             </TableCell>
                             <TableCell>
@@ -500,15 +513,44 @@ export default function TrialBookingsPage() {
                                 {booking.students.map((student, idx) => (
                                   <div key={idx} className="text-sm">
                                     <div className="font-medium">{student.name}</div>
-                                    {student.schoolName && (
-                                      <div className="text-gray-600">
-                                        {student.schoolName}
-                                        {student.gradeLevel && ` (${student.gradeLevel})`}
-                                      </div>
-                                    )}
-                                    <div className="text-gray-500">
-                                      สนใจ {student.subjectInterests.length} วิชา
+                                    <div className="space-y-0.5">
+                                      {student.birthdate && (
+                                        <div className="text-xs text-gray-600 flex items-center gap-1">
+                                          <Baby className="h-3 w-3" />
+                                          {formatDate(student.birthdate)} ({calculateAge(student.birthdate)} ปี)
+                                        </div>
+                                      )}
+                                      {student.schoolName && (
+                                        <div className="text-xs text-gray-600">
+                                          {student.schoolName}
+                                          {student.gradeLevel && ` (${student.gradeLevel})`}
+                                        </div>
+                                      )}
                                     </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="space-y-2">
+                                {booking.students.map((student, idx) => (
+                                  <div key={idx} className="flex flex-wrap gap-1">
+                                    {student.subjectInterests.map(subjectId => {
+                                      const subject = subjectsMap.get(subjectId);
+                                      return subject ? (
+                                        <Badge 
+                                          key={subjectId} 
+                                          className="text-xs h-5 px-1.5"
+                                          style={{ 
+                                            backgroundColor: `${subject.color}20`,
+                                            color: subject.color,
+                                            borderColor: subject.color
+                                          }}
+                                        >
+                                          {subject.name}
+                                        </Badge>
+                                      ) : null;
+                                    })}
                                   </div>
                                 ))}
                               </div>
@@ -519,9 +561,8 @@ export default function TrialBookingsPage() {
                             <TableCell>
                               <div className="flex items-center justify-center gap-2">
                                 <Link href={`/trial/${booking.id}`}>
-                                  <Button variant="outline" size="sm">
+                                  <Button variant="outline" size="sm" className="h-8 w-8 p-0">
                                     <Eye className="h-4 w-4" />
-                                    <span className="ml-2 hidden sm:inline">ดูรายละเอียด</span>
                                   </Button>
                                 </Link>
                                 
@@ -532,7 +573,7 @@ export default function TrialBookingsPage() {
                                       variant="outline"
                                       size="sm"
                                       onClick={() => handleCancelClick(booking)}
-                                      className="text-red-600 hover:text-red-700"
+                                      className="text-red-600 hover:text-red-700 h-8 w-8 p-0"
                                     >
                                       <XCircle className="h-4 w-4" />
                                     </Button>
@@ -544,7 +585,7 @@ export default function TrialBookingsPage() {
                                       variant="outline"
                                       size="sm"
                                       onClick={() => handleDeleteClick(booking)}
-                                      className="text-gray-600 hover:text-gray-700"
+                                      className="text-gray-600 hover:text-gray-700 h-8 w-8 p-0"
                                     >
                                       <Trash2 className="h-4 w-4" />
                                     </Button>

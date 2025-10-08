@@ -249,6 +249,7 @@ export interface TrialBooking {
     name: string;
     schoolName?: string;
     gradeLevel?: string;
+    birthdate?: Date;              // ✨ เพิ่มใหม่: วันเกิด
     subjectInterests: string[]; // วิชาที่สนใจ (subject IDs)
   }[];
 

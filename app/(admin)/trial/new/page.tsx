@@ -24,7 +24,8 @@ import {
   School,
   GraduationCap,
   AlertCircle,
-  Building2
+  Building2,
+  Calendar
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Subject, Branch } from '@/types/models';
@@ -33,9 +34,11 @@ import { getBranches } from '@/lib/services/branches';
 import { createTrialBooking } from '@/lib/services/trial-bookings';
 import { GradeLevelCombobox } from '@/components/ui/grade-level-combobox';
 import { useBranch } from '@/contexts/BranchContext';
+import { calculateAge } from '@/lib/utils';
 
 interface StudentForm {
   name: string;
+  birthdate: string;
   schoolName: string;
   gradeLevel: string;
   subjectInterests: string[];
@@ -52,9 +55,10 @@ export default function CreateTrialBookingPage() {
   const [parentName, setParentName] = useState('');
   const [parentPhone, setParentPhone] = useState('');
   const [parentEmail, setParentEmail] = useState('');
-  const [selectedBranch, setSelectedBranch] = useState(''); // เพิ่ม state สำหรับสาขา
+  const [selectedBranch, setSelectedBranch] = useState('');
   const [students, setStudents] = useState<StudentForm[]>([{
     name: '',
+    birthdate: '',
     schoolName: '',
     gradeLevel: '',
     subjectInterests: []
@@ -68,7 +72,6 @@ export default function CreateTrialBookingPage() {
   // Set default branch จาก context
   useEffect(() => {
     if (selectedBranchId && !selectedBranch && branches.length > 0) {
-      // ตรวจสอบว่า selectedBranchId มีใน branches หรือไม่
       const branchExists = branches.find(b => b.id === selectedBranchId);
       if (branchExists) {
         setSelectedBranch(selectedBranchId);
@@ -93,6 +96,7 @@ export default function CreateTrialBookingPage() {
   const addStudent = () => {
     setStudents([...students, {
       name: '',
+      birthdate: '',
       schoolName: '',
       gradeLevel: '',
       subjectInterests: []
@@ -142,7 +146,6 @@ export default function CreateTrialBookingPage() {
       return false;
     }
 
-    // เพิ่มการตรวจสอบสาขา
     if (!selectedBranch) {
       toast.error('กรุณาเลือกสาขา');
       return false;
@@ -161,6 +164,16 @@ export default function CreateTrialBookingPage() {
         toast.error(`กรุณากรอกชื่อนักเรียนคนที่ ${i + 1}`);
         return false;
       }
+      
+      // Validate birthdate if provided
+      if (student.birthdate) {
+        const age = calculateAge(new Date(student.birthdate));
+        if (age < 3 || age > 18) {
+          toast.error(`อายุนักเรียนคนที่ ${i + 1} ต้องอยู่ระหว่าง 3-18 ปี`);
+          return false;
+        }
+      }
+      
       if (student.subjectInterests.length === 0) {
         toast.error(`กรุณาเลือกวิชาที่สนใจสำหรับนักเรียนคนที่ ${i + 1}`);
         return false;
@@ -182,13 +195,26 @@ export default function CreateTrialBookingPage() {
         source: 'walkin' as const,
         parentName: parentName.trim(),
         parentPhone: parentPhone.replace(/[-\s]/g, ''),
-        branchId: selectedBranch, // เพิ่ม branchId
-        students: students.map(s => ({
-          name: s.name.trim(),
-          subjectInterests: s.subjectInterests,
-          ...(s.schoolName.trim() && { schoolName: s.schoolName.trim() }),
-          ...(s.gradeLevel.trim() && { gradeLevel: s.gradeLevel.trim() })
-        })),
+        branchId: selectedBranch,
+        students: students.map(s => {
+          const studentData: any = {
+            name: s.name.trim(),
+            subjectInterests: s.subjectInterests
+          };
+          
+          // เพิ่มฟิลด์ที่มีค่า
+          if (s.birthdate) {
+            studentData.birthdate = new Date(s.birthdate);
+          }
+          if (s.schoolName.trim()) {
+            studentData.schoolName = s.schoolName.trim();
+          }
+          if (s.gradeLevel.trim()) {
+            studentData.gradeLevel = s.gradeLevel.trim();
+          }
+          
+          return studentData;
+        }),
         status: 'new' as const
       };
       
@@ -233,7 +259,7 @@ export default function CreateTrialBookingPage() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Branch Selection - เพิ่มส่วนนี้ใหม่ */}
+        {/* Branch Selection */}
         <Card>
           <CardHeader>
             <CardTitle>สาขา</CardTitle>
@@ -376,6 +402,24 @@ export default function CreateTrialBookingPage() {
                   </div>
                   
                   <div className="space-y-2">
+                    <Label>
+                      <Calendar className="inline h-4 w-4 mr-1" />
+                      วันเกิด
+                    </Label>
+                    <Input
+                      type="date"
+                      value={student.birthdate}
+                      onChange={(e) => updateStudent(idx, 'birthdate', e.target.value)}
+                      max={new Date().toISOString().split('T')[0]}
+                    />
+                    {student.birthdate && (
+                      <p className="text-xs text-gray-500">
+                        อายุ: {calculateAge(new Date(student.birthdate))} ปี
+                      </p>
+                    )}
+                  </div>
+                  
+                  <div className="space-y-2">
                     <Label>โรงเรียน</Label>
                     <div className="relative">
                       <School className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -388,7 +432,7 @@ export default function CreateTrialBookingPage() {
                     </div>
                   </div>
                   
-                  <div className="space-y-2 md:col-span-2">
+                  <div className="space-y-2">
                     <Label>
                       <GraduationCap className="inline h-4 w-4 mr-1" />
                       ระดับชั้น

@@ -55,7 +55,10 @@ export async function getTrialBookings(branchId?: string | null): Promise<TrialB
         parentName: data.parentName,
         parentPhone: data.parentPhone,
         parentEmail: data.parentEmail,
-        students: data.students,
+        students: data.students.map((s: any) => ({
+          ...s,
+          birthdate: s.birthdate?.toDate ? s.birthdate.toDate() : s.birthdate
+        })),
         branchId: data.branchId,
         status: data.status,
         contactNote: data.contactNote,
@@ -82,13 +85,20 @@ export async function getTrialBookingsByStatus(status: TrialBooking['status']): 
     );
     const querySnapshot = await getDocs(q);
     
-    return querySnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      createdAt: doc.data().createdAt?.toDate() || new Date(),
-      updatedAt: doc.data().updatedAt?.toDate(),
-      contactedAt: doc.data().contactedAt?.toDate(),
-    } as TrialBooking));
+    return querySnapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...data,
+        students: data.students.map((s: any) => ({
+          ...s,
+          birthdate: s.birthdate?.toDate ? s.birthdate.toDate() : s.birthdate
+        })),
+        createdAt: data.createdAt?.toDate() || new Date(),
+        updatedAt: data.updatedAt?.toDate(),
+        contactedAt: data.contactedAt?.toDate(),
+      } as TrialBooking;
+    });
   } catch (error) {
     console.error('Error getting trial bookings by status:', error);
     throw error;
@@ -106,6 +116,10 @@ export async function getTrialBooking(id: string): Promise<TrialBooking | null> 
       return {
         id: docSnap.id,
         ...data,
+        students: data.students.map((s: any) => ({
+          ...s,
+          birthdate: s.birthdate?.toDate ? s.birthdate.toDate() : s.birthdate
+        })),
         createdAt: data.createdAt?.toDate() || new Date(),
         updatedAt: data.updatedAt?.toDate(),
         contactedAt: data.contactedAt?.toDate(),
@@ -130,7 +144,7 @@ export async function createTrialBooking(
       createdAt: serverTimestamp(),
     };
     
-    // ทำความสะอาดข้อมูลนักเรียน
+    // ทำความสะอาดข้อมูลนักเรียน และแปลง birthdate เป็น Timestamp
     if (cleanedData.students && Array.isArray(cleanedData.students)) {
       cleanedData.students = cleanedData.students.map((student: any) => {
         const cleanStudent: any = {
@@ -139,6 +153,12 @@ export async function createTrialBooking(
         };
         
         // เพิ่มเฉพาะ field ที่มีค่า
+        if (student.birthdate) {
+          // แปลง Date เป็น Timestamp
+          cleanStudent.birthdate = student.birthdate instanceof Date 
+            ? Timestamp.fromDate(student.birthdate)
+            : student.birthdate;
+        }
         if (student.schoolName) {
           cleanStudent.schoolName = student.schoolName;
         }
@@ -175,6 +195,17 @@ export async function updateTrialBooking(
     // Convert Date objects to Timestamps
     if (updateData.contactedAt instanceof Date) {
       updateData.contactedAt = Timestamp.fromDate(updateData.contactedAt);
+    }
+    
+    // แปลง birthdate ใน students array ถ้ามี
+    if (updateData.students && Array.isArray(updateData.students)) {
+      updateData.students = updateData.students.map((student: any) => {
+        const cleanStudent = { ...student };
+        if (cleanStudent.birthdate instanceof Date) {
+          cleanStudent.birthdate = Timestamp.fromDate(cleanStudent.birthdate);
+        }
+        return cleanStudent;
+      });
     }
     
     // Add server timestamp for updatedAt
