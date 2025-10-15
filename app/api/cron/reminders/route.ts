@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
       classReminders: 0,
       makeupReminders: 0,
       eventReminders: 0,
-      errors: []
+      errors: [] as string[]
     };
     
     console.log('=== Starting combined reminder cron job ===');
@@ -81,7 +81,7 @@ export async function GET(request: NextRequest) {
       const schedulesSnapshot = await getDocs(schedulesQuery);
       
       if (schedulesSnapshot.size > 0) {
-        console.log(`Class "${classData?.name || classId}": Found ${schedulesSnapshot.size} sessions tomorrow`);
+        console.log(`\nClass "${classData?.name || classId}": Found ${schedulesSnapshot.size} sessions tomorrow`);
         
         // ดึง enrollments ที่ active
         const enrollmentsQuery = query(
@@ -93,26 +93,37 @@ export async function GET(request: NextRequest) {
         const enrollmentsSnapshot = await getDocs(enrollmentsQuery);
         console.log(`  - ${enrollmentsSnapshot.size} active students`);
         
-        for (const enrollmentDoc of enrollmentsSnapshot.docs) {
-          const enrollment = enrollmentDoc.data();
+        // Process each schedule
+        for (const scheduleDoc of schedulesSnapshot.docs) {
+          const schedule = scheduleDoc.data();
+          const scheduleId = scheduleDoc.id;
           
-          try {
-            const success = await sendClassReminder(
-              enrollment.studentId,
-              classDoc.id,
-              tomorrow
-            );
+          console.log(`\n  Processing schedule ${scheduleId} (Session #${schedule.sessionNumber})`);
+          
+          // ส่ง reminder ให้นักเรียนแต่ละคน
+          for (const enrollmentDoc of enrollmentsSnapshot.docs) {
+            const enrollment = enrollmentDoc.data();
             
-            if (success) {
-              results.classReminders++;
-              totalSent++;
-              console.log(`  ✓ Sent reminder for student ${enrollment.studentId}`);
-            } else {
-              console.log(`  ✗ Failed to send for student ${enrollment.studentId}`);
+            try {
+              // ส่ง scheduleId ไปด้วย
+              const success = await sendClassReminder(
+                enrollment.studentId,
+                classDoc.id,
+                schedule.sessionDate.toDate(),
+                scheduleId // ส่ง scheduleId ไปด้วย
+              );
+              
+              if (success) {
+                results.classReminders++;
+                totalSent++;
+                console.log(`    ✓ Sent reminder for student ${enrollment.studentId}`);
+              } else {
+                console.log(`    ✗ Failed to send for student ${enrollment.studentId}`);
+              }
+            } catch (error) {
+              console.error(`    ! Error for student ${enrollment.studentId}:`, error);
+              results.errors.push(`Class reminder error: ${error}`);
             }
-          } catch (error) {
-            console.error(`  ! Error for student ${enrollment.studentId}:`, error);
-            results.errors.push(`Class reminder error: ${error}`);
           }
         }
       }
@@ -136,7 +147,7 @@ export async function GET(request: NextRequest) {
     for (const makeupDoc of makeupSnapshot.docs) {
       try {
         const makeup = makeupDoc.data();
-        console.log(`Processing makeup for student ${makeup.studentId}`);
+        console.log(`\nProcessing makeup for student ${makeup.studentId}`);
         
         const success = await sendMakeupNotification(makeupDoc.id, 'reminder');
         if (success) {
@@ -174,12 +185,12 @@ export async function GET(request: NextRequest) {
           if (success) {
             results.eventReminders++;
             totalSent++;
-            console.log(`✓ Sent reminder for registration ${registration.id}`);
+            console.log(`  ✓ Sent reminder for registration ${registration.id}`);
           } else {
-            console.log(`✗ Failed to send reminder for registration ${registration.id}`);
+            console.log(`  ✗ Failed to send reminder for registration ${registration.id}`);
           }
         } catch (error) {
-          console.error(`! Error sending reminder for registration ${registration.id}:`, error);
+          console.error(`  ! Error sending reminder for registration ${registration.id}:`, error);
           results.errors.push(`Event reminder error: ${error}`);
         }
       }
