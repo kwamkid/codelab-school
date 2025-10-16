@@ -189,15 +189,23 @@ export default function CreateMakeupDialog({
       // Filter active enrollments only
       const activeEnrollments = enrollments.filter(e => e.status === 'active');
       
-      // Get class details for each enrollment
+      // ✅ โหลดข้อมูล class จาก Firestore โดยตรง
+      const { getClass } = await import('@/lib/services/classes');
+      
       const enrollmentWithClasses = await Promise.all(
         activeEnrollments.map(async (enrollment) => {
-          const cls = classes.find(c => c.id === enrollment.classId);
-          if (cls && ['published', 'started'].includes(cls.status)) {
-            // Check if user has access to this class's branch
-            if (canAccessBranch(cls.branchId)) {
-              return { enrollment, class: cls };
+          try {
+            // โหลดข้อมูล class จาก Firestore
+            const cls = await getClass(enrollment.classId);
+            
+            if (cls && ['published', 'started'].includes(cls.status)) {
+              // Check if user has access to this class's branch
+              if (canAccessBranch(cls.branchId)) {
+                return { enrollment, class: cls };
+              }
             }
+          } catch (error) {
+            console.error(`Error loading class ${enrollment.classId}:`, error);
           }
           return null;
         })
@@ -635,34 +643,68 @@ export default function CreateMakeupDialog({
                       "เลือกวันที่"
                     } />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="max-h-[300px] overflow-y-auto">
                     {schedules.length === 0 ? (
                       <div className="p-2 text-center text-sm text-gray-500">
                         ไม่มีตารางเรียนที่สามารถขอ Makeup ได้
                       </div>
                     ) : (
-                      schedules.map(schedule => {
-                        const existingMakeup = existingMakeups[schedule.id];
-                        const isDisabled = !!existingMakeup;
-                        
-                        return (
-                          <SelectItem 
-                            key={schedule.id} 
-                            value={schedule.id}
-                            disabled={isDisabled}
-                          >
-                            <div className="flex items-center justify-between w-full gap-2">
-                              <span className={isDisabled ? 'text-gray-400' : ''}>
-                                {getScheduleInfo(schedule.id)}
-                              </span>
-                              {existingMakeup && getMakeupStatusBadge(existingMakeup)}
+                      (() => {
+                        // จัดกลุ่มตามเดือน
+                        const schedulesByMonth = schedules.reduce((acc, schedule) => {
+                          const date = new Date(schedule.sessionDate);
+                          const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+                          const monthLabel = date.toLocaleDateString('th-TH', { year: 'numeric', month: 'long' });
+                          
+                          if (!acc[monthKey]) {
+                            acc[monthKey] = {
+                              label: monthLabel,
+                              schedules: []
+                            };
+                          }
+                          acc[monthKey].schedules.push(schedule);
+                          return acc;
+                        }, {} as Record<string, { label: string; schedules: typeof schedules }>);
+
+                        return Object.entries(schedulesByMonth).map(([monthKey, { label, schedules: monthSchedules }]) => (
+                          <div key={monthKey}>
+                            {/* Month Header */}
+                            <div className="sticky top-0 bg-gray-100 px-2 py-1.5 text-xs font-semibold text-gray-700 border-b">
+                              {label} ({monthSchedules.length} วัน)
                             </div>
-                          </SelectItem>
-                        );
-                      })
+                            
+                            {/* Schedule Items */}
+                            {monthSchedules.map(schedule => {
+                              const existingMakeup = existingMakeups[schedule.id];
+                              const isDisabled = !!existingMakeup;
+                              
+                              return (
+                                <SelectItem 
+                                  key={schedule.id} 
+                                  value={schedule.id}
+                                  disabled={isDisabled}
+                                  className="pl-4"
+                                >
+                                  <div className="flex items-center justify-between w-full gap-2">
+                                    <span className={isDisabled ? 'text-gray-400' : ''}>
+                                      {getScheduleInfo(schedule.id)}
+                                    </span>
+                                    {existingMakeup && getMakeupStatusBadge(existingMakeup)}
+                                  </div>
+                                </SelectItem>
+                              );
+                            })}
+                          </div>
+                        ));
+                      })()
                     )}
                   </SelectContent>
                 </Select>
+                {schedules.length > 10 && (
+                  <p className="text-xs text-gray-500">
+                    💡 มีตารางเรียน {schedules.length} วัน - scroll เพื่อดูเพิ่มเติม
+                  </p>
+                )}
               </div>
 
               {/* Request Type and Reason Category - Side by side */}
