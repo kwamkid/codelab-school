@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Student } from '@/types/models';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { 
   Search, 
@@ -34,7 +33,7 @@ export default function StudentSearchSelect({
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [highlightedIndex, setHighlightedIndex] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [inputElement, setInputElement] = useState<HTMLInputElement | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Filter active students only
@@ -70,8 +69,8 @@ export default function StudentSearchSelect({
       if (
         dropdownRef.current && 
         !dropdownRef.current.contains(event.target as Node) &&
-        inputRef.current &&
-        !inputRef.current.contains(event.target as Node)
+        inputElement &&
+        !inputElement.contains(event.target as Node)
       ) {
         setIsOpen(false);
       }
@@ -79,7 +78,7 @@ export default function StudentSearchSelect({
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  }, [inputElement]);
 
   // Handle keyboard navigation
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -125,7 +124,7 @@ export default function StudentSearchSelect({
     onValueChange('');
     setSearchTerm('');
     setHighlightedIndex(0);
-    inputRef.current?.focus();
+    inputElement?.focus();
   };
 
   return (
@@ -175,9 +174,9 @@ export default function StudentSearchSelect({
               </div>
             </div>
           ) : (
-            // Search input
-            <Input
-              ref={inputRef}
+            // Search input - ใช้ <input> ธรรมดาแทน Input component เพื่อหลีกเลี่ยง ref warning
+            <input
+              ref={setInputElement}
               type="text"
               value={searchTerm}
               onChange={(e) => {
@@ -189,7 +188,13 @@ export default function StudentSearchSelect({
               onKeyDown={handleKeyDown}
               placeholder={placeholder}
               disabled={disabled}
-              className="pl-10 pr-10"
+              className={cn(
+                "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none",
+                "placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground",
+                "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
+                "disabled:cursor-not-allowed disabled:opacity-50",
+                "pl-10 pr-10 md:text-sm"
+              )}
             />
           )}
           
