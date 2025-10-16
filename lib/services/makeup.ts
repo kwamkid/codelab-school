@@ -1,4 +1,4 @@
-// lib/services/makeup.ts - Updated with Denormalized Data
+// lib/services/makeup.ts - Fixed undefined field error
 
 import { 
   collection, 
@@ -23,6 +23,8 @@ import { getSubject } from './subjects';
 import { sendMakeupNotification } from './line-notifications';
 
 const COLLECTION_NAME = 'makeupClasses';
+
+// ... (เก็บ functions อื่นๆ ไว้เหมือนเดิม)
 
 // Get all makeup classes - Now with denormalized data! ✨
 export async function getMakeupClasses(branchId?: string | null): Promise<MakeupClass[]> {
@@ -536,7 +538,7 @@ export async function checkMakeupExists(
   }
 }
 
-// Create makeup class request - NOW WITH DENORMALIZED DATA! ✨
+// ✅ FIX: Create makeup class request - แก้ไข undefined error
 export async function createMakeupRequest(
   data: Omit<MakeupClass, 'id' | 'createdAt' | 'updatedAt' | 'className' | 'classCode' | 'subjectId' | 'subjectName' | 'studentName' | 'studentNickname' | 'parentName' | 'parentPhone' | 'parentLineUserId' | 'branchId' | 'branchName'>
 ): Promise<string> {
@@ -582,7 +584,7 @@ export async function createMakeupRequest(
       type: data.type,
       originalClassId: data.originalClassId,
       originalScheduleId: data.originalScheduleId,
-      originalSessionNumber: schedule?.sessionNumber,
+      originalSessionNumber: schedule?.sessionNumber || null,
       originalSessionDate: schedule?.sessionDate ? Timestamp.fromDate(schedule.sessionDate) : null,
       
       // Denormalized class data ✨
@@ -594,13 +596,14 @@ export async function createMakeupRequest(
       // Student data
       studentId: data.studentId,
       studentName: student.name,
-      studentNickname: student.nickname,
+      studentNickname: student.nickname || '',
       
       // Parent data
       parentId: student.parentId,
       parentName: student.parentName,
       parentPhone: student.parentPhone,
-      parentLineUserId: student.parentLineUserId,
+      // ✅ FIX: ใช้ null แทน undefined เพื่อป้องกัน Firestore error
+      parentLineUserId: student.parentLineUserId || null,
       
       // Branch data
       branchId: classData.branchId,
@@ -611,7 +614,7 @@ export async function createMakeupRequest(
       requestedBy: data.requestedBy,
       reason: data.reason,
       status: 'pending',
-      notes: data.notes,
+      notes: data.notes || null,
       createdAt: serverTimestamp(),
     });
     
@@ -667,8 +670,8 @@ export async function scheduleMakeupClass(
       makeupSchedule: {
         ...scheduleData,
         date: Timestamp.fromDate(scheduleData.date),
-        teacherName: teacher?.nickname || teacher?.name,
-        roomName: room?.name,
+        teacherName: teacher?.nickname || teacher?.name || null,
+        roomName: room?.name || null,
         confirmedAt: serverTimestamp(),
       },
       updatedAt: serverTimestamp(),
@@ -703,6 +706,7 @@ export async function recordMakeupAttendance(
       status: 'completed',
       attendance: {
         ...attendance,
+        note: attendance.note || null,
         checkedAt: serverTimestamp(),
       },
       updatedAt: serverTimestamp(),
@@ -900,6 +904,7 @@ export async function updateMakeupAttendance(
     await updateDoc(docRef, {
       attendance: {
         ...attendance,
+        note: attendance.note || null,
         checkedAt: serverTimestamp(),
       },
       updatedAt: serverTimestamp(),
