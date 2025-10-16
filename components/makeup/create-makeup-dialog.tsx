@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Student, Class, ClassSchedule, Teacher, Room, Enrollment } from '@/types/models';
 import { 
   createMakeupRequest, 
@@ -12,6 +13,7 @@ import { getClassSchedules } from '@/lib/services/classes';
 import { getEnrollmentsByStudent } from '@/lib/services/enrollments';
 import { getActiveTeachers } from '@/lib/services/teachers';
 import { getActiveRoomsByBranch } from '@/lib/services/rooms';
+import { getAllStudentsWithParents } from '@/lib/services/parents';
 import { checkAvailability, AvailabilityWarning } from '@/lib/utils/availability';
 import {
   Dialog,
@@ -43,20 +45,21 @@ import { Badge } from "@/components/ui/badge";
 import { useBranch } from '@/contexts/BranchContext';
 import { useAuth } from '@/hooks/useAuth';
 import { Progress } from "@/components/ui/progress";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface CreateMakeupDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  classes: Class[];
-  students: (Student & { parentName: string; parentPhone: string })[];
+  classes?: Class[]; // ไม่จำเป็นต้องส่ง
+  students?: (Student & { parentName: string; parentPhone: string })[]; // ไม่จำเป็นต้องส่ง
   onCreated: () => void;
 }
 
 export default function CreateMakeupDialog({
   open,
   onOpenChange,
-  classes,
-  students,
+  classes = [], // default empty array
+  students = [], // default empty array
   onCreated
 }: CreateMakeupDialogProps) {
   const { selectedBranchId, isAllBranches } = useBranch();
@@ -82,7 +85,7 @@ export default function CreateMakeupDialog({
     scheduleId: '',
     type: 'scheduled' as 'scheduled' | 'ad-hoc',
     reason: '',
-    reasonCategory: 'other' as 'sick' | 'leave' | 'other', // เพิ่ม category
+    reasonCategory: 'other' as 'sick' | 'leave' | 'other',
     // Makeup schedule fields
     makeupDate: '',
     makeupStartTime: '',
@@ -94,21 +97,34 @@ export default function CreateMakeupDialog({
   // Check if admin can bypass limit
   const canBypassLimit = isSuperAdmin() || isBranchAdmin();
 
-  // Active students only - filter by branch if needed
-  const activeStudents = students.filter(s => {
-    if (!s.isActive) return false;
-    
-    // If viewing all branches or is super admin, show all
-    if (isAllBranches || adminUser?.role === 'super_admin') return true;
-    
-    // For branch admin/teacher, only show students from enrolled classes in their branch
-    if (selectedBranchId) {
-      // This would require checking enrollments, for now show all active
-      return true;
-    }
-    
-    return true;
+  // ✅ โหลดข้อมูลนักเรียนเมื่อเปิด dialog
+  const { data: allStudents = [], isLoading: loadingStudents } = useQuery({
+    queryKey: ['students', 'all'],
+    queryFn: getAllStudentsWithParents,
+    staleTime: 300000, // Cache 5 minutes
+    enabled: open, // โหลดเฉพาะเมื่อเปิด dialog
   });
+
+  // ใช้ข้อมูลจาก query ถ้าไม่มีใน props
+  const studentsToUse = students.length > 0 ? students : allStudents;
+
+  // Active students only - filter by branch if needed
+  const activeStudents = useMemo(() => {
+    return studentsToUse.filter(s => {
+      if (!s.isActive) return false;
+      
+      // If viewing all branches or is super admin, show all
+      if (isAllBranches || adminUser?.role === 'super_admin') return true;
+      
+      // For branch admin/teacher, only show students from enrolled classes in their branch
+      if (selectedBranchId) {
+        // This would require checking enrollments, for now show all active
+        return true;
+      }
+      
+      return true;
+    });
+  }, [studentsToUse, isAllBranches, adminUser, selectedBranchId]);
 
   // When student is selected, load their enrolled classes
   useEffect(() => {
@@ -285,7 +301,7 @@ export default function CreateMakeupDialog({
         roomId: formData.makeupRoomId,
         teacherId: formData.makeupTeacherId,
         excludeType: 'makeup',
-        allowConflicts: true // เพิ่ม flag นี้
+        allowConflicts: true
       });
 
       setAvailabilityIssues(result.reasons);
@@ -347,7 +363,7 @@ export default function CreateMakeupDialog({
     }
 
     // Get selected student
-    const selectedStudent = students.find(s => s.id === formData.studentId);
+    const selectedStudent = studentsToUse.find(s => s.id === formData.studentId);
     if (!selectedStudent) {
       toast.error('ไม่พบข้อมูลนักเรียน');
       return;
@@ -460,14 +476,11 @@ export default function CreateMakeupDialog({
   const handleReasonCategoryChange = (category: 'sick' | 'leave' | 'other') => {
     setFormData(prev => {
       let reason = '';
-      // ถ้าเป็น other ให้เคลียร์ reason ใหม่
       if (category === 'other') {
         reason = '';
       } else if (category === 'sick') {
-        // ถ้าเป็นป่วย ให้ใส่ prefix แต่ให้กรอกรายละเอียดต่อ
         reason = 'ป่วย - ';
       } else if (category === 'leave') {
-        // ถ้าเป็นลา ให้ใส่ prefix แต่ให้กรอกรายละเอียดต่อ
         reason = 'ลากิจ - ';
       }
       return {
@@ -485,6 +498,25 @@ export default function CreateMakeupDialog({
     
     return { roomWarnings, teacherWarnings };
   };
+
+  // Show loading skeleton while loading students
+  if (loadingStudents && studentsToUse.length === 0) {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>สร้าง Makeup Request</DialogTitle>
+            <DialogDescription>กำลังโหลดข้อมูล...</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-20 w-full" />
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -513,8 +545,8 @@ export default function CreateMakeupDialog({
                     onValueChange={(value) => setFormData(prev => ({ 
                       ...prev, 
                       studentId: value,
-                      classId: '', // Reset class
-                      scheduleId: '' // Reset schedule
+                      classId: '',
+                      scheduleId: ''
                     }))}
                     label="นักเรียน"
                     required
@@ -530,7 +562,7 @@ export default function CreateMakeupDialog({
                   onValueChange={(value) => setFormData(prev => ({ 
                     ...prev, 
                     classId: value,
-                    scheduleId: '' // Reset schedule
+                    scheduleId: ''
                   }))}
                   disabled={!formData.studentId || loadingEnrollments}
                 >
@@ -561,7 +593,7 @@ export default function CreateMakeupDialog({
                 </Select>
               </div>
 
-              {/* Makeup Limit Info - Left aligned with more space for progress */}
+              {/* Makeup Limit Info */}
               {makeupLimit && formData.classId && (
                 <Alert className={`py-2 col-span-2 ${makeupLimit.allowed || canBypassLimit ? "border-blue-200" : "border-amber-200"}`}>
                   <div className="flex items-start gap-2">
@@ -669,7 +701,7 @@ export default function CreateMakeupDialog({
                 </Select>
               </div>
 
-              {/* Reason - Always show for all categories */}
+              {/* Reason */}
               <div className="space-y-2 col-span-2">
                 <Label htmlFor="reason">
                   {formData.reasonCategory === 'sick' && 'รายละเอียดอาการป่วย *'}
@@ -800,7 +832,6 @@ export default function CreateMakeupDialog({
                       </AlertDescription>
                     </Alert>
                   ) : availabilityIssues.length > 0 && availabilityIssues.some(issue => issue.type === 'holiday') ? (
-                    // แสดง Holiday Issue เป็น Error
                     <Alert variant="destructive">
                       <AlertCircle className="h-4 w-4" />
                       <AlertDescription>
@@ -808,7 +839,6 @@ export default function CreateMakeupDialog({
                       </AlertDescription>
                     </Alert>
                   ) : availabilityWarnings.length > 0 ? (
-                    // แสดง Warnings
                     <div className="space-y-3">
                       {(() => {
                         const { roomWarnings, teacherWarnings } = getGroupedWarnings();
@@ -821,12 +851,10 @@ export default function CreateMakeupDialog({
                                   <div className="space-y-1">
                                     <p className="font-medium text-amber-800">ห้องเรียนมีการใช้งานแล้ว:</p>
                                     {roomWarnings.map((warning, index) => {
-                                      // ดึงชื่อห้องจาก rooms array
                                       const roomId = formData.makeupRoomId;
                                       const room = rooms.find(r => r.id === roomId);
                                       const roomName = room?.name || roomId;
                                       
-                                      // แทนที่ room ID ด้วยชื่อห้องในข้อความ
                                       const displayMessage = warning.message.replace(
                                         /ห้อง [^\s]+ /,
                                         `ห้อง ${roomName} `

@@ -131,7 +131,7 @@ export default function MakeupPage() {
     totalPages,
   } = usePagination(20);
 
-  // Query: Makeup Classes - ⚡ NOW SUPER FAST!
+  // Query: Makeup Classes
   const { data: makeupClasses = [], isLoading: loadingMakeup } = useQuery({
     queryKey: QUERY_KEYS.makeupClasses(selectedBranchId),
     queryFn: () => getMakeupClasses(selectedBranchId),
@@ -687,7 +687,7 @@ export default function MakeupPage() {
         <ScheduleMakeupDialog
           open={showScheduleDialog}
           onOpenChange={setShowScheduleDialog}
-          makeupRequest={selectedMakeup} // ✨ ใช้ denormalized data ตรงๆ
+          makeupRequest={selectedMakeup}
           onSuccess={async () => {
             setShowScheduleDialog(false);
             await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.makeupClasses(selectedBranchId) });
@@ -695,11 +695,10 @@ export default function MakeupPage() {
         />
       )}
 
+      {/* ✅ ไม่ต้องส่ง students และ classes prop - ให้ dialog โหลดเอง */}
       <CreateMakeupDialog
         open={showCreateDialog}
         onOpenChange={setShowCreateDialog}
-        classes={[]} // ไม่ต้องส่ง - component จะโหลดเอง
-        students={[]} // ไม่ต้องส่ง - component จะโหลดเอง
         onCreated={async () => {
           setShowCreateDialog(false);
           await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.makeupClasses(selectedBranchId) });
