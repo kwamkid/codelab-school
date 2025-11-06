@@ -15,9 +15,26 @@ async function getLineSettings() {
 function getBaseUrl(): string {
   // Check if we're on the server
   if (typeof window === 'undefined') {
-    // Server-side: use env variable or localhost
-    return process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    // Server-side: Priority order
+    // 1. NEXT_PUBLIC_APP_URL (manual setting - highest priority)
+    if (process.env.NEXT_PUBLIC_APP_URL) {
+      const url = process.env.NEXT_PUBLIC_APP_URL;
+      console.log('[getBaseUrl] Using NEXT_PUBLIC_APP_URL:', url.substring(0, 30) + '...');
+      return url;
+    }
+    
+    // 2. VERCEL_URL (automatic on Vercel - fallback)
+    if (process.env.VERCEL_URL) {
+      const url = `https://${process.env.VERCEL_URL}`;
+      console.log('[getBaseUrl] Using VERCEL_URL:', url.substring(0, 30) + '...');
+      return url;
+    }
+    
+    // 3. Fallback for local development
+    console.warn('[getBaseUrl] ⚠️ No URL configured, using localhost (this will fail on Vercel!)');
+    return 'http://localhost:3000';
   }
+  
   // Client-side: use window.location
   return window.location.origin;
 }
