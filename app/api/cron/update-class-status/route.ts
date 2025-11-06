@@ -14,16 +14,40 @@ import { db } from '@/lib/firebase/client';
 
 export const dynamic = 'force-dynamic';
 
-// ตรวจสอบ secret key
+// ✅ ฟังก์ชันตรวจสอบ secret key (เหมือนกับไฟล์แรก)
 function verifySecret(request: NextRequest): boolean {
-  const authHeader = request.headers.get('authorization');
-  const cronSecret = process.env.CRON_SECRET || 'your-secret-key';
-  return authHeader === `Bearer ${cronSecret}`;
+  const querySecret = request.nextUrl.searchParams.get('secret');
+  const cronSecret = process.env.CRON_SECRET;
+  
+  if (!cronSecret) {
+    console.error('[Cron] CRON_SECRET not configured in environment variables!');
+    return false;
+  }
+  
+  if (!querySecret) {
+    console.error('[Cron] No secret parameter provided');
+    return false;
+  }
+  
+  const isValid = querySecret === cronSecret;
+  
+  if (!isValid) {
+    console.error('[Cron] Invalid secret provided');
+  } else {
+    console.log('[Cron] ✓ Authorization successful');
+  }
+  
+  return isValid;
 }
 
 export async function GET(request: NextRequest) {
-  // Verify request
+  console.log('\n=== Starting class status update cron job ===');
+  console.log('Timestamp:', new Date().toISOString());
+  console.log('Thailand Time:', new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }));
+  
+  // ✅ Verify request
   if (!verifySecret(request)) {
+    console.error('[Cron] ❌ Unauthorized request blocked');
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   
@@ -32,15 +56,14 @@ export async function GET(request: NextRequest) {
     const today = new Date(now);
     today.setHours(0, 0, 0, 0);
     
-    console.log('=== Starting class status update cron job ===');
-    console.log('Current time:', now.toLocaleString('th-TH'));
-    
     const results = {
       classesChecked: 0,
       classesCompleted: 0,
       classesStarted: 0,
       errors: [] as string[]
     };
+    
+    console.log('Current time:', now.toLocaleString('th-TH'));
     
     // 1. Update classes that should be marked as 'completed'
     console.log('\n--- Checking for completed classes ---');

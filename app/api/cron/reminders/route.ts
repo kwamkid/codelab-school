@@ -19,16 +19,46 @@ import { getEventsForReminder, sendEventReminder } from '@/lib/services/events';
 
 export const dynamic = 'force-dynamic';
 
-// ตรวจสอบ secret key
+// ✅ ฟังก์ชันตรวจสอบ secret key (รองรับทั้ง header และ query parameter)
 function verifySecret(request: NextRequest): boolean {
-  const authHeader = request.headers.get('authorization');
-  const cronSecret = process.env.CRON_SECRET || 'your-secret-key';
-  return authHeader === `Bearer ${cronSecret}`;
+  // ดึง secret จาก query parameter
+  const querySecret = request.nextUrl.searchParams.get('secret');
+  
+  // ดึง secret จาก environment variable
+  const cronSecret = process.env.CRON_SECRET;
+  
+  // ตรวจสอบว่ามี CRON_SECRET หรือไม่
+  if (!cronSecret) {
+    console.error('[Cron] CRON_SECRET not configured in environment variables!');
+    return false;
+  }
+  
+  // ตรวจสอบว่ามี query parameter หรือไม่
+  if (!querySecret) {
+    console.error('[Cron] No secret parameter provided');
+    return false;
+  }
+  
+  // เปรียบเทียบ secret
+  const isValid = querySecret === cronSecret;
+  
+  if (!isValid) {
+    console.error('[Cron] Invalid secret provided');
+  } else {
+    console.log('[Cron] ✓ Authorization successful');
+  }
+  
+  return isValid;
 }
 
 export async function GET(request: NextRequest) {
-  // Verify request
+  console.log('\n=== Starting combined reminder cron job ===');
+  console.log('Timestamp:', new Date().toISOString());
+  console.log('Thailand Time:', new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }));
+  
+  // ✅ Verify request
   if (!verifySecret(request)) {
+    console.error('[Cron] ❌ Unauthorized request blocked');
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   
@@ -49,7 +79,6 @@ export async function GET(request: NextRequest) {
       errors: [] as string[]
     };
     
-    console.log('=== Starting combined reminder cron job ===');
     console.log('Current time:', now.toLocaleString('th-TH'));
     console.log('Checking for tomorrow:', tomorrow.toLocaleDateString('th-TH'));
     
